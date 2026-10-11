@@ -51,6 +51,19 @@ for applet in mount umount switch_root mkdir mknod cat grep sed cut ls \
     ln -sf busybox "$STAGE/bin/$applet"
 done
 
+# GPU firmware has to be here, not just on the root filesystem. The kernel
+# is monolithic, so i915/amdgpu probe before any root is mounted, and they
+# take the screen over from the firmware framebuffer (simpledrm) first --
+# without their firmware at that moment, amdgpu fails and leaves a black
+# screen. The kernel's firmware loader waits for this initramfs to unpack.
+# (Wi-Fi/Ethernet firmware stays on the rootfs; wifi-probe re-probes those.)
+for fwdir in i915 amdgpu; do
+    if [ -d "$ROOTFS_DIR/lib/firmware/$fwdir" ]; then
+        mkdir -p "$STAGE/lib/firmware"
+        cp -a "$ROOTFS_DIR/lib/firmware/$fwdir" "$STAGE/lib/firmware/"
+    fi
+done
+
 cat > "$STAGE/init" << 'INIT_EOF'
 #!/bin/sh
 PATH=/sbin:/bin:/usr/sbin:/usr/bin

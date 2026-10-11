@@ -6,7 +6,7 @@ Status as of 2026-10-11. Legend:
 - `[~]` partly done, or done but the result was never recorded — needs a re-check
 - `[ ]` not done
 
-**Progress: 46 of 75 done, 6 partial → ~65%** (partial counts as half)
+**Progress: 46 of 75 done, 11 partial → ~69%** (partial counts as half)
 
 ---
 
@@ -103,12 +103,12 @@ Status as of 2026-10-11. Legend:
 
 ## 11. Real-hardware drivers (kernel is monolithic, so each needs a rebuild)
 
-- [ ] GPU: no `DRM_I915`/`DRM_XE`/`DRM_AMDGPU`/`DRM_NOUVEAU` — real PCs get only the UEFI framebuffer (fixed resolution, no brightness, CPU rendering); BIOS-mode boots may get no graphics
-- [ ] Ethernet: no `R8169` (Realtek, the most common), no `IGB`
-- [ ] WiFi: only Intel (`IWLWIFI`) and `ATH9K`; no Realtek `RTW88/RTW89`, MediaTek `MT7921E/MT7925E`, Atheros `ATH10K/11K/12K`, Broadcom `BRCMFMAC`
-- [ ] Laptop touchpads: no `I2C_HID_ACPI`, `HID_MULTITOUCH`, `I2C_DESIGNWARE_*`
-- [ ] No Bluetooth, webcam (`MEDIA_SUPPORT`), backlight (`BACKLIGHT_CLASS_DEVICE`), Intel SOF audio
-- [ ] Firmware for built-in drivers that need it at probe time (amdgpu, i915 DMC) must be embedded or re-probed like `wifi-probe`
+- [~] (config done 2026-10-11, needs kernel build + real-PC test) GPU: no `DRM_I915`/`DRM_XE`/`DRM_AMDGPU`/`DRM_NOUVEAU` — real PCs get only the UEFI framebuffer (fixed resolution, no brightness, CPU rendering); BIOS-mode boots may get no graphics
+- [~] (config done) Ethernet: no `R8169` (Realtek, the most common), no `IGB`
+- [~] (config done; Broadcom/Realtek/MediaTek/Atheros firmware added) WiFi: only Intel (`IWLWIFI`) and `ATH9K`; no Realtek `RTW88/RTW89`, MediaTek `MT7921E/MT7925E`, Atheros `ATH10K/11K/12K`, Broadcom `BRCMFMAC`
+- [~] (config done, incl. `PINCTRL`, `PCI_MSI` which was also off) Laptop touchpads: no `I2C_HID_ACPI`, `HID_MULTITOUCH`, `I2C_DESIGNWARE_*`
+- [ ] Still missing: Bluetooth (needs bluez + UI too), Intel SOF audio (firmware at probe), NVIDIA (`nouveau`), Intel Lunar Lake+ (`xe`). Done: webcam, backlight, card readers, VMD, laptop hotkeys. Was: no Bluetooth, webcam (`MEDIA_SUPPORT`), backlight (`BACKLIGHT_CLASS_DEVICE`), Intel SOF audio
+- [~] i915/amdgpu firmware copied into the initramfs (needs rebuild). Firmware is from 20240312, so GPUs newer than early 2024 may fail until Alpine is upgraded
 
 ## 12. Apps
 
