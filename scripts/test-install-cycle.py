@@ -36,9 +36,17 @@ def _argval(flag, default):
 
 SIZE_GB = int(_argval("--size-gb", "8"))
 KEEP_PATH = _argval("--keep", None)
+# (code, vars) pairs; vars=None marks a unified image loaded with plain -bios.
+# Unified images come first: on this host, Ubuntu's split OVMF_CODE_4M.fd
+# printed nothing past its first escape codes either via -bios or as pflash
+# with a VARS copy, while the unified OVMF.fd booted the installed disk to a
+# login prompt. Split images are a fallback for hosts that only ship those.
 OVMF_CANDIDATES = [
-    "/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_CODE_4M.fd",
-    "/usr/share/qemu/OVMF.fd", "/usr/share/edk2/x64/OVMF_CODE.fd",
+    ("/usr/share/qemu/OVMF.fd", None),
+    ("/usr/share/ovmf/OVMF.fd", None),
+    ("/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
+    ("/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_VARS.fd"),
+    ("/usr/share/edk2/x64/OVMF_CODE.fd", "/usr/share/edk2/x64/OVMF_VARS.fd"),
 ]
 PTS_RE = re.compile(r"char device redirected to (/dev/pts/\d+)")
 # Strips ANSI/terminal-query escape sequences (e.g. ESC[6n cursor-position
@@ -127,9 +135,9 @@ class Serial:
 
 
 def find_ovmf():
-    for path in OVMF_CANDIDATES:
-        if os.path.isfile(path):
-            return path
+    for code, vars_ in OVMF_CANDIDATES:
+        if os.path.isfile(code) and (vars_ is None or os.path.isfile(vars_)):
+            return code, vars_
     return None
 
 
@@ -253,8 +261,16 @@ def main():
     if UEFI:
         ovmf = find_ovmf()
         if not ovmf:
-            fail("--uefi requested but no OVMF firmware found (tried: " + ", ".join(OVMF_CANDIDATES) + ")")
-        argv[1:1] = ["-bios", ovmf]
+            fail("--uefi requested but no OVMF firmware found (tried: "
+                 + ", ".join(code for code, _ in OVMF_CANDIDATES) + ")")
+        code, vars_ = ovmf
+        if vars_ is None:
+            argv[1:1] = ["-bios", code]
+        else:
+            vars_copy = os.path.join(tmp, "OVMF_VARS.fd")
+            shutil.copyfile(vars_, vars_copy)
+            argv[1:1] = ["-drive", f"if=pflash,format=raw,readonly=on,file={code}",
+                         "-drive", f"if=pflash,format=raw,file={vars_copy}"]
 
     boot2 = Serial(argv)
     reached = boot2.wait_for("login:", 90)
