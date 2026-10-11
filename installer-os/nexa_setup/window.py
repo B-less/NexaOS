@@ -118,10 +118,15 @@ class SetupWindow(Gtk.Window):
         self.stack.set_visible_child_name(name)
         self.back_btn.set_visible(name not in ("welcome", "progress", "done"))
         self.next_btn.set_visible(name not in ("progress", "done"))
+        # Pages that gate Next re-disable it below; without this reset, going
+        # Back from a page that had it greyed out left it greyed everywhere.
+        self.next_btn.set_sensitive(True)
         if name == "disk":
             self._refresh_disks()
         if name == "confirm":
             self._update_confirm_state()
+        if name == "setup":
+            self._update_password_state()
         if name == "progress":
             self._start_install()
         self.next_btn.set_label("Install" if name == "confirm" else "Next")
@@ -210,7 +215,7 @@ class SetupWindow(Gtk.Window):
         self.selected_disk = row.disk if row else None
         self._update_next_sensitivity()
 
-    def _update_next_sensitivity(self):
+    def _update_next_sensitivity(self):  # disk page
         if self.stack.get_visible_child_name() == "disk":
             self.next_btn.set_sensitive(self.selected_disk is not None)
 
@@ -280,7 +285,44 @@ class SetupWindow(Gtk.Window):
             if code == current:
                 self.layout_combo.set_active(i)
         page.pack_start(self.layout_combo, False, False, 0)
+
+        page.pack_start(self._field_label("Password (for the \"user\" account and administrator access)"),
+                        False, False, 0)
+        self.password_entry = self._password_entry("Password")
+        page.pack_start(self.password_entry, False, False, 0)
+        self.password_confirm_entry = self._password_entry("Confirm password")
+        page.pack_start(self.password_confirm_entry, False, False, 0)
+        self.password_hint = Gtk.Label(label="", xalign=0)
+        self.password_hint.set_name("fieldlabel")
+        page.pack_start(self.password_hint, False, False, 0)
         return page
+
+    def _password_entry(self, placeholder):
+        entry = Gtk.Entry()
+        entry.set_name("entry")
+        entry.set_visibility(False)
+        entry.set_input_purpose(Gtk.InputPurpose.PASSWORD)
+        entry.set_placeholder_text(placeholder)
+        entry.connect("changed", lambda *_a: self._update_password_state())
+        return entry
+
+    def _password_problem(self):
+        password = self.password_entry.get_text()
+        try:
+            diskinstall.validate_password(password)
+        except diskinstall.InstallError as e:
+            return str(e)
+        if password != self.password_confirm_entry.get_text():
+            return "The passwords don't match."
+        return None
+
+    def _update_password_state(self):
+        problem = self._password_problem()
+        # Don't nag before anything has been typed.
+        typed = self.password_entry.get_text() or self.password_confirm_entry.get_text()
+        self.password_hint.set_text(problem if (problem and typed) else "")
+        if self.stack.get_visible_child_name() == "setup":
+            self.next_btn.set_sensitive(problem is None)
 
     def _field_label(self, text):
         label = Gtk.Label(label=text, xalign=0)
@@ -356,6 +398,7 @@ class SetupWindow(Gtk.Window):
             "hostname": self.hostname_entry.get_text().strip() or None,
             "zone": self._chosen_zone(),
             "keyboard": self._chosen_layout(),
+            "password": self.password_entry.get_text(),
         }
         try:
             proc = subprocess.Popen(

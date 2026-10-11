@@ -21,6 +21,21 @@ mkdir -p "$ROOTFS_DIR/boot"
 cp "$DIST_DIR/bzImage" "$ROOTFS_DIR/boot/vmlinuz"
 cp "$DIST_DIR/initramfs.cpio.gz" "$ROOTFS_DIR/boot/initramfs.cpio.gz"
 
+# rootfs/ is extracted and staged mostly by the host user, so most of it shows
+# up here as uid/gid 1000 -- the same ids as the desktop "user" account, and
+# mke2fs -d bakes them into the image. That handed "user" ownership of /etc,
+# /usr/bin, /usr/local/bin (home of the passwordless doas helpers) and so on,
+# i.e. a free path to root. Everything outside user's home belongs to root;
+# other service ids (messagebus, seatd...) are left alone. The two deliberate
+# exceptions are restored right after.
+find "$ROOTFS_DIR" -xdev -path "$ROOTFS_DIR/home/user" -prune -o \
+    \( -uid 1000 -o -gid 1000 \) -exec chown -h 0:0 {} +
+chown -R 1000:1000 "$ROOTFS_DIR/home/user"
+# Settings drops a new wallpaper in here without a privileged helper.
+[ -d "$ROOTFS_DIR/usr/share/backgrounds/nexaos" ] && chown -R 1000:1000 "$ROOTFS_DIR/usr/share/backgrounds/nexaos"
+# nexa-ai-gui (running as "user") needs to read the api_key; see stage-nexa-ai.sh.
+[ -f "$ROOTFS_DIR/etc/nexa-ai/config.json" ] && chown 0:1000 "$ROOTFS_DIR/etc/nexa-ai/config.json"
+
 rm -f "$IMG"
 # mke2fs creates the backing file itself when it doesn't exist yet, sized from
 # the trailing size argument (accepts K/M/G suffixes) — no qemu-img needed.

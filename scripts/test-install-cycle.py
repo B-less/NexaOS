@@ -48,6 +48,7 @@ OVMF_CANDIDATES = [
     ("/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_VARS.fd"),
     ("/usr/share/edk2/x64/OVMF_CODE.fd", "/usr/share/edk2/x64/OVMF_VARS.fd"),
 ]
+TEST_PASSWORD = "nexa-test-pw"
 PTS_RE = re.compile(r"char device redirected to (/dev/pts/\d+)")
 # Strips ANSI/terminal-query escape sequences (e.g. ESC[6n cursor-position
 # requests some subprocess emits) before we print captured output to the
@@ -219,7 +220,8 @@ def main():
     qemu.wait_for("$", 10)
     qemu.send(
         "cat > /tmp/req.json << 'EOF'\n"
-        '{"disk": "vdb", "hostname": "nexa-test", "zone": null, "keyboard": null}\n'
+        '{"disk": "vdb", "hostname": "nexa-test", "zone": null, "keyboard": null, '
+        f'"password": "{TEST_PASSWORD}"}}\n'
         "EOF"
     )
     time.sleep(1)
@@ -274,14 +276,38 @@ def main():
 
     boot2 = Serial(argv)
     reached = boot2.wait_for("login:", 90)
-    tail = boot2.buf[-2000:].decode(errors="replace")
-    boot2.close()
     if not reached:
+        tail = boot2.buf[-2000:].decode(errors="replace")
+        boot2.close()
         fail(f"installed disk did NOT boot to a login prompt on its own ({'UEFI' if UEFI else 'BIOS'} mode) -- "
              "GRUB/kernel handoff failed. Last output:\n" + tail)
+    print("[ok] installed disk reached the login prompt")
+
+    # The live image has empty passwords; the installer must have replaced
+    # them. Waiting for "Password:" before typing it matters: with an empty
+    # password the shell starts at once, the password line would just run as
+    # a failed command, and the marker below would still print -- a false PASS.
+    phase("Logging in to the installed system with the password set by the installer")
+    time.sleep(2)
+    boot2.send("user")
+    if not boot2.wait_for("Password:", 15):
+        tail = boot2.buf[-1000:].decode(errors="replace")
+        boot2.close()
+        fail("login never asked for a password -- the installer did not set one. Last output:\n" + tail)
+    boot2.send(TEST_PASSWORD)
+    # Typed text is echoed as "$(id -un)", so only real command output
+    # contains "NEXA_LOGIN_user".
+    time.sleep(2)
+    boot2.send("echo NEXA_LOGIN_$(id -un)")
+    logged_in = boot2.wait_for("NEXA_LOGIN_user", 20)
+    tail = boot2.buf[-1000:].decode(errors="replace")
+    boot2.close()
+    if not logged_in:
+        fail("logging in as user with the installer-set password failed. Last output:\n" + tail)
+    print("[ok] logged in as user with the password chosen at install time")
 
     print(f"\nPASS: the installed disk booted on its own via GRUB ({'UEFI' if UEFI else 'BIOS'} mode), "
-          "no -kernel/-initrd needed.")
+          "no -kernel/-initrd needed, and the installer-set password works.")
     if KEEP_PATH:
         shutil.copyfile(target, KEEP_PATH)
         print(f"[*] installed disk image copied to {KEEP_PATH}")

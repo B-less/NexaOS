@@ -1,9 +1,9 @@
 #!/bin/sh
 # Lock the screen with swaylock, themed to match NexaOS's dark palette and
-# branded wallpaper. The "user" account has no password (see /etc/shadow),
-# and Alpine's default PAM config already includes `nullok`, so dismissing
-# the lock just needs Enter -- consistent with the rest of the system rather
-# than a surprise password nobody was ever told about.
+# branded wallpaper. On the live image the "user" account has no password
+# (see /etc/shadow) and Alpine's default PAM config includes `nullok`, so
+# dismissing the lock just needs Enter. An installed system has the password
+# chosen in the installer, which unlocks it instead.
 set -eu
 
 WALLPAPER=/usr/share/backgrounds/nexaos/wallpaper.png

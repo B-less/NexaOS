@@ -11,7 +11,8 @@ from nexa_common import diskinstall
 # too small to hold the system. Streams one {"stage": ...} JSON line per
 # install stage to stdout (flushed immediately) so the GUI can show real
 # progress on what is normally a multi-minute operation, then one final
-# {"ok": ...} line.
+# {"ok": ...} line. The request (on stdin, so the password never appears in
+# argv) is {"disk", "password", "hostname", "zone", "keyboard"}.
 
 
 def _report(stage):
@@ -22,13 +23,18 @@ def main():
     try:
         req = json.loads(sys.stdin.read())
         disk = req["disk"]
+        # Required here (not just in the GUI) so no request can produce an
+        # installed system with the live image's empty passwords.
+        password = req["password"]
+        if not isinstance(password, str):
+            raise TypeError("password must be a string")
     except (json.JSONDecodeError, KeyError, TypeError):
         print(json.dumps({"ok": False, "error": "malformed request"}))
         return 1
     try:
         result = diskinstall.run_install(
             disk, req.get("hostname"), req.get("zone"), req.get("keyboard"),
-            on_stage=_report,
+            on_stage=_report, password=password,
         )
     except diskinstall.InstallError as e:
         print(json.dumps({"ok": False, "error": str(e)}), flush=True)

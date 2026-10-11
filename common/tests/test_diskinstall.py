@@ -47,6 +47,14 @@ check("validate rejects the boot disk", raises(di.validate_disk, "vda") is not N
 check("validate rejects a too-small disk", "too small" in (raises(di.validate_disk, "sdc") or ""))
 check("validate rejects an unknown/hostile name", raises(di.validate_disk, "../../etc/passwd") is not None)
 
+# Live session from a USB stick: "/" is an overlay, the stick is only visible
+# at the live-medium mount (Rufus ISO mode: a partition; DD mode: whole disk).
+for src, label in ((f"{dev}/sdb1", "ISO mode, partition"), (f"{dev}/sdb", "DD mode, whole disk")):
+    open(procm, "w").write(f"overlay / overlay rw 0 0\n{src} {di.LIVE_MEDIUM_MOUNT} vfat ro 0 0\n")
+    live = {d["name"] for d in di.list_target_disks()}
+    check(f"live USB medium never offered ({label})", "sdb" not in live and "vda" in live, str(live))
+open(procm, "w").write(f"{dev}/vda1 / ext4 rw 0 0\nproc /proc proc rw 0 0\n")
+
 check("sdX partition naming", di.partition_path("sdb", 3) == f"{dev}/sdb3")
 check("nvme partition naming gets the p separator", di.partition_path("nvme0n1", 2) == f"{dev}/nvme0n12p2".replace("12p2", "1p2"))
 
@@ -93,8 +101,11 @@ check("garbage timezone is silently ignored, not written", not os.path.exists(os
 check("no hostname given -> file not touched", not os.path.exists(os.path.join(idroot2, "etc", "hostname")))
 
 calls = []
+inputs = {}
 def fake_run(argv, **kw):
     calls.append(argv)
+    if kw.get("input") is not None:
+        inputs[argv[0]] = kw["input"]
     if argv[0] == "wipefs" and "fail-partition" in os.environ.get("NEXA_TEST", ""):
         return subprocess.CompletedProcess(argv, 1, stdout="", stderr="boom")
     if argv[0] == "parted":
@@ -141,5 +152,28 @@ result = di.run_install("sdb", hostname="h", zone=None, keyboard_layout=None, on
 check("happy path visits every stage in order",
       stages == list(di.STAGES), str(stages))
 check("happy path result names the installed disk", result == {"installed_to": f"{di.DEV}/sdb"}, str(result))
+
+check("no password given -> chpasswd never runs", not any(c[0] == "chpasswd" for c in calls), str(calls))
+
+for bad, why in (("", "empty"), ("abc", "too short"), ("good\npass", "newline")):
+    check(f"validate_password rejects {why}", raises(di.validate_password, bad) is not None)
+check("validate_password accepts a normal password", raises(di.validate_password, "s3cret pass:x") is None)
+
+calls.clear(); stages.clear(); inputs.clear()
+result = di.run_install("sdb", hostname="h", on_stage=stages.append, password="hunter22")
+chp = [c for c in calls if c[0] == "chpasswd"]
+check("password given -> chpasswd runs once, SHA-512, chrooted into the target",
+      chp == [["chpasswd", "-c", "sha512", "-R", di.TARGET_ROOT]], str(chp))
+check("password goes to user and root via stdin",
+      inputs.get("chpasswd") == "user:hunter22\nroot:hunter22\n", repr(inputs.get("chpasswd")))
+check("password never appears in any argv", not any("hunter22" in a for c in calls for a in c))
+check("password is set after the clone (else the clone would overwrite shadow)",
+      calls.index(chp[0]) > max(i for i, c in enumerate(calls) if c[0] == "tar"), str(calls))
+check("password set inside the identity stage, before unmount", stages[-2:] == ["identity", "unmount"], str(stages))
+
+calls.clear(); stages.clear()
+check("bad password is rejected before the disk is touched",
+      raises(lambda: di.run_install("sdb", password="ab", on_stage=stages.append)) is not None
+      and stages == [] and not any(c[0] in ("wipefs", "parted") for c in calls), f"{stages} {calls}")
 
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)

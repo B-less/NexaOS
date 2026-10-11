@@ -106,6 +106,13 @@ try_mount_root() {
     return 1
 }
 
+# nexa.live is only on the live ISO/USB's own boot entries (build-iso.sh).
+# It skips the installed-disk search below entirely: on a real PC that search
+# would happily mount and boot any other Linux it found on the internal disk.
+LIVE=
+grep -qw nexa.live /proc/cmdline 2>/dev/null && LIVE=1
+
+if [ -z "$LIVE" ]; then
 echo "[INIT] Waiting for block device..."
 TIMEOUT=20
 COUNTER=0
@@ -158,27 +165,53 @@ for SYSDEV in /sys/block/vd* /sys/block/sd* /sys/block/hd* /sys/block/xvd* /sys/
     done
 done
 
-# Live-ISO fallback: no direct block-device root was found, which is normal
-# when booting from an optical drive (VirtualBox et al present the ISO as a
-# CD-ROM, not a disk with an ext4 filesystem on it). The ISO carries the same
-# nexa.img this script mounts directly on real disk boots, just embedded as a
-# plain file at its root -- loop-mount that file read-only and layer a tmpfs
-# on top via overlayfs so the session is normally writable but discards
-# changes on reboot, like any other live CD.
-echo "[INIT] No direct root device found; trying live-ISO (CD) boot..."
+fi  # end of installed-disk search (skipped for nexa.live)
+
+# Live boot: the ISO carries the same nexa.img this script mounts directly on
+# real disk boots, just embedded as a plain file at its root -- loop-mount it
+# read-only and layer a tmpfs on top via overlayfs so the session is normally
+# writable but discards changes on reboot, like any other live CD.
+#
+# The medium can be a CD/DVD (sr0, iso9660), a USB stick written by Rufus
+# in DD mode (the hybrid ISO's iso9660 on the whole disk, e.g. sdb) or in
+# ISO mode (files copied onto a FAT32/exFAT/NTFS partition, e.g. sdb1), so
+# every block device is checked. USB sticks can take several seconds to
+# show up after the kernel starts, hence the retry loop.
+if [ -n "$LIVE" ]; then
+    echo "[INIT] Live boot requested; looking for nexa.img..."
+else
+    echo "[INIT] No direct root device found; trying live boot..."
+fi
 mkdir -p /mnt/cdrom
-for CDDEV in sr0 sr1 scd0 hdc hdd; do
-    ensure_block_node "$CDDEV"
-    [ -b "/dev/$CDDEV" ] || continue
-    echo "[INIT] Trying CD-ROM /dev/$CDDEV..."
-    if mount -t iso9660 -o ro "/dev/$CDDEV" /mnt/cdrom 2>/dev/null; then
-        echo "[INIT] Mounted /dev/$CDDEV"
-        break
-    fi
+LIVE_DEV=
+LIVE_TRIES=0
+while [ -z "$LIVE_DEV" ] && [ "$LIVE_TRIES" -lt 30 ]; do
+    for SYSDEV in /sys/class/block/*; do
+        [ -e "$SYSDEV" ] || continue
+        DEV=$(basename "$SYSDEV")
+        case "$DEV" in
+            loop*|ram*|zram*) continue ;;
+        esac
+        ensure_block_node "$DEV"
+        [ -b "/dev/$DEV" ] || continue
+        for FS in iso9660 vfat exfat ntfs3; do
+            if mount -t "$FS" -o ro "/dev/$DEV" /mnt/cdrom 2>/dev/null; then
+                if [ -f /mnt/cdrom/nexa.img ]; then
+                    echo "[INIT] Found nexa.img on /dev/$DEV ($FS)"
+                    LIVE_DEV=$DEV
+                    break 2
+                fi
+                umount /mnt/cdrom 2>/dev/null || true
+            fi
+        done
+    done
+    [ -n "$LIVE_DEV" ] && break
+    LIVE_TRIES=$((LIVE_TRIES + 1))
+    sleep 1
 done
 
-if [ -f /mnt/cdrom/nexa.img ]; then
-    echo "[INIT] Found nexa.img on CD, setting up loop + overlay..."
+if [ -n "$LIVE_DEV" ] && [ -f /mnt/cdrom/nexa.img ]; then
+    echo "[INIT] Setting up loop + overlay..."
     mkdir -p /mnt/lower /mnt/live
     # noload: nexa.img's ext4 journal may be "dirty" (not cleanly unmounted --
     # a previous disk boot that was powered off rather than shut down leaves
@@ -195,7 +228,14 @@ if [ -f /mnt/cdrom/nexa.img ]; then
             /mnt/root 2>/dev/null; then
             echo "[INIT] Live overlay mounted"
             if [ -x /mnt/root/sbin/init ]; then
-                echo "[INIT] Found /sbin/init, executing switch_root (live CD)..."
+                # Keep the medium visible after switch_root at a fixed path
+                # so the OS installer can tell which disk it is and never
+                # offer to wipe the USB stick the session is running from
+                # (see diskinstall._live_medium_disk).
+                mkdir -p /mnt/root/mnt/nexa-live
+                mount -o move /mnt/cdrom /mnt/root/mnt/nexa-live 2>/dev/null \
+                    || echo "[INIT] WARN: could not move live medium mount"
+                echo "[INIT] Found /sbin/init, executing switch_root (live)..."
                 exec switch_root /mnt/root /sbin/init
             fi
             echo "[INIT] ERROR: /sbin/init not found in live overlay"

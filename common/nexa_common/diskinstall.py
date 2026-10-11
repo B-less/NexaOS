@@ -18,9 +18,18 @@ SYS = "/sys"
 DEV = "/dev"
 PROC_MOUNTS = "/proc/mounts"
 TARGET_ROOT = "/mnt/nexa-install"
+# Where the live initramfs leaves the ISO/USB medium mounted (see
+# build-initramfs.sh). In a live session "/" is an overlay, not a disk, so
+# this is the only way to know which disk the session is running from.
+LIVE_MEDIUM_MOUNT = "/mnt/nexa-live"
 BOOT_SRC = "/boot"  # the running system's own kernel/initramfs, see build-disk-image.sh
 
 MIN_DISK_BYTES = 6 * 1024**3  # headroom over the ~1GB rootfs for a real install
+MIN_PASSWORD_LEN = 4
+# The live image ships these with empty passwords; an install sets both to
+# the password chosen in the installer, so the installed disk never has a
+# passwordless login.
+PASSWORD_ACCOUNTS = ("user", "root")
 BIOS_GRUB_END_MIB = 2
 ESP_END_MIB = 322  # 320MiB ESP -- generous for holding more than one kernel later
 ESP_LABEL = "NEXABOOT"
@@ -45,8 +54,8 @@ def _read(path):
         return None
 
 
-def _sh(argv, timeout=60, check=True):
-    result = _run(argv, capture_output=True, text=True, timeout=timeout)
+def _sh(argv, timeout=60, check=True, input=None):
+    result = _run(argv, capture_output=True, text=True, timeout=timeout, input=input)
     if check and result.returncode != 0:
         raise InstallError(f"`{' '.join(argv)}` failed: {result.stderr.strip() or result.stdout.strip()}")
     return result
@@ -65,26 +74,36 @@ def _mounts():
     return entries
 
 
-def _boot_disk():
-    """The disk currently backing "/", so it can never be offered/wiped."""
-    root_source = next((src for src, mp in _mounts() if mp == "/"), None)
-    if not root_source or not root_source.startswith(f"{DEV}/"):
+def _disk_of(source):
+    if not source or not source.startswith(f"{DEV}/"):
         return None
-    kname = os.path.basename(root_source)
+    kname = os.path.basename(source)
     return re.sub(r"p?\d+$", "", kname) if re.match(r"^nvme\d+n\d+p\d+$", kname) else re.sub(r"\d+$", "", kname)
+
+
+def _boot_disks():
+    """The disks the running session depends on -- the one backing "/" and,
+    in a live session, the ISO/USB medium -- so they're never offered/wiped."""
+    disks = set()
+    for src, mp in _mounts():
+        if mp in ("/", LIVE_MEDIUM_MOUNT):
+            disk = _disk_of(src)
+            if disk:
+                disks.add(disk)
+    return disks
 
 
 def list_target_disks():
     """Real disks that are safe to offer as an install target: not the disk
     the live session booted from, not loop/optical/zram devices."""
     disks = []
-    boot_disk = _boot_disk()
+    boot_disks = _boot_disks()
     try:
         names = sorted(os.listdir(os.path.join(SYS, "class", "block")))
     except OSError:
         return disks
     for name in names:
-        if not _DISK_RE.match(name) or name == boot_disk:
+        if not _DISK_RE.match(name) or name in boot_disks:
             continue
         block_dir = os.path.realpath(os.path.join(SYS, "class", "block", name))
         if os.path.exists(os.path.join(block_dir, "partition")):
@@ -290,14 +309,38 @@ STAGES = (
 )
 
 
-def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_stage=None):
+def validate_password(password):
+    if not password:
+        raise InstallError("A password is required.")
+    if len(password) < MIN_PASSWORD_LEN:
+        raise InstallError(f"The password must be at least {MIN_PASSWORD_LEN} characters.")
+    # chpasswd reads one "name:password" per line, so a line break would
+    # split the entry.
+    if any(c in password for c in "\n\r\0"):
+        raise InstallError("The password can't contain line breaks.")
+
+
+def set_password(mountpoint, password):
+    validate_password(password)
+    # Fed on stdin, never argv, so the password doesn't show up in ps.
+    # -R makes chpasswd chroot into the installed system and edit its
+    # /etc/shadow (SHA-512 hashes), not the live session's.
+    lines = "".join(f"{account}:{password}\n" for account in PASSWORD_ACCOUNTS)
+    _sh(["chpasswd", "-c", "sha512", "-R", mountpoint], input=lines)
+
+
+def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_stage=None,
+                password=None):
     """Runs every step in order, always trying to unmount on failure so a
-    half-finished install doesn't leave the target disk's filesystems busy."""
+    half-finished install doesn't leave the target disk's filesystems busy.
+    password=None leaves the cloned accounts' passwords as they were."""
     def report(stage):
         if on_stage:
             on_stage(stage)
 
     validate_disk(disk_name)
+    if password is not None:
+        validate_password(password)  # before anything is wiped
     mountpoint = TARGET_ROOT
     try:
         report("partition")
@@ -315,6 +358,8 @@ def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_st
         install_bootloader(disk_name, mountpoint, esp_mount)
         report("identity")
         apply_identity(mountpoint, hostname, zone, keyboard_layout)
+        if password is not None:
+            set_password(mountpoint, password)
     finally:
         report("unmount")
         unmount_target(mountpoint)
