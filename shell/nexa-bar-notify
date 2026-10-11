@@ -1,0 +1,7 @@
+#!/bin/sh
+# Waybar's bell: crossed out while Do Not Disturb is on.
+if makoctl mode 2>/dev/null | grep -qx do-not-disturb; then
+    printf '{"text": "", "class": "dnd", "tooltip": "Do Not Disturb is on"}\n'
+else
+    printf '{"text": "", "class": "", "tooltip": "Notifications"}\n'
+fi

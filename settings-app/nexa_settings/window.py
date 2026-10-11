@@ -8,7 +8,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from . import privileged
-from nexa_common import sysconf
+from nexa_common import sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -29,12 +29,15 @@ window { background-image: none; background-color: #1e1e1e; }
 #status { color: #a6e3a1; font-size: 9pt; }
 #error { color: #f7768e; font-size: 9pt; }
 #wordmark { color: #ffffff; font-size: 22pt; font-weight: bold; }
+#themecard { background-image: none; background-color: #262626; border-radius: 14px; padding: 8px; border: 2px solid transparent; }
+#themecard:hover { background-color: #2f2f2f; }
+#themecard.chosen { border-color: #7aa2f7; }
 """
 
 WALLPAPER_PATH = "/usr/share/backgrounds/nexaos/wallpaper.png"
 WALLPAPER_GALLERY = "/usr/share/backgrounds/nexaos/gallery"
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
-PAGES = ("Appearance", "System", "Time & Keyboard", "Power", "Assistant", "About")
+PAGES = ("Personalization", "System", "Time & Keyboard", "Power", "Assistant", "About")
 
 
 class SettingsWindow(Gtk.Window):
@@ -70,7 +73,7 @@ class SettingsWindow(Gtk.Window):
         content.pack_start(self.stack, True, True, 0)
         root.pack_start(content, True, True, 0)
 
-        self.stack.add_named(self._build_appearance_page(), "Appearance")
+        self.stack.add_named(self._build_appearance_page(), "Personalization")
         self.stack.add_named(self._build_system_page(), "System")
         self.stack.add_named(self._build_time_page(), "Time & Keyboard")
         self.stack.add_named(self._build_power_page(), "Power")
@@ -82,7 +85,7 @@ class SettingsWindow(Gtk.Window):
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
-        self._on_nav(None, "Appearance")
+        self._on_nav(None, "Personalization")
 
     def _on_nav(self, _btn, name):
         self.stack.set_visible_child_name(name)
@@ -109,7 +112,73 @@ class SettingsWindow(Gtk.Window):
     # ---- Appearance ----
 
     def _build_appearance_page(self):
-        page = self._page("Appearance")
+        page = self._page("Personalization")
+
+        # Themes: each card previews the theme's background and accents.
+        page.pack_start(self._field_label("Theme"), False, False, 0)
+        saved = themes.load_settings()
+        self._theme_choice = saved["theme"]
+        css = []
+        cards = Gtk.FlowBox()
+        cards.set_selection_mode(Gtk.SelectionMode.NONE)
+        cards.set_max_children_per_line(5)
+        cards.set_column_spacing(10)
+        cards.set_row_spacing(10)
+        self._theme_buttons = {}
+        for key, t in themes.THEMES.items():
+            bg = "rgb(%d, %d, %d)" % t["bg"]
+            css.append(f"#swatch-{key} {{ background-color: {bg}; border-radius: 10px; }}")
+            css.append(f"#dot1-{key} {{ background-color: {t['accent']}; border-radius: 7px; }}")
+            css.append(f"#dot2-{key} {{ background-color: {t['accent2']}; border-radius: 7px; }}")
+            css.append(f"#dot3-{key} {{ background-color: {t['text']}; border-radius: 7px; }}")
+            btn = Gtk.Button()
+            btn.set_name("themecard")
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            swatch = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            swatch.set_name(f"swatch-{key}")
+            swatch.set_size_request(150, 70)
+            swatch.set_border_width(12)
+            for dot in ("dot1", "dot2", "dot3"):
+                d = Gtk.Box()
+                d.set_name(f"{dot}-{key}")
+                d.set_size_request(14, 14)
+                d.set_valign(Gtk.Align.END)
+                swatch.pack_start(d, False, False, 0)
+            box.pack_start(swatch, False, False, 0)
+            name = Gtk.Label(label=t["label"])
+            name.set_name("value")
+            box.pack_start(name, False, False, 0)
+            tag = Gtk.Label(label=t["tagline"])
+            tag.set_name("fieldlabel")
+            tag.set_line_wrap(True)
+            tag.set_max_width_chars(20)
+            box.pack_start(tag, False, False, 0)
+            btn.add(box)
+            btn.connect("clicked", lambda _b, k=key: self._pick_theme(k))
+            self._theme_buttons[key] = btn
+            cards.add(btn)
+        provider = Gtk.CssProvider()
+        provider.load_from_data("\n".join(css).encode())
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), provider,
+                                                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        page.pack_start(cards, False, False, 0)
+        self._mark_theme()
+
+        page.pack_start(self._field_label("Transparency of the bar, panels and terminal"), False, False, 0)
+        self._opacity = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,
+                                                 themes.MIN_OPACITY * 100, themes.MAX_OPACITY * 100, 1)
+        self._opacity.set_value(saved["opacity"] * 100)
+        self._opacity.set_draw_value(True)
+        self._opacity.set_value_pos(Gtk.PositionType.RIGHT)
+        self._opacity.connect("format-value", lambda _s, v: f"{int(round(100 - v))}% see-through")
+        page.pack_start(self._opacity, False, False, 0)
+
+        apply_btn = Gtk.Button(label="Apply Theme")
+        apply_btn.set_name("actionbtn")
+        apply_btn.set_halign(Gtk.Align.START)
+        apply_btn.connect("clicked", self._apply_theme)
+        page.pack_start(apply_btn, False, False, 0)
+
         page.pack_start(self._field_label("Desktop wallpaper"), False, False, 0)
 
         gallery = Gtk.FlowBox()
@@ -144,6 +213,24 @@ class SettingsWindow(Gtk.Window):
         self.appearance_status.set_xalign(0)
         page.pack_start(self.appearance_status, False, False, 0)
         return page
+
+    def _pick_theme(self, key):
+        self._theme_choice = key
+        self._mark_theme()
+
+    def _mark_theme(self):
+        for key, btn in self._theme_buttons.items():
+            ctx = btn.get_style_context()
+            (ctx.add_class if key == self._theme_choice else ctx.remove_class)("chosen")
+
+    def _apply_theme(self, _btn):
+        try:
+            applied = themes.apply(self._theme_choice, self._opacity.get_value() / 100)
+        except OSError as e:
+            self._set_label(self.appearance_status, f"Couldn't apply the theme: {e}", error=True)
+            return
+        label = themes.THEMES[applied["theme"]]["label"]
+        self._set_label(self.appearance_status, f"{label} theme applied.", error=False)
 
     def _gallery_images(self):
         try:

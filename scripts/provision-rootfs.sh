@@ -139,6 +139,7 @@ NEXAOS_BASE="$(pwd)" sh scripts/stage-network.sh "$ROOTFS_DIR"
 NEXAOS_BASE="$(pwd)" sh scripts/stage-power.sh "$ROOTFS_DIR"
 NEXAOS_BASE="$(pwd)" sh scripts/stage-automount.sh "$ROOTFS_DIR"
 NEXAOS_BASE="$(pwd)" sh scripts/stage-setup.sh "$ROOTFS_DIR"
+NEXAOS_BASE="$(pwd)" sh scripts/stage-shell.sh "$ROOTFS_DIR"
 
 # Re-run now that every stage-*.sh script (including stage-installer.sh,
 # which adds /usr/share/mime/packages/nexa-package.xml for the *.nexa MIME

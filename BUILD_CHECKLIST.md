@@ -6,7 +6,7 @@ Status as of 2026-10-11. Legend:
 - `[~]` partly done, or done but the result was never recorded — needs a re-check
 - `[ ]` not done
 
-**Progress: 50 of 89 done, 17 partial → ~66%** (partial counts as half)
+**Progress: 50 of 89 done, 19 partial → ~67%** (partial counts as half)
 
 ---
 
@@ -124,8 +124,8 @@ Status as of 2026-10-11. Legend:
 
 ## 15. Roadmap (user priorities, 2026-10-11)
 
-- [ ] New desktop: start menu, top bar redesign, Quick Settings, notification centre, themes
-- [ ] Personalization page in Settings with bold theme options
+- [~] New desktop (2026-10-11, needs rebuild + HP test): top bar redesign with Font Awesome icons; start menu (Super+D) with search, pinned apps, power; Control Centre (Super+N) with toggles, volume/brightness, battery, notifications, Do Not Disturb; 5 themes (Horizon, Nebula, Aurora, Eclipse, Daybreak) with transparency. Checked in a headless Sway container (screenshots), not on the HP yet
+- [~] Settings > Personalization: theme cards, transparency slider, wallpaper gallery + upload (needs HP test)
 - [ ] Alpine 3.19 → 3.24 upgrade (security fixes for the browser engine)
 - [ ] Private browsing mode over Tor (terminal command `nexadark`) and optional VPN
 - [ ] Signed updates from a GitHub repository (needs repo + signing key)

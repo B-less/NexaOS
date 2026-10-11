@@ -702,7 +702,7 @@ INITTAB_EOF
 # NexaOS Sway Configuration
 set $mod Mod4
 set $term foot
-set $menu wofi --show drun
+set $menu nexa-start
 set $assistant nexa-ai-gui
 set $files nexa-files
 set $browser nexa-browser
@@ -743,8 +743,9 @@ bindswitch --reload --locked lid:on exec nexa-lid
 exec pipewire
 exec pipewire-pulse
 exec wireplumber
-exec waybar
-exec mako
+# Render the saved theme (bar, notifications, terminal, borders) before the
+# bar and notification daemon read their config.
+exec sh -c 'nexa-theme apply --saved --no-reload >/dev/null 2>&1; swaymsg reload >/dev/null 2>&1; waybar & exec mako'
 exec nexa-desktop-icons
 exec nexa-idle
 exec nexa-battery-watch
@@ -752,6 +753,7 @@ exec nexa-battery-watch
 # Keybindings
 bindsym $mod+Return exec $term
 bindsym $mod+d exec $menu
+bindsym $mod+n exec nexa-control
 bindsym $mod+a exec $assistant
 bindsym $mod+e exec $files
 bindsym $mod+w exec $browser
@@ -838,10 +840,16 @@ SWAY_CONFIG_EOF
 {
     "layer": "top",
     "position": "top",
-    "height": 30,
-    "modules-left": ["sway/workspaces", "sway/mode", "sway/scratchpad"],
+    "height": 38,
+    "modules-left": ["custom/start", "sway/workspaces", "sway/mode", "sway/scratchpad"],
     "modules-center": ["clock"],
-    "modules-right": ["cpu", "memory", "network", "backlight", "pulseaudio", "battery", "custom/power"],
+    "modules-right": ["network", "backlight", "pulseaudio", "battery", "custom/notify", "custom/control"],
+
+    "custom/start": {
+        "format": "",
+        "tooltip-format": "Start (Super+D)",
+        "on-click": "nexa-start"
+    },
 
     "sway/workspaces": {
         "disable-scroll": true,
@@ -856,51 +864,56 @@ SWAY_CONFIG_EOF
     },
 
     "clock": {
-        "format": "{:%a %d %b  %H:%M}",
+        "format": "{:%a %d %b   %H:%M}",
         "tooltip-format": "{:%A %d %B %Y}",
-        "interval": 30
+        "interval": 30,
+        "on-click": "nexa-control"
+    },
+
+    "network": {
+        "format-wifi": "  {essid}",
+        "format-ethernet": "  Wired",
+        "format-disconnected": "  Offline",
+        "tooltip-format-wifi": "{essid} · {signalStrength}%",
+        "on-click": "nexa-network"
+    },
+
+    "backlight": {
+        "format": "  {percent}%",
+        "on-scroll-up": "brightnessctl set 5%+",
+        "on-scroll-down": "brightnessctl set 5%-",
+        "on-click": "nexa-control"
+    },
+
+    "pulseaudio": {
+        "format": "{icon}  {volume}%",
+        "format-muted": "  Muted",
+        "format-icons": {"default": ["", ""]},
+        "on-click": "nexa-control",
+        "on-click-right": "nexa-volume"
     },
 
     "battery": {
         "states": {"warning": 25, "critical": 10},
-        "format": "Battery: {capacity}%",
-        "format-charging": "Charging: {capacity}%",
-        "format-plugged": "Plugged in: {capacity}%",
-        "tooltip-format": "{timeTo}"
+        "format": "{icon}  {capacity}%",
+        "format-charging": "  {capacity}%",
+        "format-plugged": "  {capacity}%",
+        "format-icons": ["", "", "", "", ""],
+        "tooltip-format": "{timeTo}",
+        "on-click": "nexa-control"
     },
 
-    "backlight": {
-        "format": "Brightness: {percent}%",
-        "on-scroll-up": "brightnessctl set 5%+",
-        "on-scroll-down": "brightnessctl set 5%-"
-    },
-    
-    "cpu": {
-        "interval": 2,
-        "format": "CPU: {usage}%"
-    },
-    
-    "memory": {
-        "interval": 5,
-        "format": "Memory: {}%"
-    },
-    
-    "network": {
-        "format-wifi": "WiFi: {essid} ({signalStrength}%)",
-        "on-click": "nexa-network",
-        "format-ethernet": "Ethernet",
-        "format-disconnected": "Offline"
-    },
-    
-    "custom/power": {
-        "format": "Power",
-        "tooltip": false,
-        "on-click": "nexa-power"
+    "custom/notify": {
+        "exec": "nexa-bar-notify",
+        "return-type": "json",
+        "interval": 3,
+        "on-click": "nexa-control"
     },
 
-    "pulseaudio": {
-        "on-click": "nexa-volume",
-        "format": "Volume: {volume}%"
+    "custom/control": {
+        "format": "",
+        "tooltip-format": "Control Centre (Super+N)",
+        "on-click": "nexa-control"
     }
 }
 WAYBAR_CONFIG_EOF

@@ -1,0 +1,91 @@
+"""Run with: python3 common/tests/test_shell.py
+
+Themes engine, app search, and the Control Centre's parsers."""
+import json, os, sys, tempfile
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "shell"))
+from nexa_common import desktopapps, themes
+from nexa_shell import sysinfo
+
+failures = []
+def check(label, cond, detail=""):
+    print(("PASS " if cond else "FAIL ") + label + (f"  [{detail}]" if detail and not cond else ""))
+    if not cond: failures.append(label)
+
+# ---- themes
+home = tempfile.mkdtemp()
+check("defaults with no saved settings", themes.load_settings(home) == {"theme": "horizon", "opacity": themes.DEFAULT_OPACITY})
+applied = themes.apply("nebula", 0.5, home=home, reload=False)
+check("apply returns what it applied", applied == {"theme": "nebula", "opacity": 0.5}, str(applied))
+for rel in ("waybar/style.css", "mako/config", "foot/foot.ini", "sway/config.d/20-nexa-theme.conf", "nexa/theme.json"):
+    check(f"apply writes ~/.config/{rel}", os.path.isfile(os.path.join(home, ".config", rel)))
+css = open(os.path.join(home, ".config/waybar/style.css")).read()
+check("bar uses the theme accent and transparency",
+      themes.THEMES["nebula"]["accent"] in css and "rgba(22, 10, 36, 0.50)" in css, css[:200])
+check("settings persist", themes.load_settings(home) == {"theme": "nebula", "opacity": 0.5})
+themes.apply(None, None, home=home, reload=False)
+check("apply --saved reuses the saved theme", themes.load_settings(home)["theme"] == "nebula")
+themes.apply("not-a-theme", 7, home=home, reload=False)
+s = themes.load_settings(home)
+check("unknown theme keeps the current one; opacity is clamped", s == {"theme": "nebula", "opacity": themes.MAX_OPACITY}, str(s))
+check("foot gets 8 regular colours and alpha", open(os.path.join(home, ".config/foot/foot.ini")).read().count("regular") == 8)
+check("mako has a do-not-disturb mode", "[mode=do-not-disturb]" in open(os.path.join(home, ".config/mako/config")).read())
+for key, t in themes.THEMES.items():
+    for fn in (lambda: themes.waybar_css(t, .7), lambda: themes.mako_config(t, .7), lambda: themes.foot_ini(t, .7),
+               lambda: themes.sway_conf(t), lambda: themes.panel_css(t, .7)):
+        try: fn(); ok = True
+        except Exception as e: ok = False
+        if not ok: break
+    check(f"theme '{key}' renders every target", ok)
+    check(f"theme '{key}' has 8 terminal colours", len(t["term"]) == 8)
+open(themes.settings_path(home), "w").write("{broken")
+check("a corrupt settings file falls back to defaults", themes.load_settings(home)["theme"] == "horizon")
+
+# ---- desktop apps
+d = tempfile.mkdtemp()
+def entry(fname, body): open(os.path.join(d, fname), "w").write("[Desktop Entry]\n" + body)
+entry("files.desktop", "Type=Application\nName=Files\nExec=/usr/local/bin/nexa-files %U\nComment=Browse your files\nKeywords=folder;explorer;\n")
+entry("browser.desktop", "Type=Application\nName=Nexa Browser\nExec=nexa-browser %u\nComment=Browse the web\n")
+entry("hidden.desktop", "Type=Application\nName=Secret\nExec=x\nNoDisplay=true\n")
+entry("server.desktop", "Type=Application\nName=Foot Server\nExec=foot --server\n")
+entry("link.desktop", "Type=Link\nName=A link\nURL=https://example.com\n")
+apps = desktopapps.load_apps([d])
+check("lists only launchable, visible apps", [a["name"] for a in apps] == ["Files", "Nexa Browser"], str([a["name"] for a in apps]))
+check("search by name prefix ranks first", [a["name"] for a in desktopapps.search(apps, "nex")][:1] == ["Nexa Browser"])
+check("search by keyword", [a["name"] for a in desktopapps.search(apps, "explorer")] == ["Files"])
+check("search matches descriptions too", {a["name"] for a in desktopapps.search(apps, "browse")} == {"Files", "Nexa Browser"})
+check("no match -> empty", desktopapps.search(apps, "zzz") == [])
+check("empty query -> everything", len(desktopapps.search(apps, "  ")) == 2)
+check("field codes are dropped from the command", desktopapps.command("/usr/local/bin/nexa-files %U") == ["/usr/local/bin/nexa-files"])
+
+# ---- Control Centre parsers
+check("volume", sysinfo.parse_volume("Volume: 0.40") == (40, False))
+check("muted volume", sysinfo.parse_volume("Volume: 0.75 [MUTED]") == (75, True))
+check("no audio -> None", sysinfo.parse_volume("") is None)
+check("brightness from brightnessctl -m", sysinfo.parse_brightness("intel_backlight,backlight,12000,50%,24000") == 50)
+check("LEDs are not the screen", sysinfo.parse_brightness("input3::capslock,leds,0,0%,1") is None)
+hist = json.dumps({"type": "aa{sv}", "data": [[
+    {"app-name": {"type": "s", "data": "Network"}, "summary": {"type": "s", "data": "Connected"},
+     "body": {"type": "s", "data": "HomeWiFi"}, "id": {"type": "u", "data": 3}},
+    {"app-name": {"type": "s", "data": "Battery"}, "summary": {"type": "s", "data": "Low"},
+     "body": {"type": "s", "data": ""}, "id": {"type": "u", "data": 7}},
+]]})
+items = sysinfo.parse_mako_history(hist)
+check("notification history, newest first", [n["id"] for n in items] == [7, 3] and items[1]["body"] == "HomeWiFi", str(items))
+check("cleared notifications stay hidden", [n["id"] for n in sysinfo.parse_mako_history(hist, cleared_up_to=3)] == [7])
+showing = json.dumps({"type": "aa{sv}", "data": [[
+    {"app-name": {"type": "s", "data": "Mail"}, "summary": {"type": "s", "data": "New message"},
+     "body": {"type": "s", "data": ""}, "id": {"type": "u", "data": 9}},
+    {"app-name": {"type": "s", "data": "Battery"}, "summary": {"type": "s", "data": "Low"},
+     "body": {"type": "s", "data": ""}, "id": {"type": "u", "data": 7}}]]})
+both = sysinfo.notifications(showing, hist)
+check("showing + past notifications, merged without duplicates", [n["id"] for n in both] == [9, 7, 3], str(both))
+check("bad history JSON -> empty", sysinfo.parse_mako_history("not json") == [])
+check("do-not-disturb detection", sysinfo.dnd_on("default\ndo-not-disturb\n") and not sysinfo.dnd_on("default\n"))
+bat = tempfile.mkdtemp(); os.makedirs(os.path.join(bat, "BAT0"))
+open(os.path.join(bat, "BAT0/capacity"), "w").write("64\n"); open(os.path.join(bat, "BAT0/status"), "w").write("Discharging\n")
+check("battery", sysinfo.battery(bat) == (64, "Discharging"))
+check("no battery on a desktop", sysinfo.battery(tempfile.mkdtemp()) is None)
+
+print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)
