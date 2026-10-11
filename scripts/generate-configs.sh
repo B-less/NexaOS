@@ -538,7 +538,71 @@ ZRAM_EOF
     chmod +x "$MNT_DIR/etc/init.d/zram"
     ln -sf /etc/init.d/zram "$MNT_DIR/etc/runlevels/default/zram"
 
-    echo "[*] Enabling syslog, sshd, crond..."
+    echo "[*] Firewall and kernel hardening..."
+    # Firewall: nothing gets in unless it answers a connection this machine
+    # started. Outgoing traffic is unrestricted.
+    cat > "$MNT_DIR/etc/nftables.nft" << 'NFT_EOF'
+#!/usr/sbin/nft -f
+flush ruleset
+
+table inet filter {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        ct state established,related accept
+        ct state invalid drop
+        iif lo accept
+        # IPv6 needs neighbour discovery to work at all.
+        ip6 nexthdr icmpv6 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert, packet-too-big, destination-unreachable, time-exceeded } accept
+        ip protocol icmp icmp type { destination-unreachable, time-exceeded } accept
+        # DHCP replies to this machine's own requests.
+        udp sport 67 udp dport 68 accept
+        udp sport 547 udp dport 546 accept
+    }
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+}
+NFT_EOF
+    chmod 600 "$MNT_DIR/etc/nftables.nft"
+    if [ -x "$MNT_DIR/etc/init.d/nftables" ]; then
+        mkdir -p "$MNT_DIR/etc/conf.d"
+        echo 'rules_file="/etc/nftables.nft"' > "$MNT_DIR/etc/conf.d/nftables"
+        ln -sf /etc/init.d/nftables "$MNT_DIR/etc/runlevels/default/nftables"
+    fi
+
+    # Kernel hardening, applied at boot by the sysctl service.
+    mkdir -p "$MNT_DIR/etc/sysctl.d"
+    cat > "$MNT_DIR/etc/sysctl.d/90-nexa-hardening.conf" << 'SYSCTL_EOF'
+# Hide kernel addresses and the kernel log from unprivileged users.
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
+kernel.unprivileged_bpf_disabled = 1
+kernel.kexec_load_disabled = 1
+# Safer handling of links and files in shared directories like /tmp.
+fs.protected_symlinks = 1
+fs.protected_hardlinks = 1
+fs.protected_fifos = 2
+fs.protected_regular = 2
+fs.suid_dumpable = 0
+# Network: drop spoofed and redirected traffic, resist SYN floods.
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv4.tcp_syncookies = 1
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+SYSCTL_EOF
+    mkdir -p "$MNT_DIR/etc/runlevels/boot"
+    [ -x "$MNT_DIR/etc/init.d/sysctl" ] && ln -sf /etc/init.d/sysctl "$MNT_DIR/etc/runlevels/boot/sysctl"
+
+    echo "[*] Enabling syslog and crond (sshd stays off)..."
     # All three are already installed (openssh/busybox-extras from
     # ALPINE_PACKAGES_CORE/UTILS) but --no-scripts skips the apk triggers
     # that would normally enable them, so without this they sit unused.
@@ -546,7 +610,9 @@ ZRAM_EOF
     # generate_host_keys()), uniquely per machine -- never baked in at build
     # time, which would make every NexaOS image share the same keys.
     [ -x "$MNT_DIR/etc/init.d/syslog" ] && ln -sf /etc/init.d/syslog "$MNT_DIR/etc/runlevels/default/syslog"
-    [ -x "$MNT_DIR/etc/init.d/sshd" ] && ln -sf /etc/init.d/sshd "$MNT_DIR/etc/runlevels/default/sshd"
+    # sshd is installed but NOT started by default: a desktop shouldn't accept
+    # remote password logins out of the box. Enable with: rc-update add sshd
+    rm -f "$MNT_DIR/etc/runlevels/default/sshd"
     [ -x "$MNT_DIR/etc/init.d/crond" ] && ln -sf /etc/init.d/crond "$MNT_DIR/etc/runlevels/default/crond"
     # /etc/acpi/PWRF/00000080 (from the acpid package defaults) already runs
     # `poweroff` on a power-button event -- this just starts the daemon that
@@ -662,6 +728,17 @@ for_window [app_id=".*"] floating enable
 # Output configuration
 output * bg /usr/share/backgrounds/nexaos/wallpaper.png fill
 
+# Laptop touchpads: tap to click, natural scrolling, ignore while typing.
+input type:touchpad {
+    tap enabled
+    natural_scroll enabled
+    dwt enabled
+    middle_emulation enabled
+}
+
+# Closing the lid locks the screen and suspends (see nexa-lid).
+bindswitch --reload --locked lid:on exec nexa-lid
+
 # Startup applications
 exec pipewire
 exec pipewire-pulse
@@ -670,6 +747,7 @@ exec waybar
 exec mako
 exec nexa-desktop-icons
 exec nexa-idle
+exec nexa-battery-watch
 
 # Keybindings
 bindsym $mod+Return exec $term
@@ -689,6 +767,8 @@ bindsym Shift+Print exec nexa-screenshot --select
 bindsym XF86AudioRaiseVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
 bindsym XF86AudioLowerVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
 bindsym XF86AudioMute exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+bindsym --locked XF86MonBrightnessUp exec brightnessctl set 5%+
+bindsym --locked XF86MonBrightnessDown exec brightnessctl set 5%-
 
 # Lock screen (see /usr/local/bin/nexa-lock)
 bindsym $mod+Shift+l exec nexa-lock
@@ -761,7 +841,7 @@ SWAY_CONFIG_EOF
     "height": 30,
     "modules-left": ["sway/workspaces", "sway/mode", "sway/scratchpad"],
     "modules-center": ["clock"],
-    "modules-right": ["cpu", "memory", "network", "pulseaudio", "custom/power"],
+    "modules-right": ["cpu", "memory", "network", "backlight", "pulseaudio", "battery", "custom/power"],
 
     "sway/workspaces": {
         "disable-scroll": true,
@@ -776,8 +856,23 @@ SWAY_CONFIG_EOF
     },
 
     "clock": {
-        "format": "{:%Y-%m-%d %H:%M:%S}",
-        "interval": 1
+        "format": "{:%a %d %b  %H:%M}",
+        "tooltip-format": "{:%A %d %B %Y}",
+        "interval": 30
+    },
+
+    "battery": {
+        "states": {"warning": 25, "critical": 10},
+        "format": "Battery: {capacity}%",
+        "format-charging": "Charging: {capacity}%",
+        "format-plugged": "Plugged in: {capacity}%",
+        "tooltip-format": "{timeTo}"
+    },
+
+    "backlight": {
+        "format": "Brightness: {percent}%",
+        "on-scroll-up": "brightnessctl set 5%+",
+        "on-scroll-down": "brightnessctl set 5%-"
     },
     
     "cpu": {

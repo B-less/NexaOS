@@ -5,7 +5,7 @@ import sys
 
 # Runs as root via `doas /usr/local/bin/nexa-power-helper` (see /etc/doas.conf).
 # Reads one {"action": ...} request from stdin and only ever restarts or powers
-# off the machine -- same allowlist shape as the other helpers.
+# off or suspends the machine -- same allowlist shape as the other helpers.
 
 
 def _reboot():
@@ -20,7 +20,15 @@ def _poweroff():
     return "powering off"
 
 
-ACTIONS = {"reboot": _reboot, "poweroff": _poweroff}
+def _suspend():
+    # Writing "mem" blocks until the machine wakes up again.
+    os.sync()
+    with open("/sys/power/state", "w") as f:
+        f.write("mem")
+    return "resumed"
+
+
+ACTIONS = {"reboot": _reboot, "poweroff": _poweroff, "suspend": _suspend}
 
 
 def main():

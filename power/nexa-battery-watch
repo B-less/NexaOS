@@ -1,0 +1,21 @@
+#!/bin/sh
+# Warns once at 15% and once at 5% while discharging (re-arms after charging).
+warned=100
+while :; do
+    for bat in /sys/class/power_supply/BAT*; do
+        [ -r "$bat/capacity" ] || continue
+        cap=$(cat "$bat/capacity")
+        status=$(cat "$bat/status" 2>/dev/null)
+        if [ "$status" != "Discharging" ]; then
+            warned=100
+        elif [ "$cap" -le 5 ] && [ "$warned" -gt 5 ]; then
+            notify-send -u critical "Battery critically low ($cap%)" "Plug in now or save your work."
+            warned=5
+        elif [ "$cap" -le 15 ] && [ "$warned" -gt 15 ]; then
+            notify-send -u normal "Battery low ($cap%)" "Consider plugging in."
+            warned=15
+        fi
+        break
+    done
+    sleep 60
+done

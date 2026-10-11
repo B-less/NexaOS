@@ -64,6 +64,11 @@ chroot "$ROOTFS_DIR" /usr/bin/glib-compile-schemas /usr/share/glib-2.0/schemas 2
 
 echo "[*] writing identity and base config (post-install, so apk cannot clobber it)"
 echo "nexa" > "$ROOTFS_DIR/etc/hostname"
+# A time zone must exist: without /etc/localtime, waybar's clock module can't
+# resolve local time and hides itself (the bar's centre was empty). UTC by
+# default; the installer and Settings change it.
+ln -sf /usr/share/zoneinfo/UTC "$ROOTFS_DIR/etc/localtime"
+echo "UTC" > "$ROOTFS_DIR/etc/timezone"
 printf 'nameserver %s\nnameserver %s\n' "$DNS_PRIMARY" "$DNS_SECONDARY" > "$ROOTFS_DIR/etc/resolv.conf"
 printf 'proc /proc proc defaults 0 0\nsysfs /sys sysfs defaults 0 0\ndevtmpfs /dev devtmpfs defaults 0 0\ntmpfs /tmp tmpfs defaults,nodev,nosuid,noexec,relatime,size=1G 0 0\ntmpfs /run tmpfs defaults,nodev,nosuid,noexec,relatime,size=1G 0 0\n' > "$ROOTFS_DIR/etc/fstab"
 mkdir -p "$ROOTFS_DIR/etc/profile.d" "$ROOTFS_DIR/root" "$ROOTFS_DIR/home/user"

@@ -25,8 +25,10 @@ printf '%s\n' \
     > "$rootfs/usr/local/bin/nexa-power-helper"
 chmod +x "$rootfs/usr/local/bin/nexa-power-helper"
 
-cp "$base/power/nexa-idle" "$rootfs/usr/local/bin/nexa-idle"
-chmod +x "$rootfs/usr/local/bin/nexa-idle"
+for script in nexa-idle nexa-lid nexa-battery-watch; do
+    cp "$base/power/$script" "$rootfs/usr/local/bin/$script"
+    chmod +x "$rootfs/usr/local/bin/$script"
+done
 
 if [ ! -f "$rootfs/etc/doas.conf" ]; then
     : > "$rootfs/etc/doas.conf"

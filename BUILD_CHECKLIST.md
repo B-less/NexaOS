@@ -6,7 +6,7 @@ Status as of 2026-10-11. Legend:
 - `[~]` partly done, or done but the result was never recorded — needs a re-check
 - `[ ]` not done
 
-**Progress: 50 of 75 done, 10 partial → ~73%** (partial counts as half)
+**Progress: 50 of 89 done, 17 partial → ~66%** (partial counts as half)
 
 ---
 
@@ -95,8 +95,9 @@ Status as of 2026-10-11. Legend:
 - [x] `.nexa` packages can't overwrite or delete what they didn't install (root helpers, system code, system commands), can't leak files through `icon`, can't inject desktop-entry lines (2026-10-11, `common/tests/test_package_helper.py`)
 - [x] `make test` runs the real host test suites (it only printed "passed" before)
 - [ ] doas helpers are all `nopass`; once accounts have passwords, root-equivalent ones (package installs) should ask for it
-- [ ] sshd runs by default with password login on every install; make it opt-in
-- [ ] No firewall (`CONFIG_NETFILTER` off)
+- [~] sshd off by default (opt-in with `rc-update add sshd`) — needs rebuild
+- [~] Firewall: nftables, incoming blocked except replies; kernel netfilter enabled — needs kernel + image rebuild
+- [~] Kernel hardening sysctls (kptr/dmesg restrict, link protections, no redirects, syncookies) — needs rebuild
 - [ ] Desktop auto-logs in as `user` on boot, so the password only guards SSH/console/lock screen
 - [ ] Alpine 3.19 is end-of-life (Nov 2025): no security updates; move to 3.24
 - [ ] Package server URL is QEMU-only (`PKG_SERVER_URL=http://10.0.2.2:8080`, plain HTTP)
@@ -113,6 +114,25 @@ Status as of 2026-10-11. Legend:
 ## 12. Apps
 
 - [ ] Nexa AI: default model `claude-sonnet-5` is a generation old (current: `claude-opus-5-5` / `claude-sonnet-5-5`), and `max_tokens=1024` truncates replies now that thinking is on by default
+
+## 14. Laptop basics (batch 1, 2026-10-11) — code done, needs rebuild + HP test
+
+- [~] Clock in the top bar (was hidden: no /etc/localtime; now UTC default)
+- [~] Battery + brightness in the top bar; low-battery warnings at 15% / 5%
+- [~] Brightness keys (brightnessctl), touchpad tap-to-click + natural scroll
+- [~] Lid close locks and suspends
+
+## 15. Roadmap (user priorities, 2026-10-11)
+
+- [ ] New desktop: start menu, top bar redesign, Quick Settings, notification centre, themes
+- [ ] Personalization page in Settings with bold theme options
+- [ ] Alpine 3.19 → 3.24 upgrade (security fixes for the browser engine)
+- [ ] Private browsing mode over Tor (terminal command `nexadark`) and optional VPN
+- [ ] Signed updates from a GitHub repository (needs repo + signing key)
+- [ ] Remember Wi-Fi networks and browser history across reboots on installed systems
+- [ ] Browser download manager with live download speed
+- [ ] System monitor app with its own name and keyboard shortcut (like Ctrl+Shift+Esc)
+- [ ] Further hardening (AppArmor, signed boot, sandboxing)
 
 ## 13. Real hardware & release
 
