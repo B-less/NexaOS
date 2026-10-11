@@ -6,7 +6,7 @@ Status as of 2026-10-11. Legend:
 - `[~]` partly done, or done but the result was never recorded — needs a re-check
 - `[ ]` not done
 
-**Progress: 47 of 75 done, 12 partial → ~71%** (partial counts as half)
+**Progress: 50 of 75 done, 10 partial → ~73%** (partial counts as half)
 
 ---
 
@@ -60,7 +60,7 @@ Status as of 2026-10-11. Legend:
 - [x] WiFi backend over iwd D-Bus, no root needed (`common/nexa_common/wifi.py`, mock-iwd tests)
 - [x] Network settings app
 - [x] `wifi-probe` service re-probes devices once firmware is available
-- [~] WiFi on real hardware: HP EliteBook 840 G6 (Intel AC 9560) driver + firmware load fine; hwsim fake radios shadowed it (fixed: `mac80211_hwsim.radios=0` + real-adapter preference, needs ISO rebuild and a connect test)
+- [x] WiFi on real hardware: HP EliteBook 840 G6 (Intel AC 9560) connects via the Network app (2026-10-11, after the hwsim fix)
 
 ## 7. Packages & software
 
@@ -73,9 +73,9 @@ Status as of 2026-10-11. Legend:
 
 - [x] `scripts/build-iso.sh` (isolinux + xorriso)
 - [x] `dist/NexaOS-3.1.0.iso` built (2.1 GB, BIOS boot)
-- [~] Hybrid ISO with UEFI GRUB + `nexa.live` USB search (2026-10-11). Test ISO with a stub nexa.img boots: BIOS CD, BIOS USB, UEFI USB (Rufus DD), UEFI FAT32 USB (Rufus ISO mode), UEFI SATA CD. Needs `make iso` with the real image
+- [x] Hybrid ISO with UEFI GRUB + `nexa.live` USB search (2026-10-11). Test ISO with a stub nexa.img boots: BIOS CD, BIOS USB, UEFI USB (Rufus DD), UEFI FAT32 USB (Rufus ISO mode), UEFI SATA CD. Needs `make iso` with the real image
 - [ ] Rebuild the ISO — it (09-26) is older than `nexa.img` and `initramfs` (09-27)
-- [ ] Flash with Rufus and boot a real PC (Secure Boot off: GRUB is unsigned)
+- [x] Flash with Rufus and boot a real PC (Secure Boot off: GRUB is unsigned) — HP EliteBook 840 G6
 - [x] Installer never offers the live USB stick as a target (`/mnt/nexa-live`, unit-tested)
 
 ## 9. OS installer (`installer-os/nexa_setup`)
