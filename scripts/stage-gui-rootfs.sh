@@ -70,9 +70,18 @@ printf '%s\n' \
 ln -sfn . "$rootfs/disk"
 
 mkdir -p "$rootfs/usr/share/backgrounds/nexaos"
-if [ -f "$base/assets/wallpaper.png" ]; then
-    cp "$base/assets/wallpaper.png" "$rootfs/usr/share/backgrounds/nexaos/wallpaper.png"
-fi
+# Gallery of built-in wallpapers (Settings lists these); the first one that
+# exists becomes the default desktop wallpaper.
+mkdir -p "$rootfs/usr/share/backgrounds/nexaos/gallery"
+for img in "$base"/assets/wallpapers/*.png; do
+    [ -f "$img" ] && cp "$img" "$rootfs/usr/share/backgrounds/nexaos/gallery/"
+done
+for default in "$base/assets/wallpapers/nexa-horizon.png" "$base/assets/wallpaper.png"; do
+    if [ -f "$default" ]; then
+        cp "$default" "$rootfs/usr/share/backgrounds/nexaos/wallpaper.png"
+        break
+    fi
+done
 # Owned by "user" (numeric id: this build container's own /etc/passwd has no
 # "user" entry) so Settings can drop in a new wallpaper without a privileged
 # helper — it's a personal preference, not a security-sensitive file.

@@ -5,7 +5,7 @@ import subprocess
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from . import privileged
 from nexa_common import sysconf
@@ -32,6 +32,7 @@ window { background-image: none; background-color: #1e1e1e; }
 """
 
 WALLPAPER_PATH = "/usr/share/backgrounds/nexaos/wallpaper.png"
+WALLPAPER_GALLERY = "/usr/share/backgrounds/nexaos/gallery"
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
 PAGES = ("Appearance", "System", "Time & Keyboard", "Power", "Assistant", "About")
 
@@ -111,12 +112,29 @@ class SettingsWindow(Gtk.Window):
         page = self._page("Appearance")
         page.pack_start(self._field_label("Desktop wallpaper"), False, False, 0)
 
+        gallery = Gtk.FlowBox()
+        gallery.set_selection_mode(Gtk.SelectionMode.NONE)
+        gallery.set_max_children_per_line(4)
+        gallery.set_column_spacing(10)
+        gallery.set_row_spacing(10)
+        for path in self._gallery_images():
+            try:
+                thumb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 192, 108, False)
+            except GLib.Error:
+                continue
+            btn = Gtk.Button()
+            btn.set_image(Gtk.Image.new_from_pixbuf(thumb))
+            btn.set_tooltip_text(os.path.splitext(os.path.basename(path))[0].replace("-", " ").title())
+            btn.connect("clicked", lambda _b, p=path: self._apply_wallpaper(p))
+            gallery.add(btn)
+        page.pack_start(gallery, False, False, 0)
+
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.wallpaper_path_label = Gtk.Label(label=WALLPAPER_PATH)
         self.wallpaper_path_label.set_name("value")
         self.wallpaper_path_label.set_xalign(0)
         row.pack_start(self.wallpaper_path_label, True, True, 0)
-        choose_btn = Gtk.Button(label="Choose Image...")
+        choose_btn = Gtk.Button(label="Upload Your Own...")
         choose_btn.set_name("actionbtn")
         choose_btn.connect("clicked", self._on_choose_wallpaper)
         row.pack_start(choose_btn, False, False, 0)
@@ -126,6 +144,14 @@ class SettingsWindow(Gtk.Window):
         self.appearance_status.set_xalign(0)
         page.pack_start(self.appearance_status, False, False, 0)
         return page
+
+    def _gallery_images(self):
+        try:
+            names = sorted(os.listdir(WALLPAPER_GALLERY))
+        except OSError:
+            return []
+        return [os.path.join(WALLPAPER_GALLERY, n) for n in names
+                if n.lower().endswith((".png", ".jpg", ".jpeg"))]
 
     def _on_choose_wallpaper(self, _btn):
         dialog = Gtk.FileChooserDialog(
