@@ -27,9 +27,10 @@ cp "$DIST_DIR/initramfs.cpio.gz" "$ROOTFS_DIR/boot/initramfs.cpio.gz"
 # /usr/bin, /usr/local/bin (home of the passwordless doas helpers) and so on,
 # i.e. a free path to root. Everything outside user's home belongs to root;
 # other service ids (messagebus, seatd...) are left alone. The two deliberate
-# exceptions are restored right after.
+# exceptions are restored right after. (-user/-group, not -uid/-gid: this
+# runs under BusyBox find in the build container.)
 find "$ROOTFS_DIR" -xdev -path "$ROOTFS_DIR/home/user" -prune -o \
-    \( -uid 1000 -o -gid 1000 \) -exec chown -h 0:0 {} +
+    \( -user 1000 -o -group 1000 \) -exec chown -h 0:0 {} +
 chown -R 1000:1000 "$ROOTFS_DIR/home/user"
 # Settings drops a new wallpaper in here without a privileged helper.
 [ -d "$ROOTFS_DIR/usr/share/backgrounds/nexaos" ] && chown -R 1000:1000 "$ROOTFS_DIR/usr/share/backgrounds/nexaos"
