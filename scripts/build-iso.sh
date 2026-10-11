@@ -65,13 +65,37 @@ CFG_EOF
 touch "$STAGE/boot/nexa-live.id"
 mkdir -p "$STAGE/boot/grub" "$STAGE/EFI/BOOT"
 cat > "$STAGE/boot/grub/grub.cfg" << 'CFG_EOF'
-set timeout=5
+set timeout=30
 set default=0
 insmod all_video
+set color_normal=white/blue
+set color_highlight=black/light-gray
+set menu_color_normal=white/blue
+set menu_color_highlight=black/light-gray
 
 menuentry "NexaOS (live)" {
     linux /boot/vmlinuz nexa.live console=tty0 console=ttyS0
     initrd /boot/initramfs.cpio.gz
+}
+# Skips the i915/amdgpu drivers and stays on the firmware framebuffer.
+menuentry "NexaOS (live, safe graphics)" {
+    linux /boot/vmlinuz nexa.live nomodeset console=ttyS0 console=tty0
+    initrd /boot/initramfs.cpio.gz
+}
+# Kernel messages on screen from the first instant (EFI framebuffer
+# earlycon), nothing filtered, and a panic stays on screen.
+menuentry "NexaOS (live, debug: show all boot messages)" {
+    echo "Loading kernel..."
+    linux /boot/vmlinuz nexa.live earlycon=efifb keep_bootcon ignore_loglevel panic=0 console=ttyS0 console=tty0
+    echo "Loading initramfs..."
+    initrd /boot/initramfs.cpio.gz
+    echo "Starting kernel..."
+}
+menuentry "UEFI firmware settings" {
+    fwsetup
+}
+menuentry "Reboot" {
+    reboot
 }
 CFG_EOF
 cat > "$STAGE/embedded.cfg" << 'CFG_EOF'
@@ -95,7 +119,7 @@ CFG_EOF
 grub-mkstandalone -O x86_64-efi -o "$STAGE/EFI/BOOT/BOOTX64.EFI" \
     --install-modules="normal linux echo test regexp search search_fs_file \
         configfile iso9660 fat exfat ntfs part_gpt part_msdos all_video \
-        efi_gop efi_uga video_bochs video_cirrus gzio ls" \
+        efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup" \
     --modules="part_gpt part_msdos iso9660 fat" \
     --locales="" --fonts="" --themes="" \
     "boot/grub/grub.cfg=$STAGE/embedded.cfg"
