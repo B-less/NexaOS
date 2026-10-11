@@ -1,0 +1,14 @@
+#!/bin/sh
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+[ -b /dev/sda ] || mknod /dev/sda b 8 0
+mkdir -p /mnt/root
+echo "Mounting root filesystem..."
+if mount -t ext4 /dev/sda /mnt/root; then
+    echo "Switching root..."
+    exec switch_root /mnt/root /sbin/init
+else
+    echo "ERROR: Failed to mount /dev/sda"
+    exec /bin/sh
+fi

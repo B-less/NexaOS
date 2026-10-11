@@ -1,0 +1,32 @@
+#!/bin/sh
+
+clear
+echo "╔═══════════════════════════════════════╗"
+echo "║        NEXA OS - ABOUT                ║"
+echo "╚═══════════════════════════════════════╝"
+echo
+echo "Project: Nexa Operating System"
+echo "Version: Development Build v1.0"
+echo "Build Date: $(date '+%Y-%m-%d')"
+echo
+echo "Description:"
+echo "  Nexa OS is a custom Linux-based operating system"
+echo "  with a lightweight rootfs and essential utilities."
+echo
+echo "Kernel Information:"
+uname -sr | sed 's/^/  /'
+echo
+echo "System Features:"
+echo "  • Lightweight kernel (Linux 6.18.33)"
+echo "  • Custom rootfs with essential apps"
+echo "  • Calculator - Advanced arithmetic operations"
+echo "  • System Monitor - Real-time system information"
+echo "  • File Manager - Basic file operations"
+echo "  • Help System - Built-in documentation"
+echo
+echo "Author: Nexa Development Team"
+echo "License: Open Source"
+echo
+echo "─────────────────────────────────────────"
+echo "For more information, run the help command"
+echo "─────────────────────────────────────────"

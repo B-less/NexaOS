@@ -1,0 +1,100 @@
+# NexaOS .gitignore
+
+# Build artifacts
+build/
+dist/
+*.o
+*.a
+*.so
+*.ko
+*.mod.c
+
+# Binaries
+/init_bin
+/httpd_bin
+/monitor_bin
+/ping_bin
+/nettest_bin
+/gui/nexa-desktop
+/gui/nexa-fbdesktop
+/lvgl_build/nexa_gui
+
+# Images & disks
+*.img
+*.img.bak*
+*.iso
+nexa.img.before-*
+
+# Mount points
+mnt/
+iso_mnt/
+
+# Logs
+*.log
+build/build.log
+logs/
+
+# Cache
+.build_cache/
+.ccache/
+.cache/
+*.cache
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-workspace
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+.python-version
+
+# Container
+.docker/
+.podman/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+/test/output/
+
+# OS files
+Thumbs.db
+.Thumbs.db
+
+# Generated trees / build outputs (rebuilt by build scripts)
+/kernel/linux-*/
+/rootfs/
+/init_build/
+/iso_build/
+/iso_tmp/
+/initramfs.cpio.gz
+/nettest
+/lvgl_build/lvgl/
+/lvgl_build/lv_drivers/
+/lvgl_build/linux_hdrs/
+*.mod
+*.mod.o
+*.cmd
+Module.symvers
+modules.order
+/gui/build_apps/
+/disk/apps/desktop-gui/fbdesktop

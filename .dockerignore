@@ -1,0 +1,27 @@
+# Docker Build Ignores
+.git
+.github
+.gitignore
+*.md
+*.log
+build/
+dist/
+mnt/
+.build_cache
+.ccache
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+nexa.img
+nexa.img.bak*
+*.ko
+*.o
+.vagrant
+/test/
+/docs/
+coverage/
+.env
+.env.local

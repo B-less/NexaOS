@@ -1,0 +1,183 @@
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
+
+from nexa_common.titlebar import attach_titlebar
+from . import packaging
+
+CSS = b"""
+window { background-image: none; background-color: #1e1e1e; }
+#namelabel { color: #ffffff; font-size: 18pt; font-weight: bold; }
+#metalabel { color: #9a9a9a; font-size: 10pt; }
+#desclabel { color: #d4d4d4; font-size: 11pt; }
+#installbtn { background-image: none; background-color: #7aa2f7; color: #1e1e1e; border-radius: 6px; padding: 10px 24px; font-weight: bold; font-size: 12pt; }
+#installbtn:hover { background-image: none; background-color: #92b6ff; }
+#installbtn:disabled { background-image: none; background-color: #3a3a3a; color: #5a5a5a; }
+#statuslabel { color: #a6e3a1; font-size: 10pt; }
+#errorlabel { color: #f7768e; font-size: 10pt; }
+"""
+
+
+def _call_helper(action, **args):
+    request = json.dumps({"action": action, "args": args})
+    try:
+        result = subprocess.run(
+            ["doas", "/usr/local/bin/nexa-install-helper"],
+            input=request, capture_output=True, text=True, timeout=60,
+        )
+    except (subprocess.SubprocessError, OSError) as e:
+        return False, str(e)
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False, (result.stderr or "").strip() or "helper produced no output"
+    if response.get("ok"):
+        return True, response.get("output", "")
+    return False, response.get("error", "unknown error")
+
+
+class InstallerWindow(Gtk.Window):
+    def __init__(self, nexa_path):
+        super().__init__(title="Nexa Installer")
+        self.set_icon_name("nexa-installer")
+        attach_titlebar(self, "Nexa Installer")
+        self.set_default_size(440, 360)
+        self.set_resizable(False)
+
+        self.nexa_path = nexa_path
+        self.manifest = None
+        self._icon_tmp = None
+
+        self._build_ui()
+        self._load()
+
+    def _build_ui(self):
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        root.set_border_width(24)
+        self.add(root)
+
+        self.icon_image = Gtk.Image()
+        self.icon_image.set_pixel_size(96)
+        root.pack_start(self.icon_image, False, False, 0)
+
+        self.name_label = Gtk.Label(label="")
+        self.name_label.set_name("namelabel")
+        root.pack_start(self.name_label, False, False, 0)
+
+        self.meta_label = Gtk.Label(label="")
+        self.meta_label.set_name("metalabel")
+        root.pack_start(self.meta_label, False, False, 0)
+
+        self.desc_label = Gtk.Label(label="")
+        self.desc_label.set_name("desclabel")
+        self.desc_label.set_line_wrap(True)
+        self.desc_label.set_justify(Gtk.Justification.CENTER)
+        root.pack_start(self.desc_label, False, False, 0)
+
+        self.install_btn = Gtk.Button(label="Install")
+        self.install_btn.set_name("installbtn")
+        self.install_btn.set_sensitive(False)
+        self.install_btn.connect("clicked", self._on_install)
+        root.pack_start(self.install_btn, False, False, 8)
+
+        self.status_label = Gtk.Label(label="")
+        root.pack_start(self.status_label, False, False, 0)
+
+        provider = Gtk.CssProvider()
+        provider.load_from_data(CSS)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+        )
+
+    def _load(self):
+        try:
+            self.manifest = packaging.read_manifest(self.nexa_path)
+        except packaging.PackageError as e:
+            self._set_status(str(e), error=True)
+            return
+
+        self.name_label.set_text(self.manifest["name"])
+        self.meta_label.set_text(f"{self.manifest['id']}  ·  v{self.manifest['version']}")
+        self.desc_label.set_text(self.manifest.get("description", ""))
+        self.install_btn.set_sensitive(True)
+
+        fd, tmp_path = tempfile.mkstemp(prefix="nexa-install-icon-")
+        os.close(fd)
+        self._icon_tmp = tmp_path
+        if packaging.extract_icon(self.nexa_path, self.manifest, tmp_path):
+            try:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(tmp_path, 96, 96, True)
+                self.icon_image.set_from_pixbuf(pixbuf)
+            except GLib.Error:
+                self.icon_image.set_from_icon_name("package-x-generic", Gtk.IconSize.DIALOG)
+        else:
+            self.icon_image.set_from_icon_name("package-x-generic", Gtk.IconSize.DIALOG)
+
+    def _on_install(self, _btn):
+        if not self._confirm(
+            f"Install {self.manifest['name']}?",
+            "This copies files into /usr/local/bin and /usr/local/lib as root.",
+        ):
+            return
+        self.install_btn.set_sensitive(False)
+        self._set_status("Installing…")
+
+        def work():
+            ok, output = _call_helper("install", path=os.path.abspath(self.nexa_path))
+            GLib.idle_add(self._on_install_done, ok, output)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_install_done(self, ok, output):
+        if ok:
+            self._set_status(output)
+        else:
+            self._set_status(output, error=True)
+            self.install_btn.set_sensitive(True)
+        return False
+
+    def _set_status(self, text, error=False):
+        self.status_label.set_name("errorlabel" if error else "statuslabel")
+        self.status_label.set_text(text)
+
+    def _confirm(self, text, secondary):
+        dialog = Gtk.MessageDialog(
+            transient_for=self, flags=0, message_type=Gtk.MessageType.OTHER,
+            buttons=Gtk.ButtonsType.YES_NO, text=text,
+        )
+        dialog.format_secondary_text(secondary)
+        response = dialog.run()
+        dialog.destroy()
+        return response == Gtk.ResponseType.YES
+
+    def cleanup(self):
+        if self._icon_tmp and os.path.exists(self._icon_tmp):
+            try:
+                os.unlink(self._icon_tmp)
+            except OSError:
+                pass
+
+
+def main():
+    Gtk.init()
+    if len(sys.argv) < 2:
+        dialog = Gtk.MessageDialog(
+            flags=0, message_type=Gtk.MessageType.INFO, buttons=Gtk.ButtonsType.OK,
+            text="Nexa Installer",
+        )
+        dialog.format_secondary_text("Open a .nexa package file to install it.")
+        dialog.run()
+        dialog.destroy()
+        return
+    win = InstallerWindow(sys.argv[1])
+    win.connect("destroy", lambda *_a: win.cleanup())
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()

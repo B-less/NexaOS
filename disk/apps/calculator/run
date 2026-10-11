@@ -1,0 +1,103 @@
+#!/bin/sh
+
+clear
+echo "╔════════════════════════════════╗"
+echo "║   NEXA OS CALCULATOR v2.0     ║"
+echo "╚════════════════════════════════╝"
+echo
+
+show_menu() {
+    echo "Operations:"
+    echo "  1) Addition       (+)"
+    echo "  2) Subtraction    (-)"
+    echo "  3) Multiplication (*)"
+    echo "  4) Division       (/)"
+    echo "  5) Modulo         (%)"
+    echo "  6) Power          (^)"
+    echo "  0) Exit"
+    echo
+}
+
+while true; do
+    show_menu
+    echo -n "Select operation (0-6): "
+    read choice
+    
+    case $choice in
+        0)
+            echo "Goodbye!"
+            exit 0
+            ;;
+        1|2|3|4|5|6)
+            echo -n "Enter first number: "
+            read num1
+            echo -n "Enter second number: "
+            read num2
+            
+            # Validate input
+            if ! echo "$num1" | grep -qE '^-?[0-9]+$'; then
+                echo "ERROR: Invalid first number"
+                echo
+                continue
+            fi
+            if ! echo "$num2" | grep -qE '^-?[0-9]+$'; then
+                echo "ERROR: Invalid second number"
+                echo
+                continue
+            fi
+            
+            result=""
+            op_symbol=""
+            
+            case $choice in
+                1)
+                    result=$((num1 + num2))
+                    op_symbol="+"
+                    ;;
+                2)
+                    result=$((num1 - num2))
+                    op_symbol="-"
+                    ;;
+                3)
+                    result=$((num1 * num2))
+                    op_symbol="*"
+                    ;;
+                4)
+                    if [ $num2 -eq 0 ]; then
+                        echo "ERROR: Division by zero!"
+                        echo
+                        continue
+                    fi
+                    result=$((num1 / num2))
+                    op_symbol="/"
+                    ;;
+                5)
+                    if [ $num2 -eq 0 ]; then
+                        echo "ERROR: Modulo by zero!"
+                        echo
+                        continue
+                    fi
+                    result=$((num1 % num2))
+                    op_symbol="%"
+                    ;;
+                6)
+                    result=1
+                    for i in $(seq 1 $num2); do
+                        result=$((result * num1))
+                    done
+                    op_symbol="^"
+                    ;;
+            esac
+            
+            echo
+            echo "─────────────────────────────"
+            echo "  $num1 $op_symbol $num2 = $result"
+            echo "─────────────────────────────"
+            echo
+            ;;
+        *)
+            echo "Invalid choice! Please select 0-6"
+            echo
+            ;;
+    esac
+done

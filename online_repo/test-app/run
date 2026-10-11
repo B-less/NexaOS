@@ -1,0 +1,11 @@
+#!/bin/sh
+
+echo "========================================"
+echo "          NEXA NETWORK TEST             "
+echo "========================================"
+echo "If you are reading this, your Network   "
+echo "Package Manager is working perfectly!   "
+echo
+echo "This app was downloaded dynamically over"
+echo "the network from your host machine.     "
+echo "========================================"

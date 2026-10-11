@@ -1,0 +1,29 @@
+#!/bin/sh
+# Auto-lock and screen-off through swayidle. The timeouts (in minutes, 0 =
+# never) come from the Settings app's ~/.config/nexa/idle.conf.
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/nexa/idle.conf"
+lock=5
+blank=10
+
+# Digits only, leading zeros stripped (POSIX arithmetic would read "08" as a
+# bad octal number).
+read_minutes() {
+    v=$(sed -n "s/^$1=\([0-9]\{1,4\}\)\$/\1/p" "$CONF" 2>/dev/null | head -n 1 | sed 's/^0*\([0-9]\)/\1/')
+    [ -n "$v" ] && echo "$v"
+}
+
+if [ -f "$CONF" ]; then
+    v=$(read_minutes lock_minutes) && lock=$v
+    v=$(read_minutes blank_minutes) && blank=$v
+fi
+
+set --
+if [ "$lock" -gt 0 ]; then
+    set -- "$@" timeout $((lock * 60)) nexa-lock
+fi
+if [ "$blank" -gt 0 ]; then
+    set -- "$@" timeout $((blank * 60)) 'swaymsg "output * power off"' resume 'swaymsg "output * power on"'
+fi
+
+[ "$#" -gt 0 ] || exit 0
+exec swayidle -w "$@"

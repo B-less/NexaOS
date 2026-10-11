@@ -1,0 +1,37 @@
+#!/bin/sh
+
+APP_DIR="/disk/apps/desktop-gui"
+
+if [ ! -d /sys/class/graphics/fb0 ]; then
+    echo "No framebuffer driver is active."
+    echo "Shutdown Nexa, then boot with:"
+    echo "  ./boot.sh gui"
+    echo
+    echo "After boot, run:"
+    echo "  gui"
+    exit 1
+fi
+
+if [ ! -e /dev/fb0 ]; then
+    fbdev="$(cat /sys/class/graphics/fb0/dev 2>/dev/null)"
+    major="${fbdev%:*}"
+    minor="${fbdev#*:}"
+
+    if [ -n "$major" ] && [ -n "$minor" ] && [ "$major" != "$minor" ]; then
+        mkdir -p /dev
+        mknod /dev/fb0 c "$major" "$minor" 2>/dev/null
+    fi
+fi
+
+if [ ! -x "$APP_DIR/fbdesktop" ]; then
+    echo "Framebuffer desktop binary not found."
+    exit 1
+fi
+
+if [ ! -e /dev/fb0 ]; then
+    echo "Framebuffer registered, but /dev/fb0 is missing."
+    echo "Try rebooting with ./boot.sh gui."
+    exit 1
+fi
+
+"$APP_DIR/fbdesktop"

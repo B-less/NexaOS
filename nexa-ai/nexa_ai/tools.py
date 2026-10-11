@@ -1,0 +1,932 @@
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import time
+
+from nexa_common import apkops, audioctl
+
+READ = "read"
+CONTROL = "control"
+# Unprivileged but effectful actions: file writes under the user's own home
+# directory, launching apps, sending notifications. Never routed through
+# doas/root (see run_tool below) -- same trust level as the user doing it
+# themselves at a shell -- but still gated by require_confirmation/
+# ALWAYS_CONFIRM in agent.py, same as CONTROL.
+ACTION = "action"
+
+_ALLOWED_GOVERNORS = {"performance", "powersave", "ondemand", "conservative", "schedutil", "userspace"}
+_NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
+_FIELD_CODE_RE = re.compile(r"%[fFuUick]")
+HOME_DIR = "/home/user"
+APPS_DIR = "/usr/share/applications"
+
+
+class ToolError(Exception):
+    pass
+
+
+def _run(argv, timeout=10):
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise ToolError(f"{argv[0]}: not installed")
+    except subprocess.TimeoutExpired:
+        raise ToolError(f"{argv[0]}: timed out")
+    if p.returncode != 0 and not p.stdout:
+        raise ToolError(p.stderr.strip() or f"{argv[0]} exited {p.returncode}")
+    return p.stdout
+
+
+def _read_file(path, max_bytes=65536):
+    with open(path, "r", errors="replace") as f:
+        return f.read(max_bytes)
+
+
+def get_cpu_info(_args):
+    text = _read_file("/proc/cpuinfo")
+    entries = [e for e in text.split("\n\n") if e.strip()]
+    model, mhz = None, None
+    for line in entries[0].splitlines() if entries else []:
+        if line.startswith("model name"):
+            model = line.split(":", 1)[1].strip()
+        if line.startswith("cpu MHz"):
+            mhz = line.split(":", 1)[1].strip()
+    return {"model": model, "mhz": mhz, "logical_cpus": len(entries)}
+
+
+def get_mem_info(_args):
+    text = _read_file("/proc/meminfo")
+    out = {}
+    for line in text.splitlines():
+        if line.startswith(("MemTotal", "MemFree", "MemAvailable", "SwapTotal", "SwapFree")):
+            key, val = line.split(":", 1)
+            out[key.strip()] = val.strip()
+    return out
+
+
+def get_uptime_load(_args):
+    uptime_s = float(_read_file("/proc/uptime").split()[0])
+    load1, load5, load15 = _read_file("/proc/loadavg").split()[:3]
+    return {
+        "uptime_hours": round(uptime_s / 3600, 2),
+        "load_1m": load1, "load_5m": load5, "load_15m": load15,
+    }
+
+
+def get_temperatures(_args):
+    out = []
+    for base, pattern, unit_div in (
+        ("/sys/class/thermal", "thermal_zone", 1000.0),
+        ("/sys/class/hwmon", "hwmon", 1000.0),
+    ):
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            if not name.startswith(pattern):
+                continue
+            zdir = os.path.join(base, name)
+            if pattern == "thermal_zone":
+                try:
+                    raw = _read_file(os.path.join(zdir, "temp")).strip()
+                    label = _read_file(os.path.join(zdir, "type")).strip()
+                    out.append({"sensor": label, "celsius": round(float(raw) / unit_div, 1)})
+                except (OSError, ValueError):
+                    continue
+            else:
+                for f in sorted(os.listdir(zdir)):
+                    if re.match(r"^temp\d+_input$", f):
+                        try:
+                            raw = _read_file(os.path.join(zdir, f)).strip()
+                            label_path = os.path.join(zdir, f.replace("_input", "_label"))
+                            label = _read_file(label_path).strip() if os.path.exists(label_path) else f
+                            out.append({"sensor": label, "celsius": round(float(raw) / unit_div, 1)})
+                        except (OSError, ValueError):
+                            continue
+    if not out:
+        return {"note": "no thermal sensors exposed by the kernel on this machine/VM"}
+    return out
+
+
+def list_pci_devices(_args):
+    return _run(["lspci"]).strip().splitlines()
+
+
+def list_usb_devices(_args):
+    return _run(["lsusb"]).strip().splitlines()
+
+
+def list_block_devices(_args):
+    devices = []
+    if not os.path.isdir("/sys/block"):
+        return devices
+    for name in sorted(os.listdir("/sys/block")):
+        if name.startswith(("loop", "ram")):
+            continue
+        try:
+            sectors = int(_read_file(f"/sys/block/{name}/size").strip())
+            removable = _read_file(f"/sys/block/{name}/removable").strip() == "1"
+            devices.append({
+                "device": f"/dev/{name}",
+                "size_gb": round(sectors * 512 / 1e9, 2),
+                "removable": removable,
+            })
+        except (OSError, ValueError):
+            continue
+    return devices
+
+
+def get_disk_usage(args):
+    path = args.get("path", "/")
+    st = os.statvfs(path)
+    total = st.f_frsize * st.f_blocks
+    free = st.f_frsize * st.f_bavail
+    return {
+        "path": path,
+        "total_gb": round(total / 1e9, 2),
+        "free_gb": round(free / 1e9, 2),
+        "used_pct": round(100 * (1 - free / total), 1) if total else None,
+    }
+
+
+def list_kernel_modules(_args):
+    text = _read_file("/proc/modules")
+    return [line.split()[0] for line in text.splitlines() if line.strip()]
+
+
+def read_sysfs_path(args):
+    path = args.get("path", "")
+    if not (path.startswith("/proc/") or path.startswith("/sys/")) or ".." in path:
+        raise ToolError("path must be an absolute /proc or /sys path with no '..'")
+    if not os.path.isfile(path):
+        raise ToolError(f"not a readable file: {path}")
+    return _read_file(path, max_bytes=4096).strip()
+
+
+def tail_log(args):
+    lines = int(args.get("lines", 50))
+    lines = max(1, min(lines, 500))
+    return _run(["dmesg"]).strip().splitlines()[-lines:]
+
+
+def set_cpu_governor(args):
+    gov = args.get("governor", "")
+    if gov not in _ALLOWED_GOVERNORS:
+        raise ToolError(f"governor must be one of {sorted(_ALLOWED_GOVERNORS)}")
+    written = 0
+    for entry in sorted(os.listdir("/sys/devices/system/cpu")):
+        path = f"/sys/devices/system/cpu/{entry}/cpufreq/scaling_governor"
+        if re.match(r"^cpu\d+$", entry) and os.path.exists(path):
+            with open(path, "w") as f:
+                f.write(gov)
+            written += 1
+    if written == 0:
+        raise ToolError("no cpufreq scaling_governor files found (cpufreq not available in this VM/kernel)")
+    return {"governor": gov, "cpus_updated": written}
+
+
+def list_services(_args):
+    return _run(["rc-status", "--all"]).strip().splitlines()
+
+
+def _validate_service(name):
+    if not _NAME_RE.match(name):
+        raise ToolError("invalid service name")
+    if not os.path.exists(f"/etc/init.d/{name}"):
+        raise ToolError(f"no such service: {name}")
+
+
+def restart_service(args):
+    name = args.get("name", "")
+    _validate_service(name)
+    return _run(["rc-service", name, "restart"], timeout=30).strip()
+
+
+def start_service(args):
+    name = args.get("name", "")
+    _validate_service(name)
+    return _run(["rc-service", name, "start"], timeout=30).strip()
+
+
+def stop_service(args):
+    name = args.get("name", "")
+    _validate_service(name)
+    return _run(["rc-service", name, "stop"], timeout=30).strip()
+
+
+def load_module(args):
+    name = args.get("name", "")
+    if not _NAME_RE.match(name):
+        raise ToolError("invalid module name")
+    return _run(["modprobe", name], timeout=20).strip() or f"loaded {name}"
+
+
+def unload_module(args):
+    name = args.get("name", "")
+    if not _NAME_RE.match(name):
+        raise ToolError("invalid module name")
+    return _run(["modprobe", "-r", name], timeout=20).strip() or f"unloaded {name}"
+
+
+def set_hostname(args):
+    name = args.get("name", "")
+    if not _NAME_RE.match(name):
+        raise ToolError("invalid hostname")
+    with open("/etc/hostname", "w") as f:
+        f.write(name + "\n")
+    _run(["hostname", name])
+    return {"hostname": name}
+
+
+def reboot_system(_args):
+    subprocess.Popen(["reboot"])
+    return "reboot initiated"
+
+
+def poweroff_system(_args):
+    subprocess.Popen(["poweroff"])
+    return "poweroff initiated"
+
+
+def _safe_home_path(path, must_exist=False):
+    """Resolves `path` and refuses it unless it lands inside HOME_DIR, using
+    realpath (not string prefix on the raw input) so a symlink under
+    /home/user that points outside it can't be used to escape."""
+    if not path:
+        raise ToolError("path is required")
+    if not path.startswith("/"):
+        path = os.path.join(HOME_DIR, path)
+    real = os.path.realpath(path)
+    real_home = os.path.realpath(HOME_DIR)
+    if real != real_home and not real.startswith(real_home + os.sep):
+        raise ToolError("path must be inside /home/user")
+    if must_exist and not os.path.exists(real):
+        raise ToolError(f"no such file or directory: {path}")
+    return real
+
+
+def list_dir(args):
+    path = _safe_home_path(args.get("path", "."), must_exist=True)
+    if not os.path.isdir(path):
+        raise ToolError(f"not a directory: {path}")
+    entries = []
+    with os.scandir(path) as it:
+        for e in it:
+            try:
+                st = e.stat(follow_symlinks=False)
+                entries.append({
+                    "name": e.name,
+                    "type": "dir" if e.is_dir(follow_symlinks=False) else "file",
+                    "size": st.st_size,
+                })
+            except OSError:
+                continue
+    entries.sort(key=lambda e: e["name"])
+    return entries[:500]
+
+
+def read_text_file(args):
+    path = _safe_home_path(args.get("path", ""), must_exist=True)
+    if not os.path.isfile(path):
+        raise ToolError(f"not a file: {path}")
+    return _read_file(path)
+
+
+def write_text_file(args):
+    path = _safe_home_path(args.get("path", ""))
+    content = args.get("content", "")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(content)
+    return {"wrote": path, "bytes": len(content)}
+
+
+def search_files(args):
+    query = args.get("query", "").lower()
+    if not query:
+        raise ToolError("query is required")
+    root = _safe_home_path(args.get("root", "."), must_exist=True)
+    matches = []
+    scanned = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in filenames:
+            scanned += 1
+            if scanned > 20000:
+                break
+            if query in name.lower():
+                matches.append(os.path.join(dirpath, name))
+                if len(matches) >= 200:
+                    return matches
+        if scanned > 20000:
+            break
+    return matches
+
+
+def move_file(args):
+    src = _safe_home_path(args.get("src", ""), must_exist=True)
+    dest = _safe_home_path(args.get("dest", ""))
+    shutil.move(src, dest)
+    return {"moved": src, "to": dest}
+
+
+def copy_file(args):
+    src = _safe_home_path(args.get("src", ""), must_exist=True)
+    dest = _safe_home_path(args.get("dest", ""))
+    if os.path.isdir(src):
+        shutil.copytree(src, dest)
+    else:
+        shutil.copy2(src, dest)
+    return {"copied": src, "to": dest}
+
+
+def delete_file(args):
+    path = _safe_home_path(args.get("path", ""), must_exist=True)
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    else:
+        os.remove(path)
+    return {"deleted": path}
+
+
+def create_dir(args):
+    path = _safe_home_path(args.get("path", ""))
+    os.makedirs(path, exist_ok=True)
+    return {"created": path}
+
+
+def _parse_desktop_file(path):
+    fields = {}
+    try:
+        with open(path, "r", errors="replace") as f:
+            in_entry = False
+            for line in f:
+                line = line.rstrip("\n")
+                if line.strip() == "[Desktop Entry]":
+                    in_entry = True
+                    continue
+                if line.startswith("["):
+                    if in_entry:
+                        break
+                    continue
+                if in_entry and "=" in line:
+                    k, v = line.split("=", 1)
+                    fields[k.strip()] = v.strip()
+    except OSError:
+        return None
+    return fields
+
+
+def list_installed_apps(_args):
+    apps = []
+    if not os.path.isdir(APPS_DIR):
+        return apps
+    for name in sorted(os.listdir(APPS_DIR)):
+        if not name.endswith(".desktop"):
+            continue
+        fields = _parse_desktop_file(os.path.join(APPS_DIR, name))
+        if not fields or fields.get("NoDisplay", "").lower() == "true":
+            continue
+        if fields.get("Type", "Application") != "Application":
+            continue
+        apps.append({
+            "id": name[: -len(".desktop")],
+            "name": fields.get("Name", name),
+            "comment": fields.get("Comment", ""),
+            "categories": fields.get("Categories", ""),
+        })
+    return apps
+
+
+def launch_app(args):
+    app_id = args.get("id", "")
+    if not _NAME_RE.match(app_id):
+        raise ToolError("invalid app id")
+    fields = _parse_desktop_file(os.path.join(APPS_DIR, app_id + ".desktop"))
+    if not fields or "Exec" not in fields:
+        raise ToolError(f"no such app: {app_id}")
+    exec_line = _FIELD_CODE_RE.sub("", fields["Exec"]).strip()
+    try:
+        argv = shlex.split(exec_line)
+    except ValueError as e:
+        raise ToolError(f"malformed Exec line: {e}")
+    if not argv:
+        raise ToolError("empty Exec line")
+    try:
+        subprocess.Popen(argv, start_new_session=True)
+    except OSError as e:
+        raise ToolError(str(e))
+    return {"launched": fields.get("Name", app_id)}
+
+
+def send_notification(args):
+    title = str(args.get("title", "NexaOS Assistant"))[:200]
+    body = str(args.get("body", ""))[:1000]
+    try:
+        subprocess.run(["notify-send", title, body], timeout=5)
+    except FileNotFoundError:
+        raise ToolError("notify-send is not installed")
+    return "notification sent"
+
+
+# apkops (shared with the Software Center app, see common/nexa_common/apkops.py)
+# already validates package names and raises ApkError -- these just translate
+# that into ToolError so the agent loop's error handling stays uniform.
+
+
+def search_packages(args):
+    query = args.get("query", "")
+    if not query:
+        raise ToolError("query is required")
+    try:
+        return apkops.search(query)
+    except apkops.ApkError as e:
+        raise ToolError(str(e))
+
+
+def list_installed_packages(_args):
+    try:
+        return sorted(apkops.list_installed())
+    except apkops.ApkError as e:
+        raise ToolError(str(e))
+
+
+def install_package(args):
+    name = args.get("name", "")
+    try:
+        output = apkops.install_package(name)
+    except apkops.ApkError as e:
+        raise ToolError(str(e))
+    return output.strip() or f"installed {name}"
+
+
+def remove_package(args):
+    name = args.get("name", "")
+    try:
+        output = apkops.remove_package(name)
+    except apkops.ApkError as e:
+        raise ToolError(str(e))
+    return output.strip() or f"removed {name}"
+
+
+# Window tools talk to the caller's own Sway session over its IPC socket
+# (SWAYSOCK, inherited from the environment nexa-ai-gui/-cli was launched in)
+# -- unprivileged, same as launch_app, never routed through doas.
+
+
+def list_open_windows(_args):
+    tree = json.loads(_run(["swaymsg", "-t", "get_tree"]))
+    windows = []
+
+    def walk(node):
+        app_id = node.get("app_id") or (node.get("window_properties") or {}).get("class")
+        if app_id:
+            windows.append({
+                "id": node.get("id"), "app_id": app_id,
+                "name": node.get("name"), "focused": bool(node.get("focused")),
+            })
+        for child in node.get("nodes", []) + node.get("floating_nodes", []):
+            walk(child)
+
+    walk(tree)
+    return windows
+
+
+def _swaymsg_command(criteria_command):
+    raw = _run(["swaymsg", "-t", "command", criteria_command])
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        raise ToolError("unexpected response from swaymsg")
+    if isinstance(parsed, list) and parsed and not parsed[0].get("success", True):
+        raise ToolError(parsed[0].get("error", "sway command failed"))
+    return parsed
+
+
+def focus_window(args):
+    win_id = args.get("id")
+    if not isinstance(win_id, int) or isinstance(win_id, bool):
+        raise ToolError("id must be an integer window id from list_open_windows")
+    _swaymsg_command(f"[con_id={win_id}] focus")
+    return {"focused": win_id}
+
+
+def close_window(args):
+    win_id = args.get("id")
+    if not isinstance(win_id, int) or isinstance(win_id, bool):
+        raise ToolError("id must be an integer window id from list_open_windows")
+    _swaymsg_command(f"[con_id={win_id}] kill")
+    return {"closed": win_id}
+
+
+def get_volume(_args):
+    try:
+        return audioctl.get_volume()
+    except audioctl.AudioError as e:
+        raise ToolError(str(e))
+
+
+def set_volume(args):
+    percent = args.get("percent")
+    if not isinstance(percent, (int, float)) or isinstance(percent, bool):
+        raise ToolError("percent is required (0-100)")
+    try:
+        return audioctl.set_volume(percent)
+    except audioctl.AudioError as e:
+        raise ToolError(str(e))
+
+
+def set_mute(args):
+    muted = args.get("muted")
+    if not isinstance(muted, bool):
+        raise ToolError("muted must be true or false")
+    try:
+        return audioctl.set_mute(muted)
+    except audioctl.AudioError as e:
+        raise ToolError(str(e))
+
+
+# WiFi goes through iwd's D-Bus API (nexa_common.wifi), imported lazily so a
+# missing GObject install can't take down every other tool at import time.
+# Passwords are deliberately NOT accepted here: anything passed as a tool
+# argument ends up in the conversation and the action log, so a first-time
+# password has to be entered in the Network app instead.
+
+
+def _wifi():
+    from nexa_common import wifi
+    return wifi
+
+
+def _wifi_call(fn, *args, **kwargs):
+    wifi = _wifi()
+    try:
+        return fn(wifi, *args, **kwargs)
+    except wifi.PassphraseRequired:
+        raise ToolError(
+            "This network needs a password the first time. Ask the user to connect once "
+            "from the Network app - passwords are not accepted through the assistant."
+        )
+    except wifi.WifiError as e:
+        raise ToolError(str(e))
+
+
+def get_wifi_status(_args):
+    return _wifi_call(lambda w: w.status())
+
+
+def list_wifi_networks(_args):
+    nets = _wifi_call(lambda w: w.list_networks(do_scan=True))
+    return [{k: n[k] for k in ("ssid", "security", "signal", "connected", "known")} for n in nets]
+
+
+def connect_wifi(args):
+    return _wifi_call(lambda w: w.connect(args.get("ssid", "")))
+
+
+def disconnect_wifi(_args):
+    return _wifi_call(lambda w: w.disconnect())
+
+
+def forget_wifi(args):
+    return _wifi_call(lambda w: w.forget(args.get("ssid", "")))
+
+
+TOOLS = {
+    "get_cpu_info": {
+        "category": READ, "func": get_cpu_info,
+        "description": "Read CPU model, clock speed, and logical core count from /proc/cpuinfo.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "get_mem_info": {
+        "category": READ, "func": get_mem_info,
+        "description": "Read total/free/available memory and swap from /proc/meminfo.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "get_uptime_load": {
+        "category": READ, "func": get_uptime_load,
+        "description": "Read system uptime and 1/5/15-minute load averages.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "get_temperatures": {
+        "category": READ, "func": get_temperatures,
+        "description": "Read all thermal-zone and hwmon temperature sensors exposed by the kernel.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "list_pci_devices": {
+        "category": READ, "func": list_pci_devices,
+        "description": "List PCI devices (lspci): GPUs, network cards, controllers, etc.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "list_usb_devices": {
+        "category": READ, "func": list_usb_devices,
+        "description": "List USB devices currently attached (lsusb).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "list_block_devices": {
+        "category": READ, "func": list_block_devices,
+        "description": "List block/storage devices with size and removable flag.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "get_disk_usage": {
+        "category": READ, "func": get_disk_usage,
+        "description": "Get total/free/used disk space for a mounted path.",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Mount point, defaults to /"},
+        }},
+    },
+    "list_kernel_modules": {
+        "category": READ, "func": list_kernel_modules,
+        "description": "List currently loaded kernel modules (/proc/modules).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "read_sysfs_path": {
+        "category": READ, "func": read_sysfs_path,
+        "description": "Read the raw contents of one file under /proc or /sys (e.g. a specific hwmon or PCI attribute not covered by another tool).",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Absolute path starting with /proc/ or /sys/"},
+        }, "required": ["path"]},
+    },
+    "tail_log": {
+        "category": READ, "func": tail_log,
+        "description": "Return the last N lines of the kernel ring buffer (dmesg).",
+        "input_schema": {"type": "object", "properties": {
+            "lines": {"type": "integer", "description": "Number of lines, default 50, max 500"},
+        }},
+    },
+    "list_services": {
+        "category": READ, "func": list_services,
+        "description": "List OpenRC services and their running/stopped status.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "list_dir": {
+        "category": READ, "func": list_dir,
+        "description": "List files and directories under a path inside the user's home directory (/home/user).",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Path relative to or under /home/user, defaults to the home directory itself"},
+        }},
+    },
+    "read_text_file": {
+        "category": READ, "func": read_text_file,
+        "description": "Read the contents of a text file under the user's home directory (up to 64KB).",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string"},
+        }, "required": ["path"]},
+    },
+    "search_files": {
+        "category": READ, "func": search_files,
+        "description": "Search for files by (case-insensitive substring) name under a directory in the user's home, recursively.",
+        "input_schema": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Substring to match against file names"},
+            "root": {"type": "string", "description": "Directory to search under, defaults to the home directory"},
+        }, "required": ["query"]},
+    },
+    "list_installed_apps": {
+        "category": READ, "func": list_installed_apps,
+        "description": "List installed GUI applications (from their .desktop entries): id, name, comment, categories.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "write_text_file": {
+        "category": ACTION, "func": write_text_file,
+        "description": "Create or overwrite a text file under the user's home directory with the given content.",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string"}, "content": {"type": "string"},
+        }, "required": ["path", "content"]},
+    },
+    "move_file": {
+        "category": ACTION, "func": move_file,
+        "description": "Move or rename a file/directory within the user's home directory.",
+        "input_schema": {"type": "object", "properties": {
+            "src": {"type": "string"}, "dest": {"type": "string"},
+        }, "required": ["src", "dest"]},
+    },
+    "copy_file": {
+        "category": ACTION, "func": copy_file,
+        "description": "Copy a file/directory within the user's home directory.",
+        "input_schema": {"type": "object", "properties": {
+            "src": {"type": "string"}, "dest": {"type": "string"},
+        }, "required": ["src", "dest"]},
+    },
+    "create_dir": {
+        "category": ACTION, "func": create_dir,
+        "description": "Create a directory (and parents) under the user's home directory.",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string"},
+        }, "required": ["path"]},
+    },
+    "delete_file": {
+        "category": ACTION, "func": delete_file,
+        "description": "Permanently delete a file or directory under the user's home directory. Always confirm with the user first.",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string"},
+        }, "required": ["path"]},
+    },
+    "launch_app": {
+        "category": ACTION, "func": launch_app,
+        "description": "Launch an installed GUI application by its id (from list_installed_apps).",
+        "input_schema": {"type": "object", "properties": {
+            "id": {"type": "string"},
+        }, "required": ["id"]},
+    },
+    "send_notification": {
+        "category": ACTION, "func": send_notification,
+        "description": "Show a desktop notification to the user.",
+        "input_schema": {"type": "object", "properties": {
+            "title": {"type": "string"}, "body": {"type": "string"},
+        }, "required": ["body"]},
+    },
+    "list_open_windows": {
+        "category": READ, "func": list_open_windows,
+        "description": "List currently open windows in the Sway session: id, app_id, title, and whether focused.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "focus_window": {
+        "category": ACTION, "func": focus_window,
+        "description": "Focus (bring to front) an open window by its id from list_open_windows.",
+        "input_schema": {"type": "object", "properties": {
+            "id": {"type": "integer"},
+        }, "required": ["id"]},
+    },
+    "close_window": {
+        "category": ACTION, "func": close_window,
+        "description": "Close an open window by its id from list_open_windows.",
+        "input_schema": {"type": "object", "properties": {
+            "id": {"type": "integer"},
+        }, "required": ["id"]},
+    },
+    "search_packages": {
+        "category": READ, "func": search_packages,
+        "description": "Search the Alpine package index for packages matching a query (name/description).",
+        "input_schema": {"type": "object", "properties": {
+            "query": {"type": "string"},
+        }, "required": ["query"]},
+    },
+    "list_installed_packages": {
+        "category": READ, "func": list_installed_packages,
+        "description": "List all installed apk packages (name-version strings).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "install_package": {
+        "category": CONTROL, "func": install_package,
+        "description": "Install an apk package by name.",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "remove_package": {
+        "category": CONTROL, "func": remove_package,
+        "description": "Remove (uninstall) an apk package by name.",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "get_volume": {
+        "category": READ, "func": get_volume,
+        "description": "Get the current system output volume (0-100) and mute state.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "set_volume": {
+        "category": ACTION, "func": set_volume,
+        "description": "Set the system output volume, 0-100.",
+        "input_schema": {"type": "object", "properties": {
+            "percent": {"type": "number", "minimum": 0, "maximum": 100},
+        }, "required": ["percent"]},
+    },
+    "set_mute": {
+        "category": ACTION, "func": set_mute,
+        "description": "Mute or unmute system audio output.",
+        "input_schema": {"type": "object", "properties": {
+            "muted": {"type": "boolean"},
+        }, "required": ["muted"]},
+    },
+    "get_wifi_status": {
+        "category": READ, "func": get_wifi_status,
+        "description": "Show WiFi adapters and which network (if any) is connected.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "list_wifi_networks": {
+        "category": READ, "func": list_wifi_networks,
+        "description": "Scan for and list nearby WiFi networks: ssid, security (open/psk/8021x), signal percent, whether connected, whether saved.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "connect_wifi": {
+        "category": ACTION, "func": connect_wifi,
+        "description": "Connect to a WiFi network that is open or already saved. Cannot take a password - a new secured network must be set up once in the Network app.",
+        "input_schema": {"type": "object", "properties": {
+            "ssid": {"type": "string"},
+        }, "required": ["ssid"]},
+    },
+    "disconnect_wifi": {
+        "category": ACTION, "func": disconnect_wifi,
+        "description": "Disconnect from the current WiFi network.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "forget_wifi": {
+        "category": ACTION, "func": forget_wifi,
+        "description": "Forget (delete the saved password of) a saved WiFi network.",
+        "input_schema": {"type": "object", "properties": {
+            "ssid": {"type": "string"},
+        }, "required": ["ssid"]},
+    },
+    "set_cpu_governor": {
+        "category": CONTROL, "func": set_cpu_governor,
+        "description": "Set the CPU frequency scaling governor on every CPU.",
+        "input_schema": {"type": "object", "properties": {
+            "governor": {"type": "string", "enum": sorted(_ALLOWED_GOVERNORS)},
+        }, "required": ["governor"]},
+    },
+    "restart_service": {
+        "category": CONTROL, "func": restart_service,
+        "description": "Restart an OpenRC service by name.",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "start_service": {
+        "category": CONTROL, "func": start_service,
+        "description": "Start an OpenRC service by name.",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "stop_service": {
+        "category": CONTROL, "func": stop_service,
+        "description": "Stop an OpenRC service by name.",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "load_module": {
+        "category": CONTROL, "func": load_module,
+        "description": "Load a kernel module by name (modprobe).",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "unload_module": {
+        "category": CONTROL, "func": unload_module,
+        "description": "Unload a kernel module by name (modprobe -r).",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "set_hostname": {
+        "category": CONTROL, "func": set_hostname,
+        "description": "Change the system hostname.",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "reboot_system": {
+        "category": CONTROL, "func": reboot_system,
+        "description": "Reboot the machine immediately. Always confirm with the user before calling this.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "poweroff_system": {
+        "category": CONTROL, "func": poweroff_system,
+        "description": "Power off the machine immediately. Always confirm with the user before calling this.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+}
+
+ALWAYS_CONFIRM = {"reboot_system", "poweroff_system", "delete_file"}
+
+
+def anthropic_tool_specs():
+    return [
+        {"name": name, "description": spec["description"], "input_schema": spec["input_schema"]}
+        for name, spec in TOOLS.items()
+    ]
+
+
+def _run_control_via_doas(name, args):
+    try:
+        p = subprocess.run(
+            ["doas", "/usr/local/bin/nexa-ai-control-helper"],
+            input=json.dumps({"tool": name, "args": args}),
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError:
+        raise ToolError("doas is not installed; control actions need root and no escalation path is configured")
+    except subprocess.TimeoutExpired:
+        raise ToolError("control helper timed out")
+    try:
+        resp = json.loads(p.stdout)
+    except json.JSONDecodeError:
+        raise ToolError(p.stderr.strip() or f"control helper produced no output (exit {p.returncode})")
+    if not resp.get("ok"):
+        raise ToolError(resp.get("error", "control helper failed"))
+    return resp.get("result")
+
+
+def run_tool(name, args, allow_control):
+    if name not in TOOLS:
+        raise ToolError(f"unknown tool: {name}")
+    spec = TOOLS[name]
+    if spec["category"] == CONTROL:
+        if not allow_control:
+            raise ToolError(f"'{name}' is a control action and control is disabled (see /etc/nexa-ai/config.json)")
+        if os.geteuid() != 0:
+            return _run_control_via_doas(name, args or {})
+    return spec["func"](args or {})

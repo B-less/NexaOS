@@ -1,0 +1,299 @@
+#!/bin/sh
+
+START_DIR="/disk"
+
+if [ -d "$START_DIR" ]; then
+    cd "$START_DIR" || exit 1
+fi
+
+print_header() {
+    clear
+    echo "NEXA FILE MANAGER"
+    echo "================="
+    echo "Current directory: $(pwd)"
+    echo
+}
+
+pause_screen() {
+    echo
+    printf "Press Enter to continue..."
+    IFS= read -r _
+}
+
+is_valid_operand() {
+    case "$1" in
+        ''|-*)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+list_dir() {
+    target="$1"
+    [ -n "$target" ] || target="."
+
+    if [ ! -d "$target" ]; then
+        echo "Directory not found: $target"
+        return 1
+    fi
+
+    echo "Directory: $target"
+    echo "----------------"
+    ls -la "$target"
+}
+
+change_dir() {
+    target="$1"
+
+    if ! is_valid_operand "$target"; then
+        echo "Usage: cd <directory>"
+        return 1
+    fi
+
+    if [ ! -d "$target" ]; then
+        echo "Directory not found: $target"
+        return 1
+    fi
+
+    cd "$target" || {
+        echo "Could not enter directory: $target"
+        return 1
+    }
+}
+
+make_dir() {
+    target="$1"
+
+    if ! is_valid_operand "$target"; then
+        echo "Usage: mkdir <directory>"
+        return 1
+    fi
+
+    mkdir -p "$target" || {
+        echo "Could not create directory: $target"
+        return 1
+    }
+
+    echo "Created directory: $target"
+}
+
+delete_file() {
+    target="$1"
+
+    if ! is_valid_operand "$target"; then
+        echo "Usage: rm <file>"
+        return 1
+    fi
+
+    if [ -d "$target" ]; then
+        echo "Refusing to delete directory with rm: $target"
+        echo "Use rmdir <directory> for empty directories."
+        return 1
+    fi
+
+    if [ ! -e "$target" ]; then
+        echo "File not found: $target"
+        return 1
+    fi
+
+    rm "$target" || {
+        echo "Could not delete file: $target"
+        return 1
+    }
+
+    echo "Deleted file: $target"
+}
+
+remove_dir() {
+    target="$1"
+
+    if ! is_valid_operand "$target"; then
+        echo "Usage: rmdir <directory>"
+        return 1
+    fi
+
+    if [ ! -d "$target" ]; then
+        echo "Directory not found: $target"
+        return 1
+    fi
+
+    rmdir "$target" || {
+        echo "Could not remove directory. It may not be empty: $target"
+        return 1
+    }
+
+    echo "Removed directory: $target"
+}
+
+copy_path() {
+    source="$1"
+    dest="$2"
+
+    if ! is_valid_operand "$source" || ! is_valid_operand "$dest"; then
+        echo "Usage: cp <source-file> <destination>"
+        return 1
+    fi
+
+    if [ -d "$source" ]; then
+        echo "Directory copy is not supported yet: $source"
+        return 1
+    fi
+
+    if [ ! -f "$source" ]; then
+        echo "Source file not found: $source"
+        return 1
+    fi
+
+    cp "$source" "$dest" || {
+        echo "Could not copy $source to $dest"
+        return 1
+    }
+
+    echo "Copied $source to $dest"
+}
+
+move_path() {
+    source="$1"
+    dest="$2"
+
+    if ! is_valid_operand "$source" || ! is_valid_operand "$dest"; then
+        echo "Usage: mv <source> <destination>"
+        return 1
+    fi
+
+    if [ ! -e "$source" ]; then
+        echo "Source not found: $source"
+        return 1
+    fi
+
+    mv "$source" "$dest" || {
+        echo "Could not move $source to $dest"
+        return 1
+    }
+
+    echo "Moved $source to $dest"
+}
+
+view_file() {
+    target="$1"
+
+    if ! is_valid_operand "$target"; then
+        echo "Usage: cat <file>"
+        return 1
+    fi
+
+    if [ ! -f "$target" ]; then
+        echo "File not found: $target"
+        return 1
+    fi
+
+    cat "$target"
+}
+
+print_help() {
+    echo "Commands:"
+    echo "  help"
+    echo "  pwd"
+    echo "  ls [directory]"
+    echo "  cd <directory>"
+    echo "  mkdir <directory>"
+    echo "  rmdir <directory>"
+    echo "  rm <file>"
+    echo "  cp <source-file> <destination>"
+    echo "  mv <source> <destination>"
+    echo "  cat <file>"
+    echo "  exit"
+}
+
+run_command() {
+    cmd="$1"
+    arg1="$2"
+    arg2="$3"
+
+    case "$cmd" in
+        help)
+            print_help
+            ;;
+        pwd)
+            pwd
+            ;;
+        ls|list)
+            list_dir "$arg1"
+            ;;
+        cd)
+            change_dir "$arg1"
+            ;;
+        mkdir)
+            make_dir "$arg1"
+            ;;
+        rmdir)
+            remove_dir "$arg1"
+            ;;
+        rm|delete)
+            delete_file "$arg1"
+            ;;
+        cp|copy)
+            copy_path "$arg1" "$arg2"
+            ;;
+        mv|move)
+            move_path "$arg1" "$arg2"
+            ;;
+        cat|view)
+            view_file "$arg1"
+            ;;
+        '')
+            return 0
+            ;;
+        *)
+            echo "Unknown command: $cmd"
+            print_help
+            return 1
+            ;;
+    esac
+}
+
+interactive_menu() {
+    while true
+    do
+        print_header
+        list_dir "."
+        echo
+        print_help
+        echo
+        printf "filemgr> "
+        read -r cmd arg1 arg2 extra
+
+        case "$cmd" in
+            exit|quit|0)
+                echo "Exiting file manager."
+                return 0
+                ;;
+            '')
+                ;;
+            *)
+                echo
+                if [ -n "$extra" ]; then
+                    echo "Too many arguments."
+                else
+                    run_command "$cmd" "$arg1" "$arg2"
+                fi
+                pause_screen
+                ;;
+        esac
+    done
+}
+
+case "$1" in
+    '')
+        interactive_menu
+        ;;
+    help|-h|--help)
+        print_help
+        ;;
+    *)
+        run_command "$1" "$2" "$3"
+        ;;
+esac

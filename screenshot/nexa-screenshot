@@ -1,0 +1,29 @@
+#!/bin/sh
+# Capture the screen (or a user-selected region) with grim/slurp, save it
+# under ~/Pictures/Screenshots, and copy it to the clipboard if wl-copy is
+# available. Bound to Print / Shift+Print in Sway; also has a .desktop entry
+# (which always does a full-screen capture, since there's no keyboard-driven
+# region step to hook a launcher click to).
+set -eu
+
+MODE="${1:-full}"
+
+OUT_DIR="${HOME:-/home/user}/Pictures/Screenshots"
+mkdir -p "$OUT_DIR"
+OUT_FILE="$OUT_DIR/nexa-shot-$(date +%Y%m%d-%H%M%S).png"
+
+case "$MODE" in
+    --select|select)
+        REGION=$(slurp) || exit 0  # empty selection (Esc) -- nothing to do
+        grim -g "$REGION" "$OUT_FILE"
+        ;;
+    *)
+        grim "$OUT_FILE"
+        ;;
+esac
+
+if command -v wl-copy >/dev/null 2>&1; then
+    wl-copy < "$OUT_FILE" 2>/dev/null || true
+fi
+
+echo "$OUT_FILE"

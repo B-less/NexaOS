@@ -1,0 +1,419 @@
+#!/bin/sh
+
+START_DIR="/disk"
+TMP_DIR="/tmp"
+BUFFER_FILE="$TMP_DIR/nexa_editor_$$.tmp"
+TARGET_FILE=""
+DIRTY=0
+
+if [ -d "$START_DIR" ]; then
+    cd "$START_DIR" || exit 1
+fi
+
+if ! mkdir -p "$TMP_DIR"; then
+    echo "Could not create temporary directory: $TMP_DIR"
+    exit 1
+fi
+
+chmod 1777 "$TMP_DIR" 2>/dev/null
+
+cleanup() {
+    rm -f "$BUFFER_FILE" "$BUFFER_FILE.next"
+}
+
+trap cleanup EXIT INT TERM
+
+is_valid_path() {
+    case "$1" in
+        ''|-*)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+is_positive_number() {
+    case "$1" in
+        ''|*[!0-9]*|0)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+print_header() {
+    clear
+    echo "NEXA TEXT EDITOR"
+    echo "================"
+    if [ -n "$TARGET_FILE" ]; then
+        echo "File: $TARGET_FILE"
+    else
+        echo "File: none"
+    fi
+    if [ "$DIRTY" -eq 1 ]; then
+        echo "Status: unsaved changes"
+    else
+        echo "Status: saved"
+    fi
+    echo
+}
+
+print_help() {
+    echo "Commands:"
+    echo "  help"
+    echo "  view"
+    echo "  append"
+    echo "  insert <line>"
+    echo "  replace <line>"
+    echo "  delete <line>"
+    echo "  clear"
+    echo "  open <file>"
+    echo "  save"
+    echo "  saveas <file>"
+    echo "  quit"
+}
+
+line_count() {
+    wc -l < "$BUFFER_FILE"
+}
+
+show_buffer() {
+    echo "Buffer"
+    echo "------"
+
+    if [ ! -s "$BUFFER_FILE" ]; then
+        echo "(empty)"
+        return 0
+    fi
+
+    number=1
+    while IFS= read -r line || [ -n "$line" ]
+    do
+        printf "%4d | %s\n" "$number" "$line"
+        number=$((number + 1))
+    done < "$BUFFER_FILE"
+}
+
+load_file() {
+    file="$1"
+
+    if ! is_valid_path "$file"; then
+        echo "Usage: open <file>"
+        return 1
+    fi
+
+    if [ -d "$file" ]; then
+        echo "Cannot edit directory: $file"
+        return 1
+    fi
+
+    if [ -f "$file" ]; then
+        cp "$file" "$BUFFER_FILE" || {
+            echo "Could not read file: $file"
+            return 1
+        }
+    else
+        : > "$BUFFER_FILE" || {
+            echo "Could not create editor buffer"
+            return 1
+        }
+    fi
+
+    TARGET_FILE="$file"
+    DIRTY=0
+    echo "Opened: $TARGET_FILE"
+}
+
+append_lines() {
+    echo "Enter text. Use a single . on its own line to stop."
+
+    while true
+    do
+        printf "> "
+        IFS= read -r text
+        if [ "$text" = "." ]; then
+            break
+        fi
+        echo "$text" >> "$BUFFER_FILE"
+        DIRTY=1
+    done
+}
+
+insert_line() {
+    line_number="$1"
+
+    if ! is_positive_number "$line_number"; then
+        echo "Usage: insert <line>"
+        return 1
+    fi
+
+    total=$(line_count)
+    if [ "$line_number" -gt $((total + 1)) ]; then
+        echo "Line out of range. Next available line is $((total + 1))."
+        return 1
+    fi
+
+    printf "Text: "
+    IFS= read -r text
+
+    current=1
+    inserted=0
+    : > "$BUFFER_FILE.next" || {
+        echo "Could not create temporary buffer"
+        return 1
+    }
+
+    while IFS= read -r old_line || [ -n "$old_line" ]
+    do
+        if [ "$current" -eq "$line_number" ]; then
+            echo "$text" >> "$BUFFER_FILE.next"
+            inserted=1
+        fi
+        echo "$old_line" >> "$BUFFER_FILE.next"
+        current=$((current + 1))
+    done < "$BUFFER_FILE"
+
+    if [ "$inserted" -eq 0 ]; then
+        echo "$text" >> "$BUFFER_FILE.next"
+    fi
+
+    mv "$BUFFER_FILE.next" "$BUFFER_FILE"
+    DIRTY=1
+    echo "Inserted line $line_number."
+}
+
+replace_line() {
+    line_number="$1"
+
+    if ! is_positive_number "$line_number"; then
+        echo "Usage: replace <line>"
+        return 1
+    fi
+
+    total=$(line_count)
+    if [ "$line_number" -gt "$total" ]; then
+        echo "Line not found: $line_number"
+        return 1
+    fi
+
+    printf "Text: "
+    IFS= read -r text
+
+    current=1
+    : > "$BUFFER_FILE.next" || {
+        echo "Could not create temporary buffer"
+        return 1
+    }
+
+    while IFS= read -r old_line || [ -n "$old_line" ]
+    do
+        if [ "$current" -eq "$line_number" ]; then
+            echo "$text" >> "$BUFFER_FILE.next"
+        else
+            echo "$old_line" >> "$BUFFER_FILE.next"
+        fi
+        current=$((current + 1))
+    done < "$BUFFER_FILE"
+
+    mv "$BUFFER_FILE.next" "$BUFFER_FILE"
+    DIRTY=1
+    echo "Replaced line $line_number."
+}
+
+delete_line() {
+    line_number="$1"
+
+    if ! is_positive_number "$line_number"; then
+        echo "Usage: delete <line>"
+        return 1
+    fi
+
+    total=$(line_count)
+    if [ "$line_number" -gt "$total" ]; then
+        echo "Line not found: $line_number"
+        return 1
+    fi
+
+    current=1
+    : > "$BUFFER_FILE.next" || {
+        echo "Could not create temporary buffer"
+        return 1
+    }
+
+    while IFS= read -r old_line || [ -n "$old_line" ]
+    do
+        if [ "$current" -ne "$line_number" ]; then
+            echo "$old_line" >> "$BUFFER_FILE.next"
+        fi
+        current=$((current + 1))
+    done < "$BUFFER_FILE"
+
+    mv "$BUFFER_FILE.next" "$BUFFER_FILE"
+    DIRTY=1
+    echo "Deleted line $line_number."
+}
+
+clear_buffer() {
+    printf "Clear all text? (y/n): "
+    IFS= read -r answer
+
+    case "$answer" in
+        y|Y)
+            : > "$BUFFER_FILE"
+            DIRTY=1
+            echo "Buffer cleared."
+            ;;
+        *)
+            echo "Clear cancelled."
+            ;;
+    esac
+}
+
+save_buffer() {
+    file="$TARGET_FILE"
+
+    if [ -n "$1" ]; then
+        file="$1"
+    fi
+
+    if ! is_valid_path "$file"; then
+        echo "Usage: saveas <file>"
+        return 1
+    fi
+
+    if [ -d "$file" ]; then
+        echo "Cannot save over directory: $file"
+        return 1
+    fi
+
+    cp "$BUFFER_FILE" "$file" || {
+        echo "Could not save file: $file"
+        return 1
+    }
+
+    TARGET_FILE="$file"
+    DIRTY=0
+    echo "Saved: $TARGET_FILE"
+}
+
+confirm_quit() {
+    if [ "$DIRTY" -eq 0 ]; then
+        return 0
+    fi
+
+    printf "Unsaved changes. Quit anyway? (y/n): "
+    IFS= read -r answer
+
+    case "$answer" in
+        y|Y)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+choose_file() {
+    printf "File path: "
+    IFS= read -r file
+    load_file "$file"
+}
+
+run_command() {
+    cmd="$1"
+    arg1="$2"
+    arg2="$3"
+    extra="$4"
+
+    if [ -n "$extra" ]; then
+        echo "Too many arguments."
+        return 1
+    fi
+
+    case "$cmd" in
+        help)
+            print_help
+            ;;
+        view|list)
+            show_buffer
+            ;;
+        append|add)
+            append_lines
+            ;;
+        insert)
+            insert_line "$arg1"
+            ;;
+        replace)
+            replace_line "$arg1"
+            ;;
+        delete|del|remove)
+            delete_line "$arg1"
+            ;;
+        clear)
+            clear_buffer
+            ;;
+        open)
+            load_file "$arg1"
+            ;;
+        save)
+            save_buffer
+            ;;
+        saveas)
+            save_buffer "$arg1"
+            ;;
+        '')
+            ;;
+        *)
+            echo "Unknown command: $cmd"
+            print_help
+            return 1
+            ;;
+    esac
+}
+
+editor_loop() {
+    while true
+    do
+        print_header
+        print_help
+        echo
+        printf "editor> "
+        read -r cmd arg1 arg2 extra
+
+        case "$cmd" in
+            quit|exit|0)
+                if confirm_quit; then
+                    echo "Exiting editor."
+                    return 0
+                fi
+                ;;
+            *)
+                run_command "$cmd" "$arg1" "$arg2" "$extra"
+                ;;
+        esac
+
+        echo
+        printf "Press Enter to continue..."
+        IFS= read -r _
+    done
+}
+
+case "$1" in
+    help|-h|--help)
+        print_help
+        ;;
+    '')
+        print_header
+        choose_file || exit 1
+        editor_loop
+        ;;
+    *)
+        load_file "$1" || exit 1
+        editor_loop
+        ;;
+esac

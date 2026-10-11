@@ -1,0 +1,254 @@
+#!/bin/sh
+
+print_header() {
+    clear
+    echo "NEXA SYSTEM MONITOR"
+    echo "==================="
+    echo
+}
+
+pause_screen() {
+    echo
+    printf "Press Enter to continue..."
+    IFS= read -r _
+}
+
+show_uptime() {
+    echo "Uptime"
+    echo "------"
+
+    if [ ! -r /proc/uptime ]; then
+        echo "Unable to read /proc/uptime"
+        return 1
+    fi
+
+    IFS=' ' read -r uptime_raw idle_raw < /proc/uptime
+    seconds="${uptime_raw%%.*}"
+
+    days=$((seconds / 86400))
+    hours=$(((seconds % 86400) / 3600))
+    minutes=$(((seconds % 3600) / 60))
+    secs=$((seconds % 60))
+
+    echo "  Days:    $days"
+    echo "  Hours:   $hours"
+    echo "  Minutes: $minutes"
+    echo "  Seconds: $secs"
+    echo "  Raw:     ${uptime_raw}s"
+}
+
+show_memory() {
+    echo "Memory Usage"
+    echo "------------"
+
+    if [ ! -r /proc/meminfo ]; then
+        echo "Unable to read /proc/meminfo"
+        return 1
+    fi
+
+    mem_total=0
+    mem_free=0
+    mem_available=0
+    buffers=0
+    cached=0
+
+    while IFS=' ' read -r key value unit rest
+    do
+        case "$key" in
+            MemTotal:)
+                mem_total="$value"
+                ;;
+            MemFree:)
+                mem_free="$value"
+                ;;
+            MemAvailable:)
+                mem_available="$value"
+                ;;
+            Buffers:)
+                buffers="$value"
+                ;;
+            Cached:)
+                cached="$value"
+                ;;
+        esac
+    done < /proc/meminfo
+
+    if [ "$mem_available" -gt 0 ]; then
+        mem_used=$((mem_total - mem_available))
+    else
+        mem_used=$((mem_total - mem_free))
+    fi
+
+    if [ "$mem_total" -gt 0 ]; then
+        used_percent=$((mem_used * 100 / mem_total))
+    else
+        used_percent=0
+    fi
+
+    echo "  Total:     $mem_total kB ($((mem_total / 1024)) MB)"
+    echo "  Used:      $mem_used kB ($((mem_used / 1024)) MB)"
+    echo "  Available: $mem_available kB ($((mem_available / 1024)) MB)"
+    echo "  Free:      $mem_free kB ($((mem_free / 1024)) MB)"
+    echo "  Buffers:   $buffers kB"
+    echo "  Cached:    $cached kB"
+    echo "  Used %:    $used_percent%"
+}
+
+show_processes() {
+    echo "Process List"
+    echo "------------"
+
+    if command -v ps >/dev/null 2>&1; then
+        count=0
+        ps | while IFS= read -r line
+        do
+            if [ "$count" -lt 16 ]; then
+                echo "  $line"
+            fi
+            count=$((count + 1))
+        done
+        return 0
+    fi
+
+    for proc_dir in /proc/[0-9]*
+    do
+        [ -d "$proc_dir" ] || continue
+        pid="${proc_dir#/proc/}"
+        name="unknown"
+        if [ -r "$proc_dir/comm" ]; then
+            IFS= read -r name < "$proc_dir/comm"
+        fi
+        echo "  $pid $name"
+    done
+}
+
+show_disk() {
+    echo "Disk Usage"
+    echo "----------"
+
+    if command -v df >/dev/null 2>&1; then
+        df -h /disk 2>/dev/null || df /disk 2>/dev/null
+    else
+        echo "df command not available"
+        return 1
+    fi
+}
+
+show_summary() {
+    print_header
+    show_uptime
+    echo
+    show_memory
+    echo
+    show_disk
+    echo
+    show_processes
+}
+
+watch_summary() {
+    while true
+    do
+        show_summary
+        echo
+        echo "Refreshing in 2 seconds. Press Ctrl+C to exit."
+        sleep 2
+    done
+}
+
+show_help() {
+    echo "Usage:"
+    echo "  monitor"
+    echo "  monitor summary"
+    echo "  monitor uptime"
+    echo "  monitor memory"
+    echo "  monitor processes"
+    echo "  monitor disk"
+    echo "  monitor watch"
+}
+
+interactive_menu() {
+    while true
+    do
+        print_header
+        echo "1) Summary"
+        echo "2) Uptime"
+        echo "3) Memory usage"
+        echo "4) Process list"
+        echo "5) Disk usage"
+        echo "6) Watch summary"
+        echo "0) Exit"
+        echo
+        printf "Choose option: "
+        IFS= read -r choice
+
+        case "$choice" in
+            1)
+                show_summary
+                pause_screen
+                ;;
+            2)
+                print_header
+                show_uptime
+                pause_screen
+                ;;
+            3)
+                print_header
+                show_memory
+                pause_screen
+                ;;
+            4)
+                print_header
+                show_processes
+                pause_screen
+                ;;
+            5)
+                print_header
+                show_disk
+                pause_screen
+                ;;
+            6)
+                watch_summary
+                ;;
+            0)
+                echo "Exiting monitor."
+                return 0
+                ;;
+            *)
+                echo "Invalid option."
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+case "$1" in
+    '')
+        interactive_menu
+        ;;
+    summary)
+        show_summary
+        ;;
+    uptime)
+        show_uptime
+        ;;
+    memory|mem)
+        show_memory
+        ;;
+    processes|process|ps)
+        show_processes
+        ;;
+    disk)
+        show_disk
+        ;;
+    watch)
+        watch_summary
+        ;;
+    help|-h|--help)
+        show_help
+        ;;
+    *)
+        echo "Unknown monitor command: $1"
+        show_help
+        exit 1
+        ;;
+esac

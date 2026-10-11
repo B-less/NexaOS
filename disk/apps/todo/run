@@ -1,0 +1,206 @@
+#!/bin/sh
+
+DATA_DIR="/disk/data"
+TODO_FILE="$DATA_DIR/todo.txt"
+
+ensure_store() {
+    if [ ! -d "$DATA_DIR" ]; then
+        mkdir -p "$DATA_DIR" || {
+            echo "ERROR: Cannot create $DATA_DIR"
+            return 1
+        }
+    fi
+
+    if [ ! -f "$TODO_FILE" ]; then
+        touch "$TODO_FILE" || {
+            echo "ERROR: Cannot create $TODO_FILE"
+            return 1
+        }
+    fi
+
+    return 0
+}
+
+print_header() {
+    clear
+    echo "NEXA TODO"
+    echo "========="
+    echo
+}
+
+list_tasks() {
+    ensure_store || return 1
+
+    if [ ! -s "$TODO_FILE" ]; then
+        echo "No tasks."
+        return 0
+    fi
+
+    number=1
+    while IFS= read -r task; do
+        echo "$number. $task"
+        number=$((number + 1))
+    done < "$TODO_FILE"
+}
+
+add_task() {
+    ensure_store || return 1
+
+    task="$*"
+
+    if [ -z "$task" ]; then
+        printf "Task: "
+        IFS= read -r task
+    fi
+
+    if [ -z "$task" ]; then
+        echo "No task entered."
+        return 1
+    fi
+
+    echo "$task" >> "$TODO_FILE" || {
+        echo "ERROR: Cannot write to $TODO_FILE"
+        return 1
+    }
+
+    echo "Added task."
+}
+
+is_positive_number() {
+    case "$1" in
+        ''|*[!0-9]*)
+            return 1
+            ;;
+        0)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+remove_task() {
+    ensure_store || return 1
+
+    task_number="$1"
+
+    if [ ! -s "$TODO_FILE" ]; then
+        echo "No tasks to remove."
+        return 1
+    fi
+
+    if [ -z "$task_number" ]; then
+        list_tasks
+        echo
+        printf "Remove task number: "
+        IFS= read -r task_number
+    fi
+
+    if ! is_positive_number "$task_number"; then
+        echo "Invalid task number."
+        return 1
+    fi
+
+    tmp_file="$TODO_FILE.tmp"
+    current=1
+    removed=0
+
+    : > "$tmp_file" || {
+        echo "ERROR: Cannot write temporary file."
+        return 1
+    }
+
+    while IFS= read -r task; do
+        if [ "$current" -eq "$task_number" ]; then
+            removed=1
+        else
+            echo "$task" >> "$tmp_file"
+        fi
+        current=$((current + 1))
+    done < "$TODO_FILE"
+
+    if [ "$removed" -eq 1 ]; then
+        mv "$tmp_file" "$TODO_FILE" || {
+            echo "ERROR: Cannot update $TODO_FILE"
+            rm -f "$tmp_file"
+            return 1
+        }
+        echo "Removed task $task_number."
+    else
+        rm -f "$tmp_file"
+        echo "Task number not found."
+        return 1
+    fi
+}
+
+show_help() {
+    echo "Usage:"
+    echo "  todo"
+    echo "  todo list"
+    echo "  todo add <task text>"
+    echo "  todo remove <number>"
+}
+
+interactive_menu() {
+    while true; do
+        print_header
+        list_tasks
+        echo
+        echo "1) Add task"
+        echo "2) Remove task"
+        echo "3) List tasks"
+        echo "0) Exit"
+        echo
+        printf "Choose option: "
+        IFS= read -r choice
+
+        case "$choice" in
+            1)
+                add_task
+                ;;
+            2)
+                remove_task
+                ;;
+            3)
+                list_tasks
+                ;;
+            0)
+                echo "Exiting todo."
+                return 0
+                ;;
+            *)
+                echo "Invalid option."
+                ;;
+        esac
+
+        echo
+        printf "Press Enter to continue..."
+        IFS= read -r _
+    done
+}
+
+case "$1" in
+    '')
+        interactive_menu
+        ;;
+    list)
+        list_tasks
+        ;;
+    add)
+        shift
+        add_task "$@"
+        ;;
+    remove|rm)
+        shift
+        remove_task "$1"
+        ;;
+    help|-h|--help)
+        show_help
+        ;;
+    *)
+        echo "Unknown todo command: $1"
+        show_help
+        exit 1
+        ;;
+esac

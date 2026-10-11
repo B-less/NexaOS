@@ -1,0 +1,830 @@
+#!/bin/bash
+# Generate configuration files for NexaOS
+set -e
+
+ROOTFS_DIR="${1:-.}"
+MNT_DIR="${2:-.}"
+
+# Check if running for rootfs or mounted disk
+IS_ROOTFS=true
+[[ -d "$MNT_DIR/etc" && "$MNT_DIR" != "." ]] && IS_ROOTFS=false
+
+echo "[*] Generating init script..."
+cat > "$ROOTFS_DIR/init" << 'INIT_EOF'
+#!/bin/sh
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+mkdir -p /proc /sys /dev /run /tmp /mnt/root
+
+mount -t proc proc /proc 2>/dev/null || echo "[INIT] WARN: could not mount proc"
+mount -t sysfs sysfs /sys 2>/dev/null || echo "[INIT] WARN: could not mount sysfs"
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || echo "[INIT] WARN: could not mount devtmpfs"
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+
+if [ -e /proc/sys/kernel/hotplug ]; then
+    ( echo /sbin/mdev > /proc/sys/kernel/hotplug ) 2>/dev/null || true
+fi
+
+if [ -x /sbin/mdev ]; then
+    /sbin/mdev -s 2>/dev/null || true
+fi
+
+ensure_block_node() {
+    DEV="$1"
+    [ -b "/dev/$DEV" ] && return 0
+
+    # /sys/block/$DEV only has a "dev" file for a *whole disk* (e.g.
+    # /sys/block/sda/dev). A partition's is under its parent instead
+    # (/sys/block/sda/sda3/dev, not /sys/block/sda3/dev) -- /sys/class/block
+    # is the flat namespace that has every disk AND every partition as a
+    # direct entry, so it resolves both uniformly. Found by hand: an
+    # installed system failed to boot on a non-virtio disk because this
+    # fallback silently did nothing for the root partition specifically.
+    SYSDEV_FILE="/sys/class/block/$DEV/dev"
+    if [ -f "$SYSDEV_FILE" ]; then
+        MAJOR=$(cut -d: -f1 "$SYSDEV_FILE")
+        MINOR=$(cut -d: -f2 "$SYSDEV_FILE")
+        echo "[INIT] Creating /dev/$DEV ($MAJOR:$MINOR)"
+        mknod "/dev/$DEV" b "$MAJOR" "$MINOR" 2>/dev/null || true
+    fi
+}
+
+try_mount_root() {
+    DEV="$1"
+
+    ensure_block_node "$DEV"
+    [ -b "/dev/$DEV" ] || return 1
+
+    echo "[INIT] Attempting to mount /dev/$DEV..."
+    if mount -t ext4 "/dev/$DEV" /mnt/root 2>/dev/null; then
+        echo "[INIT] Successfully mounted /dev/$DEV"
+
+        if [ -x /mnt/root/sbin/init ]; then
+            echo "[INIT] Found /sbin/init, executing switch_root..."
+            exec switch_root /mnt/root /sbin/init
+        fi
+
+        echo "[INIT] ERROR: /sbin/init not found in /mnt/root"
+        umount /mnt/root 2>/dev/null || true
+    fi
+
+    return 1
+}
+
+# Wait for block device to initialize (IDE, VirtIO, SATA, or NVMe)
+echo "[INIT] Waiting for block device..."
+TIMEOUT=20
+COUNTER=0
+while [ $COUNTER -lt $TIMEOUT ]; do
+    if grep -qE " (sd|vd|hd|xvd)[a-z]$| nvme[0-9]+n[0-9]+$" /proc/partitions 2>/dev/null; then
+        echo "[INIT] Found block device in /proc/partitions"
+        break
+    fi
+    if ls /sys/block/vd* /sys/block/sd* /sys/block/hd* /sys/block/xvd* /sys/block/nvme*n* >/dev/null 2>&1; then
+        echo "[INIT] Found block device in /sys/block"
+        break
+    fi
+    sleep 1
+    COUNTER=$((COUNTER + 1))
+done
+
+echo "[INIT] Block devices in /proc/partitions:"
+cat /proc/partitions 2>/dev/null | grep -v "major" || true
+
+echo "[INIT] Block devices in /sys/block:"
+ls /sys/block 2>/dev/null || true
+
+ROOT_FROM_CMDLINE=$(sed -n 's/.*root=\([^ ]*\).*/\1/p' /proc/cmdline 2>/dev/null | sed 's#^/dev/##')
+if [ -n "$ROOT_FROM_CMDLINE" ]; then
+    echo "[INIT] Trying root= from cmdline: /dev/$ROOT_FROM_CMDLINE"
+    try_mount_root "$ROOT_FROM_CMDLINE"
+fi
+
+for DEV in vda sda hda xvda nvme0n1; do
+    try_mount_root "$DEV"
+done
+
+for SYSDEV in /sys/block/vd* /sys/block/sd* /sys/block/hd* /sys/block/xvd* /sys/block/nvme*n*; do
+    [ -e "$SYSDEV" ] || continue
+    DEV=$(basename "$SYSDEV")
+    case "$DEV" in
+        loop*|ram*|sr*|fd*) continue ;;
+    esac
+    try_mount_root "$DEV"
+
+    # The disk itself can be visible here before the kernel has finished
+    # registering its partitions (seen in practice: virtio disks enumerate
+    # fast enough that this never showed up, but a plain IDE/AHCI-attached
+    # disk under emulation left this loop with zero partition entries for a
+    # moment). Give it a few short retries rather than scanning once and
+    # moving on.
+    PART_TRIES=0
+    while [ "$PART_TRIES" -lt 10 ]; do
+        FOUND_PART=
+        for PART in "$SYSDEV"/"$DEV"*; do
+            [ -e "$PART/dev" ] || continue
+            FOUND_PART=1
+            PARTDEV=$(basename "$PART")
+            try_mount_root "$PARTDEV"
+        done
+        [ -n "$FOUND_PART" ] && break
+        PART_TRIES=$((PART_TRIES + 1))
+        sleep 0.5
+    done
+done
+
+for DEVPATH in /dev/vd* /dev/sd* /dev/hd* /dev/xvd* /dev/nvme*n*; do
+    [ -b "$DEVPATH" ] || continue
+    DEV=$(basename "$DEVPATH")
+    case "$DEV" in
+        loop*|ram*|sr*|fd*) continue ;;
+    esac
+    try_mount_root "$DEV"
+done
+
+if ls /dev/[0-9]*p0 >/dev/null 2>&1; then
+    echo "[INIT] Found unusual block aliases:"
+    ls -l /dev/[0-9]*p0 2>/dev/null || true
+    for DEVPATH in /dev/[0-9]*p0; do
+        [ -b "$DEVPATH" ] || continue
+        try_mount_root "$(basename "$DEVPATH")"
+    done
+fi
+
+# Live-ISO fallback: no direct block-device root was found, which is normal
+# when booting from an optical drive (VirtualBox et al present the ISO as a
+# CD-ROM, not a disk with an ext4 filesystem on it). The ISO carries the same
+# nexa.img this script mounts directly on real disk boots, just embedded as a
+# plain file at its root -- loop-mount that file read-only and layer a tmpfs
+# on top via overlayfs so the session is normally writable but discards
+# changes on reboot, like any other live CD.
+echo "[INIT] No direct root device found; trying live-ISO (CD) boot..."
+mkdir -p /mnt/cdrom
+for CDDEV in sr0 sr1 scd0 hdc hdd; do
+    ensure_block_node "$CDDEV"
+    [ -b "/dev/$CDDEV" ] || continue
+    echo "[INIT] Trying CD-ROM /dev/$CDDEV..."
+    if mount -t iso9660 -o ro "/dev/$CDDEV" /mnt/cdrom 2>/dev/null; then
+        echo "[INIT] Mounted /dev/$CDDEV"
+        break
+    fi
+done
+
+if [ -f /mnt/cdrom/nexa.img ]; then
+    echo "[INIT] Found nexa.img on CD, setting up loop + overlay..."
+    mkdir -p /mnt/lower /mnt/live
+    # noload: nexa.img's ext4 journal may be "dirty" (not cleanly unmounted --
+    # a previous disk boot that was powered off rather than shut down leaves
+    # it this way) and a read-only mount can't replay a journal to clean it,
+    # so without this a dirty image would refuse to mount at all here. Safe
+    # to skip replay: this filesystem is only ever the read-only lower layer
+    # of the live overlay below, never written to directly.
+    if losetup /dev/loop0 /mnt/cdrom/nexa.img 2>/dev/null \
+        && mount -t ext4 -o ro,noload /dev/loop0 /mnt/lower 2>/dev/null; then
+        mount -t tmpfs -o size=1G tmpfs /mnt/live
+        mkdir -p /mnt/live/upper /mnt/live/work
+        if mount -t overlay overlay \
+            -o lowerdir=/mnt/lower,upperdir=/mnt/live/upper,workdir=/mnt/live/work \
+            /mnt/root 2>/dev/null; then
+            echo "[INIT] Live overlay mounted"
+            if [ -x /mnt/root/sbin/init ]; then
+                echo "[INIT] Found /sbin/init, executing switch_root (live CD)..."
+                exec switch_root /mnt/root /sbin/init
+            fi
+            echo "[INIT] ERROR: /sbin/init not found in live overlay"
+        else
+            echo "[INIT] ERROR: overlay mount failed"
+        fi
+    else
+        echo "[INIT] ERROR: loop/ext4 mount of nexa.img failed"
+    fi
+fi
+
+echo "[INIT] ERROR: Could not mount any block device"
+echo "[INIT] Available /dev entries:"
+ls -la /dev/ | grep -E '^b' || true
+echo "[INIT] Dropping to emergency shell..."
+exec /bin/sh
+INIT_EOF
+chmod +x "$ROOTFS_DIR/init"
+
+if [ "$IS_ROOTFS" = false ]; then
+    echo "[*] Generating Nexa Wayland session tools..."
+    mkdir -p "$MNT_DIR/usr/local/bin" "$MNT_DIR/var/log" "$MNT_DIR/run"
+    cat > "$MNT_DIR/usr/local/bin/nexa-wayland-check" << 'CHECK_EOF'
+#!/bin/sh
+# Report the graphics/session pieces needed by the Nexa Wayland desktop.
+
+line() {
+    printf '%-18s %s\n' "$1" "$2"
+}
+
+has_cmd() {
+    if command -v "$1" >/dev/null 2>&1; then
+        line "$1" "OK ($(command -v "$1"))"
+    else
+        line "$1" "missing"
+    fi
+}
+
+echo "NexaOS Wayland check"
+echo "===================="
+line "kernel drm" "$(ls /sys/class/drm 2>/dev/null | tr '\n' ' ')"
+if [ -e /dev/dri/card0 ]; then
+    line "/dev/dri/card0" "OK"
+else
+    line "/dev/dri/card0" "missing"
+fi
+
+if [ -d /dev/input ]; then
+    line "/dev/input" "OK ($(ls /dev/input 2>/dev/null | tr '\n' ' '))"
+else
+    line "/dev/input" "missing"
+fi
+
+if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
+    line "XDG_RUNTIME_DIR" "OK ($XDG_RUNTIME_DIR)"
+else
+    line "XDG_RUNTIME_DIR" "missing"
+fi
+
+line "WAYLAND_DISPLAY" "${WAYLAND_DISPLAY:-unset}"
+has_cmd sway
+has_cmd waybar
+has_cmd foot
+has_cmd wofi
+has_cmd seatd
+has_cmd dbus-daemon
+
+echo
+echo "Start the desktop with: nexa-session"
+CHECK_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-wayland-check"
+
+    cat > "$MNT_DIR/usr/local/bin/nexa-session" << 'SESSION_EOF'
+#!/bin/sh
+# Start the Nexa Wayland desktop, with diagnostics and framebuffer fallback.
+
+MODE="${1:-}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"
+export NEXA_WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+
+mkdir -p "$XDG_RUNTIME_DIR" /run/dbus /var/log
+chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+chown user:user "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+if [ "$MODE" = "--check" ]; then
+    exec /usr/local/bin/nexa-wayland-check
+fi
+
+/usr/local/bin/nexa-wayland-check || true
+
+if command -v dbus-daemon >/dev/null 2>&1 && ! pidof dbus-daemon >/dev/null 2>&1; then
+    dbus-daemon --system --fork >/var/log/dbus.log 2>&1 || true
+fi
+
+if command -v seatd >/dev/null 2>&1; then
+    if [ ! -S /run/seatd.sock ]; then
+        seatd -g seat >/var/log/seatd.log 2>&1 &
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+            [ -S /run/seatd.sock ] && break
+            sleep 0.2
+        done
+    fi
+    export LIBSEAT_BACKEND=seatd
+fi
+
+if command -v sway >/dev/null 2>&1; then
+    [ -x /usr/local/bin/nexa-boot-finish ] && /usr/local/bin/nexa-boot-finish
+    SWAY_CMD="sway"
+    if [ -f /etc/sway/config ]; then
+        SWAY_CMD="sway -c /etc/sway/config"
+    fi
+
+    export WLR_BACKENDS="${WLR_BACKENDS:-drm,libinput}"
+    export XDG_SESSION_TYPE=wayland
+    # Force the CPU (pixman) renderer instead of GLES2/EGL. Hardware EGL
+    # depends on the host's virtual GPU actually exposing 3D acceleration
+    # (e.g. VirtualBox's VMSVGA driver reports "No 3D enabled" unless the
+    # VM has "Enable 3D Acceleration" checked, and even then it's inconsistent
+    # across hosts), and when it's unavailable sway doesn't reliably fall
+    # back on its own -- it just fails to create a renderer and exits. Pixman
+    # skips GPU/EGL entirely, so the desktop comes up the same way regardless
+    # of the underlying virtual GPU or its acceleration state.
+    export WLR_RENDERER="${WLR_RENDERER:-pixman}"
+
+    if id user >/dev/null 2>&1; then
+        # waybar (and other apps) expect a session bus; without one, glib's
+        # dbus autolaunch tries to use X11 and fails ("Cannot autolaunch
+        # D-Bus without X11 $DISPLAY"), so give them a real one instead of
+        # only the --system bus started above. dbus-run-session starts a
+        # private session bus, exports DBUS_SESSION_BUS_ADDRESS, and execs
+        # its argument.
+        DBUS_RUN="dbus-run-session --"
+        command -v dbus-run-session >/dev/null 2>&1 || DBUS_RUN=""
+        exec su user -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; exec $DBUS_RUN $SWAY_CMD"
+    fi
+
+    unset WAYLAND_DISPLAY
+    exec $SWAY_CMD
+fi
+
+echo "Sway is not installed in this image yet."
+echo "Rebuild with: make disk"
+
+if [ "$MODE" = "--wayland-only" ]; then
+    exit 1
+fi
+
+if [ -x /apps/desktop-gui/run ]; then
+    echo "Falling back to the Nexa framebuffer desktop."
+    exec /apps/desktop-gui/run
+fi
+
+echo "No graphical fallback found; opening a shell."
+exec /bin/sh -l
+SESSION_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-session"
+
+    cat > "$MNT_DIR/usr/local/bin/nexa-console" << 'CONSOLE_EOF'
+#!/bin/sh
+clear 2>/dev/null || true
+echo "NexaOS console"
+echo "Commands: nexa-wayland-check, nexa-session"
+echo
+exec /bin/sh -l
+CONSOLE_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-console"
+
+    echo "[*] Generating Sway init service..."
+    mkdir -p "$MNT_DIR/etc/init.d"
+    cat > "$MNT_DIR/etc/init.d/sway" << 'SWAY_EOF'
+#!/sbin/openrc-run
+description="Start Nexa Wayland session"
+
+depend() {
+    need localmount
+    use dbus seatd
+    after devfs
+}
+
+start() {
+    ebegin "Starting Nexa Wayland session"
+    mkdir -p /var/log
+    /usr/local/bin/nexa-session --wayland-only >/var/log/nexa-session.log 2>&1 &
+    echo $! > /run/nexa-session.pid
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping Nexa Wayland session"
+    if [ -f /run/nexa-session.pid ]; then
+        kill "$(cat /run/nexa-session.pid)" 2>/dev/null || true
+        rm -f /run/nexa-session.pid
+    fi
+    pkill -f "sway" 2>/dev/null || true
+    eend $?
+}
+SWAY_EOF
+    chmod +x "$MNT_DIR/etc/init.d/sway"
+
+    mkdir -p "$MNT_DIR/etc/runlevels/default"
+    ln -sf /etc/init.d/sway "$MNT_DIR/etc/runlevels/default/sway"
+    [ -x "$MNT_DIR/etc/init.d/dbus" ] && ln -sf /etc/init.d/dbus "$MNT_DIR/etc/runlevels/default/dbus"
+    [ -x "$MNT_DIR/etc/init.d/seatd" ] && ln -sf /etc/init.d/seatd "$MNT_DIR/etc/runlevels/default/seatd"
+    # Without a running udev, DRM/input device nodes are created by devtmpfs
+    # with default root:root ownership, so sway (running as "user") can't open
+    # /dev/dri/card0 (EGL_NOT_INITIALIZED / "DRI2: failed to load driver").
+    # eudev's rules (lib/udev/rules.d/50-udev-default.rules) chgrp those to
+    # "video", which "user" is a member of.
+    [ -x "$MNT_DIR/etc/init.d/udev" ] && ln -sf /etc/init.d/udev "$MNT_DIR/etc/runlevels/default/udev"
+    [ -x "$MNT_DIR/etc/init.d/udev-trigger" ] && ln -sf /etc/init.d/udev-trigger "$MNT_DIR/etc/runlevels/default/udev-trigger"
+    chown -R user:user "$MNT_DIR/home/user" 2>/dev/null || true
+
+    echo "[*] Generating network (DHCP) service..."
+    # No /etc/network/interfaces + ifupdown-ng setup here on purpose: that
+    # requires knowing the NIC's name ahead of time (eth0 under QEMU, but
+    # enp0s3/ens18/... elsewhere), which this OS can't predict. This instead
+    # DHCPs every non-loopback interface it finds at boot, so it works the
+    # same whether the underlying NIC is virtio-net, e1000, or a VirtualBox
+    # adapter, without hardcoding a name.
+    cat > "$MNT_DIR/etc/init.d/netdhcp" << 'NETDHCP_EOF'
+#!/sbin/openrc-run
+description="DHCP every detected network interface (udhcpc)"
+
+depend() {
+    need localmount
+    after modules
+    before sshd sway
+    provide net
+}
+
+start() {
+    ebegin "Starting network interfaces (DHCP)"
+    local path iface
+    for path in /sys/class/net/*; do
+        iface=$(basename "$path")
+        case "$iface" in
+            lo|sit0) continue ;;
+        esac
+        # Wireless interfaces belong to iwd (it runs its own DHCP once
+        # associated, see /etc/iwd/main.conf); udhcpc on an unassociated
+        # radio would just spin and fight iwd for the interface.
+        if [ -d "$path/wireless" ] || [ -d "$path/phy80211" ]; then
+            continue
+        fi
+        ip link set "$iface" up 2>/dev/null
+        udhcpc -i "$iface" -b -p "/run/udhcpc.$iface.pid" -x "hostname:$(cat /etc/hostname 2>/dev/null || echo nexa)" >/dev/null 2>&1
+    done
+    eend 0
+}
+
+stop() {
+    ebegin "Stopping network interfaces"
+    local pf
+    for pf in /run/udhcpc.*.pid; do
+        [ -f "$pf" ] || continue
+        kill "$(cat "$pf")" 2>/dev/null
+        rm -f "$pf"
+    done
+    eend 0
+}
+NETDHCP_EOF
+    chmod +x "$MNT_DIR/etc/init.d/netdhcp"
+    [ -x "$MNT_DIR/etc/init.d/netdhcp" ] && ln -sf /etc/init.d/netdhcp "$MNT_DIR/etc/runlevels/default/netdhcp"
+
+    echo "[*] Generating WiFi (iwd) configuration..."
+    mkdir -p "$MNT_DIR/etc/iwd"
+    # iwd does DHCP itself for WiFi links. NameResolvingService=none leaves
+    # /etc/resolv.conf (provisioned statically) alone instead of expecting
+    # systemd-resolved/resolvconf, neither of which this OS ships.
+    cat > "$MNT_DIR/etc/iwd/main.conf" << 'IWD_CONF_EOF'
+[General]
+EnableNetworkConfiguration=true
+
+[Network]
+NameResolvingService=none
+IWD_CONF_EOF
+
+    # This kernel has no module support, so a built-in WiFi driver probes at
+    # boot before the root filesystem (and its firmware) is mounted and gives
+    # up. Re-offer every still-unbound PCI device to the driver core now that
+    # /lib/firmware is reachable; harmless for devices nothing can drive.
+    cat > "$MNT_DIR/etc/init.d/wifi-probe" << 'WIFIPROBE_EOF'
+#!/sbin/openrc-run
+description="Re-probe unbound PCI devices now that firmware is available"
+
+depend() {
+    need localmount
+    after udev udev-trigger
+    before iwd
+}
+
+start() {
+    ebegin "Re-probing PCI devices without a driver"
+    local dev
+    for dev in /sys/bus/pci/devices/*; do
+        [ -e "$dev/driver" ] && continue
+        basename "$dev" > /sys/bus/pci/drivers_probe 2>/dev/null
+    done
+    eend 0
+}
+WIFIPROBE_EOF
+    chmod +x "$MNT_DIR/etc/init.d/wifi-probe"
+    ln -sf /etc/init.d/wifi-probe "$MNT_DIR/etc/runlevels/default/wifi-probe"
+    [ -x "$MNT_DIR/etc/init.d/iwd" ] && ln -sf /etc/init.d/iwd "$MNT_DIR/etc/runlevels/default/iwd"
+
+    echo "[*] Generating zram swap service..."
+    # Compressed swap in RAM: the kernel has ZRAM built in (creating zram0 at
+    # boot); this sizes it to half of RAM and turns it on. Doubles as a
+    # cushion for small VMs without needing a swap partition on the disk.
+    cat > "$MNT_DIR/etc/init.d/zram" << 'ZRAM_EOF'
+#!/sbin/openrc-run
+description="Compressed RAM swap (zram)"
+
+depend() {
+    need localmount
+    after udev
+}
+
+start() {
+    ebegin "Enabling zram swap"
+    if [ ! -e /sys/block/zram0 ]; then
+        eend 1 "no zram device"
+        return 1
+    fi
+    local mem_kb size_kb
+    mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+    size_kb=$((mem_kb / 2))
+    echo zstd > /sys/block/zram0/comp_algorithm 2>/dev/null
+    echo "${size_kb}K" > /sys/block/zram0/disksize \
+        && mkswap /dev/zram0 >/dev/null \
+        && swapon -p 100 /dev/zram0
+    local rc=$?
+    # Swapping into compressed RAM is cheap, so prefer it over evicting page
+    # cache (the kernel default of 60 assumes slow disk swap).
+    echo 100 > /proc/sys/vm/swappiness 2>/dev/null
+    eend $rc
+}
+
+stop() {
+    ebegin "Disabling zram swap"
+    swapoff /dev/zram0 2>/dev/null
+    echo 1 > /sys/block/zram0/reset 2>/dev/null
+    eend 0
+}
+ZRAM_EOF
+    chmod +x "$MNT_DIR/etc/init.d/zram"
+    ln -sf /etc/init.d/zram "$MNT_DIR/etc/runlevels/default/zram"
+
+    echo "[*] Enabling syslog, sshd, crond..."
+    # All three are already installed (openssh/busybox-extras from
+    # ALPINE_PACKAGES_CORE/UTILS) but --no-scripts skips the apk triggers
+    # that would normally enable them, so without this they sit unused.
+    # sshd generates its own host keys on first start (see its init script's
+    # generate_host_keys()), uniquely per machine -- never baked in at build
+    # time, which would make every NexaOS image share the same keys.
+    [ -x "$MNT_DIR/etc/init.d/syslog" ] && ln -sf /etc/init.d/syslog "$MNT_DIR/etc/runlevels/default/syslog"
+    [ -x "$MNT_DIR/etc/init.d/sshd" ] && ln -sf /etc/init.d/sshd "$MNT_DIR/etc/runlevels/default/sshd"
+    [ -x "$MNT_DIR/etc/init.d/crond" ] && ln -sf /etc/init.d/crond "$MNT_DIR/etc/runlevels/default/crond"
+    # /etc/acpi/PWRF/00000080 (from the acpid package defaults) already runs
+    # `poweroff` on a power-button event -- this just starts the daemon that
+    # listens for it, so VirtualBox/QEMU/host "power off" acts as a clean
+    # shutdown instead of a hard kill.
+    [ -x "$MNT_DIR/etc/init.d/acpid" ] && ln -sf /etc/init.d/acpid "$MNT_DIR/etc/runlevels/default/acpid"
+
+    echo "[*] Generating boot splash service..."
+    cat > "$MNT_DIR/usr/local/bin/nexa-boot-progress" << 'PROGRESS_EOF'
+#!/bin/sh
+# Time-estimated progress, like every other OS's boot splash — there's no
+# clean signal for "% of boot done" to hook into OpenRC's dependency graph,
+# so this climbs to 85% over a few seconds and holds; nexa-boot-finish jumps
+# it to 100% right as sway is about to take the display.
+PCT=5
+bootsplash $PCT "Starting NexaOS..."
+while [ $PCT -lt 85 ]; do
+    sleep 0.3
+    PCT=$((PCT + 4))
+    [ $PCT -gt 85 ] && PCT=85
+    bootsplash $PCT "Starting services..."
+done
+PROGRESS_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-boot-progress"
+
+    cat > "$MNT_DIR/usr/local/bin/nexa-boot-finish" << 'FINISH_EOF'
+#!/bin/sh
+[ -f /run/bootsplash.pid ] && kill "$(cat /run/bootsplash.pid)" 2>/dev/null
+rm -f /run/bootsplash.pid
+bootsplash 100 "Ready"
+sleep 0.2
+FINISH_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-boot-finish"
+
+    cat > "$MNT_DIR/etc/init.d/bootsplash" << 'BOOTSPLASH_EOF'
+#!/sbin/openrc-run
+description="NexaOS boot splash"
+
+depend() {
+    before *
+}
+
+start() {
+    ebegin "Starting boot splash"
+    if [ -x /usr/local/bin/bootsplash ]; then
+        /usr/local/bin/nexa-boot-progress &
+        echo $! > /run/bootsplash.pid
+    fi
+    eend 0
+}
+
+stop() {
+    [ -f /run/bootsplash.pid ] && kill "$(cat /run/bootsplash.pid)" 2>/dev/null
+    rm -f /run/bootsplash.pid
+    eend 0
+}
+BOOTSPLASH_EOF
+    chmod +x "$MNT_DIR/etc/init.d/bootsplash"
+    [ -x "$MNT_DIR/etc/init.d/bootsplash" ] && ln -sf /etc/init.d/bootsplash "$MNT_DIR/etc/runlevels/default/bootsplash"
+
+    echo "[*] Generating inittab..."
+    cat > "$MNT_DIR/etc/inittab" << 'INITTAB_EOF'
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+::ctrlaltdel:/sbin/openrc reboot
+::shutdown:/sbin/openrc shutdown
+tty1::respawn:/usr/local/bin/nexa-console
+ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100
+INITTAB_EOF
+
+    echo "[*] Generating Sway configuration..."
+    mkdir -p "$MNT_DIR/etc/sway" "$MNT_DIR/home/user/.config/sway/config.d"
+    printf '# Per-user sway settings (managed by the Settings app) go in this directory.\n' \
+        > "$MNT_DIR/home/user/.config/sway/config.d/00-nexa.conf"
+    # Numeric ids: the Settings app (uid 1000) must be able to write here.
+    chown -R 1000:1000 "$MNT_DIR/home/user/.config"
+    cat > "$MNT_DIR/etc/sway/config" << 'SWAY_CONFIG_EOF'
+# NexaOS Sway Configuration
+set $mod Mod4
+set $term foot
+set $menu wofi --show drun
+set $assistant nexa-ai-gui
+set $files nexa-files
+set $browser nexa-browser
+
+# Fonts
+font pango:monospace 10
+
+# Gaps & Borders
+smart_gaps on
+gaps inner 5
+gaps outer 5
+default_border pixel 2
+default_floating_border pixel 2
+
+# Drag any window (not just its titlebar) by holding mod and clicking.
+floating_modifier $mod
+
+# Windows open floating/overlapping by default (a normal desktop feel)
+# instead of auto-tiling into side-by-side regions. mod+shift+space still
+# toggles a window into the tiled layer for anyone who wants that instead.
+for_window [app_id=".*"] floating enable
+
+# Output configuration
+output * bg /usr/share/backgrounds/nexaos/wallpaper.png fill
+
+# Startup applications
+exec pipewire
+exec pipewire-pulse
+exec wireplumber
+exec waybar
+exec mako
+exec nexa-desktop-icons
+exec nexa-idle
+
+# Keybindings
+bindsym $mod+Return exec $term
+bindsym $mod+d exec $menu
+bindsym $mod+a exec $assistant
+bindsym $mod+e exec $files
+bindsym $mod+w exec $browser
+bindsym $mod+Shift+c kill
+bindsym $mod+Shift+e exec nexa-power
+# Emergency exit in case the power menu itself is broken
+bindsym $mod+Ctrl+Shift+e exit
+bindsym $mod+Shift+r reload
+
+# Screenshot (grim/slurp, see /usr/local/bin/nexa-screenshot)
+bindsym Print exec nexa-screenshot
+bindsym Shift+Print exec nexa-screenshot --select
+bindsym XF86AudioRaiseVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
+bindsym XF86AudioLowerVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+bindsym XF86AudioMute exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+
+# Lock screen (see /usr/local/bin/nexa-lock)
+bindsym $mod+Shift+l exec nexa-lock
+
+# Workspace names
+set $ws1 "1"
+set $ws2 "2"
+set $ws3 "3"
+set $ws4 "4"
+set $ws5 "5"
+
+# Switch to workspace
+bindsym $mod+1 workspace $ws1
+bindsym $mod+2 workspace $ws2
+bindsym $mod+3 workspace $ws3
+bindsym $mod+4 workspace $ws4
+bindsym $mod+5 workspace $ws5
+
+# Move window to workspace
+bindsym $mod+Shift+1 move container to workspace $ws1
+bindsym $mod+Shift+2 move container to workspace $ws2
+bindsym $mod+Shift+3 move container to workspace $ws3
+bindsym $mod+Shift+4 move container to workspace $ws4
+bindsym $mod+Shift+5 move container to workspace $ws5
+
+# Navigation
+bindsym $mod+Left focus left
+bindsym $mod+Down focus down
+bindsym $mod+Up focus up
+bindsym $mod+Right focus right
+
+# Resize
+bindsym $mod+Shift+Left resize shrink width 10px
+bindsym $mod+Shift+Down resize grow height 10px
+bindsym $mod+Shift+Up resize shrink height 10px
+bindsym $mod+Shift+Right resize grow width 10px
+
+# Floating
+bindsym $mod+shift+space floating toggle
+bindsym $mod+space focus mode_toggle
+
+# Cycle focus between open windows, alt-tab style
+bindsym $mod+Tab focus next
+bindsym $mod+Shift+Tab focus prev
+
+# Scratchpad (restores windows minimized via each app's titlebar button --
+# sway ignores Wayland's own minimize request since there's no taskbar to
+# restore from, so minimize moves windows here instead; the waybar
+# sway/scratchpad module below also restores on click)
+bindsym $mod+minus move scratchpad
+bindsym $mod+Shift+minus scratchpad show
+
+# Per-user settings written by the Settings app (e.g. keyboard layout). A stub
+# file is always shipped so the wildcard is guaranteed to match something.
+include /home/user/.config/sway/config.d/*.conf
+
+# Taskbar
+# Waybar is a standalone layer-shell bar (launched via `exec waybar` above,
+# configured in /etc/xdg/waybar/config) — it is not an i3bar status_command,
+# so no `bar { status_command ... }` block here (that pairing doesn't speak
+# the same protocol and just prints "error reading from status command").
+SWAY_CONFIG_EOF
+
+    echo "[*] Generating Waybar configuration..."
+    mkdir -p "$MNT_DIR/etc/xdg/waybar"
+    cat > "$MNT_DIR/etc/xdg/waybar/config" << 'WAYBAR_CONFIG_EOF'
+{
+    "layer": "top",
+    "position": "top",
+    "height": 30,
+    "modules-left": ["sway/workspaces", "sway/mode", "sway/scratchpad"],
+    "modules-center": ["clock"],
+    "modules-right": ["cpu", "memory", "network", "pulseaudio", "custom/power"],
+
+    "sway/workspaces": {
+        "disable-scroll": true,
+        "all-outputs": true
+    },
+
+    "sway/scratchpad": {
+        "format": "minimized ({count})",
+        "format-empty": "",
+        "tooltip": true,
+        "tooltip-format": "{app}: {title}"
+    },
+
+    "clock": {
+        "format": "{:%Y-%m-%d %H:%M:%S}",
+        "interval": 1
+    },
+    
+    "cpu": {
+        "interval": 2,
+        "format": "CPU: {usage}%"
+    },
+    
+    "memory": {
+        "interval": 5,
+        "format": "Memory: {}%"
+    },
+    
+    "network": {
+        "format-wifi": "WiFi: {essid} ({signalStrength}%)",
+        "on-click": "nexa-network",
+        "format-ethernet": "Ethernet",
+        "format-disconnected": "Offline"
+    },
+    
+    "custom/power": {
+        "format": "Power",
+        "tooltip": false,
+        "on-click": "nexa-power"
+    },
+
+    "pulseaudio": {
+        "on-click": "nexa-volume",
+        "format": "Volume: {volume}%"
+    }
+}
+WAYBAR_CONFIG_EOF
+
+    echo "[*] Generating Mako (notification daemon) configuration..."
+    mkdir -p "$MNT_DIR/etc/xdg/mako"
+    cat > "$MNT_DIR/etc/xdg/mako/config" << 'MAKO_CONFIG_EOF'
+background-color=#232323ee
+text-color=#e0e0e0
+border-color=#7aa2f7
+border-size=2
+border-radius=10
+padding=12
+margin=10
+default-timeout=6000
+max-visible=5
+font=monospace 10
+anchor=top-right
+
+[urgency=low]
+border-color=#3a3a3a
+
+[urgency=critical]
+border-color=#f7768e
+default-timeout=0
+MAKO_CONFIG_EOF
+
+fi
+
+echo "[✓] Configuration files generated"

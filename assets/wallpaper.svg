@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1b1e"/>
+      <stop offset="55%" stop-color="#1e1f23"/>
+      <stop offset="100%" stop-color="#212328"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wordGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8fb4ff"/>
+      <stop offset="100%" stop-color="#6a8fe0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <circle cx="1450" cy="280" r="520" fill="url(#glow)"/>
+
+  <!-- abstract node / circuit network, upper-right + scattered field -->
+  <g stroke="#7aa2f7" stroke-opacity="0.22" stroke-width="1.4" fill="none">
+    <path d="M1180 140 L1310 90 L1460 150 L1560 80 L1700 160"/>
+    <path d="M1310 90 L1340 240 L1460 150"/>
+    <path d="M1340 240 L1520 300 L1700 160"/>
+    <path d="M1520 300 L1620 430 L1780 380"/>
+    <path d="M1460 150 L1560 260"/>
+    <path d="M1780 380 L1860 300"/>
+    <path d="M1180 140 L1080 260 L1150 400"/>
+    <path d="M1150 400 L1340 240"/>
+    <path d="M1620 430 L1540 560"/>
+    <path d="M900 90 L1060 60 L1180 140"/>
+    <path d="M1560 260 L1620 430"/>
+  </g>
+  <g fill="#7aa2f7" fill-opacity="0.55">
+    <circle cx="1180" cy="140" r="4"/>
+    <circle cx="1310" cy="90" r="3.4"/>
+    <circle cx="1460" cy="150" r="4.6"/>
+    <circle cx="1560" cy="80" r="3.4"/>
+    <circle cx="1700" cy="160" r="4"/>
+    <circle cx="1340" cy="240" r="3.4"/>
+    <circle cx="1520" cy="300" r="4.6"/>
+    <circle cx="1620" cy="430" r="4"/>
+    <circle cx="1780" cy="380" r="3.4"/>
+    <circle cx="1860" cy="300" r="3"/>
+    <circle cx="1560" cy="260" r="3"/>
+    <circle cx="1080" cy="260" r="3.4"/>
+    <circle cx="1150" cy="400" r="4"/>
+    <circle cx="1540" cy="560" r="3"/>
+    <circle cx="900" cy="90" r="3"/>
+    <circle cx="1060" cy="60" r="3"/>
+  </g>
+
+  <!-- faint mirrored field, lower-left, well behind the wordmark -->
+  <g stroke="#a6e3a1" stroke-opacity="0.10" stroke-width="1.2" fill="none">
+    <path d="M120 780 L260 830 L180 940"/>
+    <path d="M260 830 L400 900"/>
+    <path d="M40 900 L120 780"/>
+  </g>
+  <g fill="#a6e3a1" fill-opacity="0.28">
+    <circle cx="120" cy="780" r="3"/>
+    <circle cx="260" cy="830" r="2.6"/>
+    <circle cx="180" cy="940" r="2.6"/>
+    <circle cx="400" cy="900" r="2.6"/>
+    <circle cx="40" cy="900" r="2.4"/>
+  </g>
+
+  <!-- logo mark: hexagon with inner node, matches the wordmark baseline -->
+  <g transform="translate(150,860)">
+    <polygon points="34,0 68,19 68,57 34,76 0,57 0,19"
+             fill="none" stroke="#7aa2f7" stroke-width="3" stroke-opacity="0.9"/>
+    <circle cx="34" cy="38" r="9" fill="#7aa2f7"/>
+    <circle cx="34" cy="38" r="16" fill="none" stroke="#7aa2f7" stroke-width="1.5" stroke-opacity="0.5"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="248" y="912" font-family="'DejaVu Sans', 'Noto Sans', sans-serif" font-weight="700"
+        font-size="86" letter-spacing="1">
+    <tspan fill="url(#wordGrad)">Nexa</tspan><tspan fill="#eef1f8">OS</tspan>
+  </text>
+  <text x="250" y="954" font-family="'DejaVu Sans', 'Noto Sans', sans-serif" font-weight="400"
+        font-size="21" letter-spacing="4" fill="#8a8f9c">A MODERN DESKTOP, BUILT FROM SCRATCH</text>
+
+  <rect x="250" y="972" width="120" height="3" rx="1.5" fill="#7aa2f7" fill-opacity="0.8"/>
+</svg>

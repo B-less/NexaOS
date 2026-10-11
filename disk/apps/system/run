@@ -1,0 +1,48 @@
+#!/bin/sh
+
+clear
+echo "╔════════════════════════════════════════╗"
+echo "║   NEXA OS - SYSTEM INFORMATION        ║"
+echo "╚════════════════════════════════════════╝"
+echo
+echo "System Information:"
+echo "─────────────────────────────────────────"
+uname -a | sed 's/^/  /'
+echo
+echo "Kernel Release: $(uname -r)"
+echo "Hardware Platform: $(uname -m)"
+echo "Operating System: $(uname -s)"
+echo
+echo "Memory Information:"
+echo "─────────────────────────────────────────"
+if [ -f /proc/meminfo ]; then
+    echo "  Total Memory:"
+    grep MemTotal /proc/meminfo | sed 's/^/    /'
+    echo "  Available Memory:"
+    grep MemAvailable /proc/meminfo | sed 's/^/    /'
+    echo "  Free Memory:"
+    grep MemFree /proc/meminfo | sed 's/^/    /'
+fi
+echo
+echo "CPU Information:"
+echo "─────────────────────────────────────────"
+if [ -f /proc/cpuinfo ]; then
+    echo "  Processors: $(grep -c '^processor' /proc/cpuinfo)"
+    echo "  Model: $(grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)"
+fi
+echo
+echo "Uptime:"
+echo "─────────────────────────────────────────"
+uptime | sed 's/^/  /'
+echo
+echo "Disk Usage (if available):"
+echo "─────────────────────────────────────────"
+if command -v df >/dev/null 2>&1; then
+    df -h / 2>/dev/null | tail -1 | awk '{print "  Root: Used " $3 " / Total " $2}' || echo "  Disk info unavailable"
+else
+    echo "  (df command not available)"
+fi
+echo
+echo "─────────────────────────────────────────"
+echo "Current Date/Time: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "─────────────────────────────────────────"

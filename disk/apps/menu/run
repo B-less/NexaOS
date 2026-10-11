@@ -1,0 +1,291 @@
+#!/bin/sh
+
+APP_DIR="/disk/apps"
+APP_LIST="/tmp/nexa_desktop_apps.$$"
+
+cleanup() {
+    rm -f "$APP_LIST"
+}
+
+trap cleanup EXIT
+
+pause_screen() {
+    echo
+    printf "Press Enter to continue..."
+    read dummy
+}
+
+valid_name() {
+    case "$1" in
+        ''|*[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+memory_available() {
+    awk '/^MemAvailable:/ { print $2 " kB"; exit }' /proc/meminfo 2>/dev/null
+}
+
+network_address() {
+    ifconfig eth0 2>/dev/null | awk '
+        /inet addr:/ {
+            sub("addr:", "", $2)
+            print $2
+            found = 1
+            exit
+        }
+        END {
+            if (found != 1) {
+                print "offline"
+            }
+        }
+    '
+}
+
+disk_usage() {
+    df -h /disk 2>/dev/null | awk 'NR == 2 { print $5 " used"; exit }'
+}
+
+print_header() {
+    clear
+    echo "=============================================="
+    echo "                NEXA DESKTOP"
+    echo "=============================================="
+    echo "Kernel: $(uname -r) | IP: $(network_address)"
+    echo "Memory: $(memory_available) | Disk: $(disk_usage)"
+    echo "=============================================="
+    echo
+}
+
+build_app_list() {
+    index=1
+
+    : > "$APP_LIST"
+
+    for appdir in "$APP_DIR"/*
+    do
+        [ -d "$appdir" ] || continue
+        [ -x "$appdir/run" ] || continue
+
+        app="${appdir##*/}"
+
+        if [ "$app" = "menu" ]; then
+            continue
+        fi
+
+        echo "$index:$app" >> "$APP_LIST"
+        index=$((index + 1))
+    done
+}
+
+show_app_list() {
+    build_app_list
+
+    if [ ! -s "$APP_LIST" ]; then
+        echo "No runnable applications found."
+        return
+    fi
+
+    while IFS=: read number app
+    do
+        printf "  %s) %s\n" "$number" "$app"
+    done < "$APP_LIST"
+}
+
+app_from_number() {
+    grep "^$1:" "$APP_LIST" 2>/dev/null | head -n 1 | cut -d ':' -f 2
+}
+
+launch_app() {
+    app="$1"
+
+    if [ -z "$app" ]; then
+        echo "Usage: open <app>"
+    elif ! valid_name "$app"; then
+        echo "Invalid app name."
+    elif [ ! -x "$APP_DIR/$app/run" ]; then
+        echo "Application not found: $app"
+    else
+        clear
+        "$APP_DIR/$app/run"
+    fi
+}
+
+applications_panel() {
+    while true
+    do
+        print_header
+        echo "Applications"
+        echo "------------"
+        show_app_list
+        echo
+        echo "Type an app number, app name, or 0 to return."
+        printf "apps> "
+        read choice
+
+        case "$choice" in
+            0|back|exit|quit)
+                return
+                ;;
+            '')
+                ;;
+            *[!0123456789]*)
+                launch_app "$choice"
+                pause_screen
+                ;;
+            *)
+                app="$(app_from_number "$choice")"
+                if [ -n "$app" ]; then
+                    launch_app "$app"
+                else
+                    echo "Unknown selection."
+                    pause_screen
+                fi
+                ;;
+        esac
+    done
+}
+
+diagnostics_panel() {
+    print_header
+    echo "Diagnostics"
+    echo "-----------"
+    echo "Machine: $(uname -m)"
+    echo "Uptime: $(cut -d ' ' -f 1 /proc/uptime 2>/dev/null) seconds"
+    echo
+    echo "Memory:"
+    grep '^MemTotal:\|^MemFree:\|^MemAvailable:' /proc/meminfo 2>/dev/null
+    echo
+    echo "Disk:"
+    df -h /disk 2>/dev/null
+    echo
+    echo "Network:"
+    ifconfig eth0 2>/dev/null
+    pause_screen
+}
+
+packages_panel() {
+    print_header
+    echo "Packages"
+    echo "--------"
+    echo "Installed:"
+    if [ -s /disk/packages/installed.db ]; then
+        cat /disk/packages/installed.db
+    else
+        echo "(none)"
+    fi
+    echo
+    echo "Available in /disk/repo:"
+    found=0
+    for pkgdir in /disk/repo/*
+    do
+        [ -d "$pkgdir" ] || continue
+        [ -f "$pkgdir/run" ] || continue
+        echo "${pkgdir##*/}"
+        found=1
+    done
+    [ "$found" -eq 1 ] || echo "(none)"
+    pause_screen
+}
+
+logs_panel() {
+    print_header
+    echo "Boot Log"
+    echo "--------"
+    if [ -s /disk/logs/boot.log ]; then
+        tail -n 20 /disk/logs/boot.log
+    else
+        echo "No boot log found."
+    fi
+    echo
+    echo "Network Log"
+    echo "-----------"
+    if [ -s /tmp/nexa_network.log ]; then
+        cat /tmp/nexa_network.log
+    else
+        echo "No network log for this boot."
+    fi
+    pause_screen
+}
+
+shell_panel() {
+    print_header
+    echo "Opening shell. Type exit to return to the desktop."
+    echo
+    /bin/sh
+}
+
+main_menu() {
+    print_header
+    echo "1) Applications"
+    echo "2) File Manager"
+    echo "3) Text Editor"
+    echo "4) System Monitor"
+    echo "5) Network Test"
+    echo "6) Packages"
+    echo "7) Diagnostics"
+    echo "8) Logs"
+    echo "9) Shell"
+    echo "0) Exit to Nexa CLI"
+    echo
+    printf "desktop> "
+}
+
+while true
+do
+    main_menu
+    read choice
+
+    case "$choice" in
+        1|apps|applications)
+            applications_panel
+            ;;
+        2|files|filemgr)
+            launch_app filemgr
+            ;;
+        3|edit|editor)
+            launch_app editor
+            ;;
+        4|monitor)
+            launch_app monitor
+            ;;
+        5|network|nettest)
+            launch_app nettest
+            ;;
+        6|packages|pkg)
+            packages_panel
+            ;;
+        7|diag|diagnostics)
+            diagnostics_panel
+            ;;
+        8|logs)
+            logs_panel
+            ;;
+        9|shell|sh)
+            shell_panel
+            ;;
+        0|exit|quit)
+            clear
+            echo "Leaving Nexa Desktop."
+            exit 0
+            ;;
+        open)
+            echo "Usage: open <app>"
+            pause_screen
+            ;;
+        '')
+            ;;
+        *)
+            if valid_name "$choice" && [ -x "$APP_DIR/$choice/run" ]; then
+                launch_app "$choice"
+            else
+                echo "Unknown desktop command."
+                pause_screen
+            fi
+            ;;
+    esac
+done

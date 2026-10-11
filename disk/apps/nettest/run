@@ -1,0 +1,340 @@
+#!/bin/sh
+
+print_header() {
+    clear
+    echo "NEXA NETWORK TEST"
+    echo "================="
+    echo
+}
+
+pause_screen() {
+    echo
+    printf "Press Enter to continue..."
+    IFS= read -r _
+}
+
+run_tool() {
+    tool="$1"
+    shift
+
+    if command -v "$tool" >/dev/null 2>&1; then
+        "$tool" "$@"
+        return $?
+    fi
+
+    if [ -x /bin/busybox ]; then
+        /bin/busybox "$tool" "$@" 2>/dev/null
+        return $?
+    fi
+
+    return 127
+}
+
+show_interfaces() {
+    echo "Interfaces"
+    echo "----------"
+
+    found=0
+    for iface_path in /sys/class/net/*
+    do
+        [ -d "$iface_path" ] || continue
+        found=1
+        iface="${iface_path##*/}"
+        state="unknown"
+        mac="unknown"
+        mtu="unknown"
+        carrier="unknown"
+
+        [ -r "$iface_path/operstate" ] && IFS= read -r state < "$iface_path/operstate"
+        [ -r "$iface_path/address" ] && IFS= read -r mac < "$iface_path/address"
+        [ -r "$iface_path/mtu" ] && IFS= read -r mtu < "$iface_path/mtu"
+        [ -r "$iface_path/carrier" ] && IFS= read -r carrier < "$iface_path/carrier"
+
+        echo "  $iface"
+        echo "    state:   $state"
+        echo "    mac:     $mac"
+        echo "    mtu:     $mtu"
+        echo "    carrier: $carrier"
+    done
+
+    [ "$found" -eq 1 ] || echo "No network interfaces found."
+}
+
+show_addresses() {
+    echo "IP Addresses"
+    echo "------------"
+
+    if run_tool ip addr show; then
+        return 0
+    fi
+
+    if run_tool ifconfig -a; then
+        return 0
+    fi
+
+    echo "No ip or ifconfig command available."
+}
+
+show_routes() {
+    echo "Routes"
+    echo "------"
+
+    if run_tool ip route show; then
+        return 0
+    fi
+
+    if run_tool route -n; then
+        return 0
+    fi
+
+    if [ -r /proc/net/route ]; then
+        cat /proc/net/route
+        return 0
+    fi
+
+    echo "No route information available."
+}
+
+show_dns() {
+    echo "DNS"
+    echo "---"
+
+    if [ -r /etc/resolv.conf ]; then
+        cat /etc/resolv.conf
+    else
+        echo "No /etc/resolv.conf found."
+    fi
+}
+
+ping_host() {
+    host="$1"
+    [ -n "$host" ] || host="1.1.1.1"
+
+    echo "Ping"
+    echo "----"
+    echo "Target: $host"
+    echo
+
+    if run_tool ping -c 3 -W 2 "$host"; then
+        echo
+        echo "Connectivity test passed."
+        return 0
+    fi
+
+    echo
+    echo "Connectivity test failed or ping is unavailable."
+    return 1
+}
+
+default_iface() {
+    for iface_path in /sys/class/net/*
+    do
+        [ -d "$iface_path" ] || continue
+        iface="${iface_path##*/}"
+        case "$iface" in
+            lo|sit*)
+                ;;
+            *)
+                echo "$iface"
+                return 0
+                ;;
+        esac
+    done
+
+    echo "eth0"
+}
+
+write_udhcpc_script() {
+    script="/tmp/nexa_udhcpc.script"
+    mkdir -p /tmp
+
+    cat > "$script" <<'EOF'
+#!/bin/sh
+
+case "$1" in
+    bound|renew)
+        /bin/busybox ifconfig "$interface" "$ip" netmask "$subnet" up 2>/dev/null
+
+        if [ -n "$router" ]; then
+            for gateway in $router
+            do
+                /bin/busybox route add default gw "$gateway" dev "$interface" 2>/dev/null
+                break
+            done
+        fi
+
+        if [ -n "$dns" ]; then
+            mkdir -p /etc
+            : > /etc/resolv.conf
+            for server in $dns
+            do
+                echo "nameserver $server" >> /etc/resolv.conf
+            done
+        fi
+        ;;
+    deconfig)
+        /bin/busybox ifconfig "$interface" 0.0.0.0 2>/dev/null
+        ;;
+esac
+
+exit 0
+EOF
+
+    chmod +x "$script"
+    echo "$script"
+}
+
+bring_up_network() {
+    iface="$1"
+    [ -n "$iface" ] || iface="$(default_iface)"
+
+    echo "Network Bring-Up"
+    echo "----------------"
+    echo "Interface: $iface"
+    echo
+
+    run_tool ip link set lo up 2>/dev/null || run_tool ifconfig lo up 2>/dev/null
+    run_tool ip link set "$iface" up 2>/dev/null || run_tool ifconfig "$iface" up 2>/dev/null
+
+    if command -v udhcpc >/dev/null 2>&1 || /bin/busybox udhcpc --help >/dev/null 2>&1; then
+        script="$(write_udhcpc_script)"
+        echo "Requesting DHCP lease..."
+        if run_tool udhcpc -i "$iface" -q -n -t 5 -T 3 -s "$script"; then
+            echo
+            echo "Network configured."
+            return 0
+        fi
+        echo
+        echo "DHCP failed."
+        return 1
+    fi
+
+    echo "udhcpc is not available. Interface was brought up without DHCP."
+    return 1
+}
+
+show_summary() {
+    print_header
+    show_interfaces
+    echo
+    show_addresses
+    echo
+    show_routes
+    echo
+    show_dns
+}
+
+print_help() {
+    echo "Commands:"
+    echo "  summary"
+    echo "  interfaces"
+    echo "  addresses"
+    echo "  routes"
+    echo "  dns"
+    echo "  up [iface]"
+    echo "  ping [host]"
+    echo "  help"
+    echo "  exit"
+}
+
+interactive_menu() {
+    while true
+    do
+        print_header
+        print_help
+        echo
+        printf "nettest> "
+        read -r cmd arg extra
+
+        if [ -n "$extra" ]; then
+            echo "Too many arguments."
+            pause_screen
+            continue
+        fi
+
+        case "$cmd" in
+            summary|'')
+                show_summary
+                pause_screen
+                ;;
+            interfaces|ifaces)
+                print_header
+                show_interfaces
+                pause_screen
+                ;;
+            addresses|addr|ip)
+                print_header
+                show_addresses
+                pause_screen
+                ;;
+            routes|route)
+                print_header
+                show_routes
+                pause_screen
+                ;;
+            dns)
+                print_header
+                show_dns
+                pause_screen
+                ;;
+            up)
+                print_header
+                bring_up_network "$arg"
+                pause_screen
+                ;;
+            ping)
+                print_header
+                ping_host "$arg"
+                pause_screen
+                ;;
+            help)
+                print_help
+                pause_screen
+                ;;
+            exit|quit|0)
+                echo "Exiting nettest."
+                return 0
+                ;;
+            *)
+                echo "Unknown command: $cmd"
+                print_help
+                pause_screen
+                ;;
+        esac
+    done
+}
+
+case "$1" in
+    '')
+        interactive_menu
+        ;;
+    summary)
+        show_summary
+        ;;
+    interfaces|ifaces)
+        show_interfaces
+        ;;
+    addresses|addr|ip)
+        show_addresses
+        ;;
+    routes|route)
+        show_routes
+        ;;
+    dns)
+        show_dns
+        ;;
+    up)
+        bring_up_network "$2"
+        ;;
+    ping)
+        ping_host "$2"
+        ;;
+    help|-h|--help)
+        print_help
+        ;;
+    *)
+        echo "Unknown nettest command: $1"
+        print_help
+        exit 1
+        ;;
+esac

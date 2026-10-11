@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 128 128">
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="#2a2a2a"/>
+  <g fill="#7aa2f7" transform="translate(64,64)">
+    <g id="tooth"><rect x="-6" y="-42" width="12" height="16" rx="2"/></g>
+    <use xlink:href="#tooth" transform="rotate(45)"/>
+    <use xlink:href="#tooth" transform="rotate(90)"/>
+    <use xlink:href="#tooth" transform="rotate(135)"/>
+    <use xlink:href="#tooth" transform="rotate(180)"/>
+    <use xlink:href="#tooth" transform="rotate(225)"/>
+    <use xlink:href="#tooth" transform="rotate(270)"/>
+    <use xlink:href="#tooth" transform="rotate(315)"/>
+    <circle r="24" fill="none" stroke="#7aa2f7" stroke-width="11"/>
+  </g>
+  <circle cx="64" cy="64" r="9" fill="#2a2a2a"/>
+</svg>
