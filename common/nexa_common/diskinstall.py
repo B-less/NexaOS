@@ -258,11 +258,12 @@ def write_grub_cfg(mountpoint, root_partition):
     with open(os.path.join(grub_dir, "grub.cfg"), "w") as f:
         f.write(
             'set timeout=2\n'
+            'set timeout_style=hidden\n'
             'set default=0\n\n'
             'menuentry "NexaOS" {\n'
             '    insmod part_gpt\n'
             '    insmod ext2\n'
-            f'    linux /boot/vmlinuz root={root_partition} rootwait mac80211_hwsim.radios=0 console=tty0 console=ttyS0\n'
+            f'    linux /boot/vmlinuz root={root_partition} rootwait mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0\n'
             '    initrd /boot/initramfs.cpio.gz\n'
             '}\n'
         )

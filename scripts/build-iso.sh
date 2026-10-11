@@ -56,7 +56,7 @@ PROMPT 1
 LABEL nexa
   MENU LABEL NexaOS (live)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.cpio.gz nexa.live mac80211_hwsim.radios=0 console=tty0 console=ttyS0
+  APPEND initrd=/boot/initramfs.cpio.gz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
 CFG_EOF
 
 # UEFI. The volume label can't be used to find the boot files: Rufus's ISO
@@ -67,21 +67,28 @@ CFG_EOF
 touch "$STAGE/boot/nexa-live.id"
 mkdir -p "$STAGE/boot/grub" "$STAGE/EFI/BOOT"
 cat > "$STAGE/boot/grub/grub.cfg" << 'CFG_EOF'
-set timeout=30
-set default=0
 insmod all_video
+# Boot straight away without a menu or GRUB's "Booting ..." line (the boot
+# animation takes the screen next); Esc during these 2 s shows the menu.
+if sleep --interruptible 2; then
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+    initrd /boot/initramfs.cpio.gz
+    boot
+fi
+set timeout=-1
+set default=0
 set color_normal=white/blue
 set color_highlight=black/light-gray
 set menu_color_normal=white/blue
 set menu_color_highlight=black/light-gray
 
 menuentry "NexaOS (live)" {
-    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 console=tty0 console=ttyS0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
     initrd /boot/initramfs.cpio.gz
 }
 # Skips the i915/amdgpu drivers and stays on the firmware framebuffer.
 menuentry "NexaOS (live, safe graphics)" {
-    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 nomodeset console=ttyS0 console=tty0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 nomodeset quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
     initrd /boot/initramfs.cpio.gz
 }
 # Kernel messages on screen from the first instant (EFI framebuffer
@@ -101,14 +108,12 @@ menuentry "Reboot" {
 }
 CFG_EOF
 cat > "$STAGE/embedded.cfg" << 'CFG_EOF'
-echo "NexaOS: loaded from $cmdpath"
 regexp --set=1:bootdev '^\(([^)]*)\)' "$cmdpath"
 if [ -n "$bootdev" -a -f "($bootdev)/boot/nexa-live.id" ]; then
     set root=$bootdev
 else
     search --no-floppy --file /boot/nexa-live.id --set=root
 fi
-echo "NexaOS: boot files on ($root)"
 configfile ($root)/boot/grub/grub.cfg
 CFG_EOF
 # prefix is deliberately left at GRUB's built-in memdisk: that's where the
@@ -121,7 +126,7 @@ CFG_EOF
 grub-mkstandalone -O x86_64-efi -o "$STAGE/EFI/BOOT/BOOTX64.EFI" \
     --install-modules="normal linux echo test regexp search search_fs_file \
         configfile iso9660 fat exfat ntfs part_gpt part_msdos all_video \
-        efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup" \
+        efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup sleep" \
     --modules="part_gpt part_msdos iso9660 fat" \
     --locales="" --fonts="" --themes="" \
     "boot/grub/grub.cfg=$STAGE/embedded.cfg"

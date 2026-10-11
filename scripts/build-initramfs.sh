@@ -57,6 +57,12 @@ done
 # without their firmware at that moment, amdgpu fails and leaves a black
 # screen. The kernel's firmware loader waits for this initramfs to unpack.
 # (Wi-Fi/Ethernet firmware stays on the rootfs; wifi-probe re-probes those.)
+# The boot animation starts from here, in the first second of boot, and keeps
+# running across switch_root (see bootsplash.c).
+if [ -x "$ROOTFS_DIR/usr/local/bin/bootsplash" ]; then
+    cp "$ROOTFS_DIR/usr/local/bin/bootsplash" "$STAGE/bin/bootsplash"
+fi
+
 for fwdir in i915 amdgpu; do
     if [ -d "$ROOTFS_DIR/lib/firmware/$fwdir" ]; then
         mkdir -p "$STAGE/lib/firmware"
@@ -80,6 +86,18 @@ if [ -e /proc/sys/kernel/hotplug ]; then
     ( echo /sbin/mdev > /proc/sys/kernel/hotplug ) 2>/dev/null || true
 fi
 [ -x /sbin/mdev ] && /sbin/mdev -s 2>/dev/null || true
+
+# Boot animation: only with "splash" on the kernel command line (the debug
+# boot entry leaves it off and shows every message). /init's own messages
+# then go to the kernel log (dmesg) instead of the screen.
+SPLASH=
+if grep -qw splash /proc/cmdline 2>/dev/null && [ -x /bin/bootsplash ]; then
+    SPLASH=1
+    /bin/bootsplash --daemon </dev/null >/dev/null 2>&1 &
+    exec >/dev/kmsg 2>&1
+fi
+splash() { [ -n "$SPLASH" ] && /bin/bootsplash "$@" >/dev/null 2>&1; return 0; }
+splash 5 "Starting NexaOS..."
 
 ensure_block_node() {
     DEV="$1"
@@ -111,6 +129,7 @@ try_mount_root() {
         echo "[INIT] Successfully mounted /dev/$DEV"
         if [ -x /mnt/root/sbin/init ]; then
             echo "[INIT] Found /sbin/init, executing switch_root..."
+            splash 35 "Starting services..."
             exec switch_root /mnt/root /sbin/init
         fi
         echo "[INIT] ERROR: /sbin/init not found in /mnt/root"
@@ -126,6 +145,7 @@ LIVE=
 grep -qw nexa.live /proc/cmdline 2>/dev/null && LIVE=1
 
 if [ -z "$LIVE" ]; then
+splash 12 "Looking for the system disk..."
 echo "[INIT] Waiting for block device..."
 TIMEOUT=20
 COUNTER=0
@@ -192,6 +212,7 @@ fi  # end of installed-disk search (skipped for nexa.live)
 # show up after the kernel starts, hence the retry loop.
 if [ -n "$LIVE" ]; then
     echo "[INIT] Live boot requested; looking for nexa.img..."
+    splash 12 "Looking for NexaOS..."
 else
     echo "[INIT] No direct root device found; trying live boot..."
 fi
@@ -211,6 +232,7 @@ while [ -z "$LIVE_DEV" ] && [ "$LIVE_TRIES" -lt 30 ]; do
             if mount -t "$FS" -o ro "/dev/$DEV" /mnt/cdrom 2>/dev/null; then
                 if [ -f /mnt/cdrom/nexa.img ]; then
                     echo "[INIT] Found nexa.img on /dev/$DEV ($FS)"
+                    splash 25 "Loading the system..."
                     LIVE_DEV=$DEV
                     break 2
                 fi
@@ -249,6 +271,7 @@ if [ -n "$LIVE_DEV" ] && [ -f /mnt/cdrom/nexa.img ]; then
                 mount -o move /mnt/cdrom /mnt/root/mnt/nexa-live 2>/dev/null \
                     || echo "[INIT] WARN: could not move live medium mount"
                 echo "[INIT] Found /sbin/init, executing switch_root (live)..."
+                splash 35 "Starting services..."
                 exec switch_root /mnt/root /sbin/init
             fi
             echo "[INIT] ERROR: /sbin/init not found in live overlay"
@@ -260,6 +283,11 @@ if [ -n "$LIVE_DEV" ] && [ -f /mnt/cdrom/nexa.img ]; then
     fi
 fi
 
+# Boot failed: give the screen and console back so the error is visible.
+if [ -n "$SPLASH" ]; then
+    /bin/bootsplash --quit >/dev/null 2>&1
+    exec </dev/console >/dev/console 2>&1
+fi
 echo "[INIT] ERROR: Could not mount any block device"
 ls -la /dev/ | grep -E '^b' || true
 echo "[INIT] Dropping to emergency shell..."

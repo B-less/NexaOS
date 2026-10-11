@@ -557,42 +557,49 @@ ZRAM_EOF
     echo "[*] Generating boot splash service..."
     cat > "$MNT_DIR/usr/local/bin/nexa-boot-progress" << 'PROGRESS_EOF'
 #!/bin/sh
-# Time-estimated progress, like every other OS's boot splash — there's no
-# clean signal for "% of boot done" to hook into OpenRC's dependency graph,
-# so this climbs to 85% over a few seconds and holds; nexa-boot-finish jumps
-# it to 100% right as sway is about to take the display.
-PCT=5
-bootsplash $PCT "Starting NexaOS..."
-while [ $PCT -lt 85 ]; do
-    sleep 0.3
-    PCT=$((PCT + 4))
-    [ $PCT -gt 85 ] && PCT=85
-    bootsplash $PCT "Starting services..."
+# Time-estimated progress for the boot animation (bootsplash --daemon, started
+# by the initramfs): there's no clean "% of boot done" signal in OpenRC's
+# dependency graph, so this climbs from where the initramfs left off to 90%
+# with stage names, and holds; nexa-boot-finish jumps it to 100%.
+PCT=40
+while [ $PCT -lt 90 ]; do
+    if [ $PCT -lt 55 ]; then MSG="Starting services..."
+    elif [ $PCT -lt 72 ]; then MSG="Bringing up the network..."
+    else MSG="Preparing your desktop..."
+    fi
+    bootsplash $PCT "$MSG"
+    sleep 0.4
+    PCT=$((PCT + 3))
 done
+bootsplash 90 "Preparing your desktop..."
 PROGRESS_EOF
     chmod +x "$MNT_DIR/usr/local/bin/nexa-boot-progress"
 
     cat > "$MNT_DIR/usr/local/bin/nexa-boot-finish" << 'FINISH_EOF'
 #!/bin/sh
+# Called right before sway takes the display: close the progress ring, fade
+# out, and wait until the animation has released the screen.
 [ -f /run/bootsplash.pid ] && kill "$(cat /run/bootsplash.pid)" 2>/dev/null
 rm -f /run/bootsplash.pid
-bootsplash 100 "Ready"
-sleep 0.2
+bootsplash 100 "Welcome"
+bootsplash --quit
 FINISH_EOF
     chmod +x "$MNT_DIR/usr/local/bin/nexa-boot-finish"
 
     cat > "$MNT_DIR/etc/init.d/bootsplash" << 'BOOTSPLASH_EOF'
 #!/sbin/openrc-run
-description="NexaOS boot splash"
+description="NexaOS boot animation progress"
 
 depend() {
     before *
 }
 
 start() {
-    ebegin "Starting boot splash"
-    if [ -x /usr/local/bin/bootsplash ]; then
-        /usr/local/bin/nexa-boot-progress &
+    ebegin "Starting boot animation progress"
+    if [ -x /usr/local/bin/bootsplash ] && grep -qw splash /proc/cmdline; then
+        # Normally already running since the initramfs; start one if not.
+        bootsplash --ping || { bootsplash --daemon </dev/null >/dev/null 2>&1 & }
+        /usr/local/bin/nexa-boot-progress </dev/null >/dev/null 2>&1 &
         echo $! > /run/bootsplash.pid
     fi
     eend 0
@@ -612,6 +619,7 @@ BOOTSPLASH_EOF
 ::sysinit:/sbin/openrc sysinit
 ::sysinit:/sbin/openrc boot
 ::wait:/sbin/openrc default
+::wait:/usr/local/bin/bootsplash --quit
 ::ctrlaltdel:/sbin/openrc reboot
 ::shutdown:/sbin/openrc shutdown
 tty1::respawn:/usr/local/bin/nexa-console
