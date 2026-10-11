@@ -262,7 +262,7 @@ def write_grub_cfg(mountpoint, root_partition):
             'menuentry "NexaOS" {\n'
             '    insmod part_gpt\n'
             '    insmod ext2\n'
-            f'    linux /boot/vmlinuz root={root_partition} rootwait console=tty0 console=ttyS0\n'
+            f'    linux /boot/vmlinuz root={root_partition} rootwait mac80211_hwsim.radios=0 console=tty0 console=ttyS0\n'
             '    initrd /boot/initramfs.cpio.gz\n'
             '}\n'
         )

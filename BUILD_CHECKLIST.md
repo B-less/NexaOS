@@ -6,7 +6,7 @@ Status as of 2026-10-11. Legend:
 - `[~]` partly done, or done but the result was never recorded — needs a re-check
 - `[ ]` not done
 
-**Progress: 46 of 75 done, 11 partial → ~69%** (partial counts as half)
+**Progress: 47 of 75 done, 12 partial → ~71%** (partial counts as half)
 
 ---
 
@@ -60,7 +60,7 @@ Status as of 2026-10-11. Legend:
 - [x] WiFi backend over iwd D-Bus, no root needed (`common/nexa_common/wifi.py`, mock-iwd tests)
 - [x] Network settings app
 - [x] `wifi-probe` service re-probes devices once firmware is available
-- [ ] WiFi on real hardware (only `mac80211_hwsim` tested)
+- [~] WiFi on real hardware: HP EliteBook 840 G6 (Intel AC 9560) driver + firmware load fine; hwsim fake radios shadowed it (fixed: `mac80211_hwsim.radios=0` + real-adapter preference, needs ISO rebuild and a connect test)
 
 ## 7. Packages & software
 
@@ -116,7 +116,7 @@ Status as of 2026-10-11. Legend:
 
 ## 13. Real hardware & release
 
-- [ ] Boot the live ISO/USB on a real machine
+- [x] Boot the live ISO/USB on a real machine (HP EliteBook 840 G6, UEFI, Rufus; sound works)
 - [ ] Install to a real disk and boot it (BIOS and UEFI)
 - [ ] Real GPU, audio, touchpad check
 - [ ] Remove one-off `fix_*.sh` / `inject_*.sh` scripts and stale `nexa.img.before-*` backups

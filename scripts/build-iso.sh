@@ -7,7 +7,9 @@
 #   - ISO mode: Rufus copies the files onto FAT32 and installs syslinux from
 #     /boot/isolinux (BIOS); UEFI firmware runs /EFI/BOOT/BOOTX64.EFI.
 # Every entry passes nexa.live so /init goes straight to looking for nexa.img
-# on whatever medium this ended up on (see build-initramfs.sh).
+# on whatever medium this ended up on (see build-initramfs.sh), and
+# mac80211_hwsim.radios=0: the kernel has the virtual Wi-Fi simulator built
+# in for VM testing, and its fake wlan0 otherwise shadows the real card.
 #
 # It ships the exact same kernel, initramfs, and rootfs (nexa.img) as a
 # direct-disk boot, just with nexa.img embedded as a plain file on the ISO
@@ -54,7 +56,7 @@ PROMPT 1
 LABEL nexa
   MENU LABEL NexaOS (live)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.cpio.gz nexa.live console=tty0 console=ttyS0
+  APPEND initrd=/boot/initramfs.cpio.gz nexa.live mac80211_hwsim.radios=0 console=tty0 console=ttyS0
 CFG_EOF
 
 # UEFI. The volume label can't be used to find the boot files: Rufus's ISO
@@ -74,19 +76,19 @@ set menu_color_normal=white/blue
 set menu_color_highlight=black/light-gray
 
 menuentry "NexaOS (live)" {
-    linux /boot/vmlinuz nexa.live console=tty0 console=ttyS0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 console=tty0 console=ttyS0
     initrd /boot/initramfs.cpio.gz
 }
 # Skips the i915/amdgpu drivers and stays on the firmware framebuffer.
 menuentry "NexaOS (live, safe graphics)" {
-    linux /boot/vmlinuz nexa.live nomodeset console=ttyS0 console=tty0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 nomodeset console=ttyS0 console=tty0
     initrd /boot/initramfs.cpio.gz
 }
 # Kernel messages on screen from the first instant (EFI framebuffer
 # earlycon), nothing filtered, and a panic stays on screen.
 menuentry "NexaOS (live, debug: show all boot messages)" {
     echo "Loading kernel..."
-    linux /boot/vmlinuz nexa.live earlycon=efifb keep_bootcon ignore_loglevel panic=0 console=ttyS0 console=tty0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 earlycon=efifb keep_bootcon ignore_loglevel panic=0 console=ttyS0 console=tty0
     echo "Loading initramfs..."
     initrd /boot/initramfs.cpio.gz
     echo "Starting kernel..."

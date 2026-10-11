@@ -129,7 +129,14 @@ def _station_devices(objects):
             "scanning": bool(station.get("Scanning")) if station else False,
             "connected_ssid": connected_ssid,
         })
-    return sorted(devices, key=lambda d: d["name"] or "")
+    # Real adapters first: mac80211_hwsim (built into the kernel for VM
+    # testing) creates fake radios with 02:00:00:00:xx:00 addresses, and a
+    # name sort put its wlan0 ahead of the real card.
+    return sorted(devices, key=lambda d: (_is_simulated(d["address"]), d["name"] or ""))
+
+
+def _is_simulated(address):
+    return (address or "").lower().startswith("02:00:00:00:")
 
 
 def _pick_device(objects, name=None):
