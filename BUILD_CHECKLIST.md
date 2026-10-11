@@ -6,7 +6,7 @@ Status as of 2026-10-11. Legend:
 - `[~]` partly done, or done but the result was never recorded — needs a re-check
 - `[ ]` not done
 
-**Progress: 44 of 74 done, 6 partial → ~64%** (partial counts as half)
+**Progress: 46 of 75 done, 6 partial → ~65%** (partial counts as half)
 
 ---
 
@@ -92,7 +92,8 @@ Status as of 2026-10-11. Legend:
 
 ## 10. Security (found 2026-10-11 review)
 
-- [ ] `.nexa` package IDs can overwrite root helpers (`/usr/local/bin/nexa-*-helper`, `/usr/local/lib/nexa-<id>`) via the passwordless `nexa-install-helper` → root
+- [x] `.nexa` packages can't overwrite or delete what they didn't install (root helpers, system code, system commands), can't leak files through `icon`, can't inject desktop-entry lines (2026-10-11, `common/tests/test_package_helper.py`)
+- [x] `make test` runs the real host test suites (it only printed "passed" before)
 - [ ] doas helpers are all `nopass`; once accounts have passwords, root-equivalent ones (package installs) should ask for it
 - [ ] sshd runs by default with password login on every install; make it opt-in
 - [ ] No firewall (`CONFIG_NETFILTER` off)

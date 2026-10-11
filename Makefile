@@ -324,10 +324,18 @@ ci: check-env setup
 	@$(MAKE) iso --no-print-directory
 	@echo "$(COLOR_GREEN)✓ CI pipeline passed$(COLOR_RESET)"
 
+# Host-side unit/security tests (no build, no VM). test_wifi.py needs a D-Bus
+# session bus for its mock iwd, so it only runs where dbus-run-session exists.
 test:
 	@echo "$(COLOR_BLUE)Running tests...$(COLOR_RESET)"
-	@echo "  ✓ Build sanity check"
-	@echo "  ✓ Binary validation"
+	@set -e; for t in $(BASE_DIR)/common/tests/test_*.py; do \
+		case "$$t" in \
+			*/test_wifi.py) command -v dbus-run-session >/dev/null 2>&1 || { echo "  - skipping $$(basename $$t) (no dbus-run-session)"; continue; }; \
+				dbus-run-session -- python3 "$$t" >/dev/null ;; \
+			*) python3 "$$t" >/dev/null ;; \
+		esac; \
+		echo "  ✓ $$(basename $$t)"; \
+	done
 	@echo "$(COLOR_GREEN)✓ All tests passed$(COLOR_RESET)"
 
 # ============================================================================
