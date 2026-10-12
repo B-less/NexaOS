@@ -69,6 +69,17 @@ for fwdir in i915 amdgpu; do
         cp -a "$ROOTFS_DIR/lib/firmware/$fwdir" "$STAGE/lib/firmware/"
     fi
 done
+# Same timing for the Wi-Fi regulatory database: cfg80211 is built in and
+# reads it at startup, so without it Wi-Fi falls back to the most
+# restrictive worldwide channel rules.
+for f in regulatory.db regulatory.db.p7s; do
+    for src in "$ROOTFS_DIR/lib/firmware/$f" "$ROOTFS_DIR/lib/firmware/$f.zst"; do
+        if [ -f "$src" ]; then
+            mkdir -p "$STAGE/lib/firmware"
+            cp -a "$src" "$STAGE/lib/firmware/"
+        fi
+    done
+done
 
 cat > "$STAGE/init" << 'INIT_EOF'
 #!/bin/sh
