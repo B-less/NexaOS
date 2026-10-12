@@ -17,7 +17,7 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [x] Further hardening — research + plan written: docs/HARDENING.md (kernel self-protection → Landlock for root helpers → AppArmor for internet-facing apps → own-key Secure Boot → disk encryption)
 
 ## 3. Installer
-- [x] BIOS + UEFI install tests pass on Alpine 3.24 with username "nexa" + password (BIOS boot in QEMU takes ~95 s: SeaBIOS reads the 37 MB initramfs slowly; harness wait raised to 240 s)
+- [x] BIOS + UEFI install tests pass on Alpine 3.24 with username "nexa" + password (UEFI re-run on the 3.2.0 ISO: PASS) (BIOS boot in QEMU takes ~95 s: SeaBIOS reads the 37 MB initramfs slowly; harness wait raised to 240 s)
 - [x] Choose your own username during install (account renamed everywhere, uid stays 1000; system no longer depends on the name "user"); install test now uses "nexa"
 - [ ] Install to a real disk and boot it *(needs you)*
 
