@@ -627,6 +627,7 @@ NFT_EOF
 # Hide kernel addresses and the kernel log from unprivileged users.
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
+kernel.yama.ptrace_scope = 1
 kernel.unprivileged_bpf_disabled = 1
 kernel.kexec_load_disabled = 1
 # Safer handling of links and files in shared directories like /tmp.

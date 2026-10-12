@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'  # No Color
 
 # Configuration
-PROJECT_VERSION="3.1.0"
+PROJECT_VERSION=$(sed -n "s/^PROJECT_VERSION=//p" build.conf 2>/dev/null)
 BUILD_DIR="build"
 DIST_DIR="dist"
 LOG_FILE="$BUILD_DIR/build.log"
@@ -43,7 +43,7 @@ print_info() {
 
 show_help() {
     cat << 'EOF'
-NexaOS Modern Build System v3.1.0
+NexaOS build launcher (version: see build.conf)
 
 USAGE:
   ./build.sh [COMMAND] [OPTIONS]

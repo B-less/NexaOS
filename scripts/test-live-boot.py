@@ -23,6 +23,7 @@ CHECKS = (
     'echo ALPINE=$(cat /etc/alpine-release)',
     'echo FIREWALL=$(nft list ruleset 2>/dev/null | grep -c "policy drop")',
     'echo KPTR=$(sysctl -n kernel.kptr_restrict)',
+    'echo PTRACE_SCOPE=$(sysctl -n kernel.yama.ptrace_scope 2>&1)',
     'echo SSHD=$(rc-service sshd status 2>&1 | grep -o "started\\|stopped")',
     'echo FW_ERRORS=$(dmesg | grep -ciE "firmware.*(fail|error)")',
     # [x]-bracketed patterns can't match this command line itself.
@@ -42,7 +43,7 @@ def project_version():
         for line in f:
             if line.startswith("PROJECT_VERSION="):
                 return line.split("=", 1)[1].strip()
-    return "3.1.0"
+    return "unknown"
 
 
 def ppm_to_png(ppm_path, png_path, half=True):
@@ -135,7 +136,7 @@ def main(argv):
             pump(1)
         text = buf.decode(errors="replace").replace("\r", "")
         report = [l for l in text.split(marker)[-2].splitlines()
-                  if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
+                  if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
                                    "WIREGUARD=", "POLICY_ROUTING=", "APPS="))] if text.count(marker) >= 2 else []
         print("\n".join(report) if report else "no report (serial login failed?)")

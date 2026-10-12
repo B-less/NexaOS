@@ -22,9 +22,9 @@ plan, in the order it pays off.
   refused; WebRTC and DNS prefetching off; private and Tor windows.
 - **VPN files** that would run commands as root are refused.
 
-## Step 1 — kernel self-protection (low risk, in progress)
+## Step 1 — kernel self-protection (done in 3.2.0)
 
-The Kernel Self Protection Project's baseline options that are still off.
+The Kernel Self Protection Project's baseline options, now on.
 They cost little (a few % on allocation-heavy work at most) and break
 nothing a desktop uses:
 
