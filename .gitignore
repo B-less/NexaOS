@@ -98,3 +98,4 @@ Module.symvers
 modules.order
 /gui/build_apps/
 /disk/apps/desktop-gui/fbdesktop
+attic/

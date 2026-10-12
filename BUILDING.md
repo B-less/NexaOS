@@ -1,370 +1,78 @@
-# NexaOS Modern Build System
+# Building NexaOS
 
-## Overview
+NexaOS is Alpine Linux 3.24 with a custom 6.18 kernel, a Sway/Hyprland
+desktop and its own Python/GTK apps. The build runs on a Linux host (WSL2
+works) and does the Alpine parts inside throwaway `alpine` Docker containers,
+so the host needs no Alpine tools.
 
-The NexaOS build system has been completely modernized to follow enterprise best practices:
+## Requirements
 
-- **Unified Makefile**: Single source of truth for all build targets
-- **Centralized Configuration**: `build.conf` replaces scattered parameters
-- **Reproducible Builds**: Docker containerization ensures consistency
-- **Automated CI/CD**: GitHub Actions pipeline for testing and releases
-- **Modern Tooling**: Support for Buildroot, CMake, Meson
-- **Parallel Compilation**: Optimized for multi-core systems
-- **Comprehensive Logging**: Full build audit trail
+- Linux or WSL2 with Docker, `make`, `gcc`, `bc`, `flex`, `bison`,
+  `libelf-dev`, `libssl-dev` (for the kernel), `python3`
+- QEMU with KVM and OVMF (`/usr/share/qemu/OVMF.fd`) for the test scripts
+- About 15 GB free disk space
 
-## Quick Start
-
-### Prerequisites
-```bash
-# Ubuntu/Debian
-sudo apt-get install build-essential gcc g++ make qemu-system-x86 e2fsprogs
-
-# macOS (with Homebrew)
-brew install gcc qemu e2fsprogs
-```
-
-### Basic Build
-```bash
-# Initialize build environment
-./build.sh setup
-
-# Full build (kernel, rootfs, disk, ISO)
-./build.sh build
-
-# Boot in QEMU
-./build.sh boot                    # Serial mode (recommended)
-./build.sh boot-gui                # GUI mode with display window
-```
-
-## File Structure
-
-```
-NexaOS/
-├── Makefile              # Enterprise build system (replaces all .sh scripts)
-├── build.conf            # Configuration (versions, flags, features)
-├── build.sh              # User-friendly build launcher
-├── Dockerfile            # Reproducible build environment
-├── buildroot.config      # Buildroot configuration
-├── .github/
-│   └── workflows/
-│       └── ci.yml        # GitHub Actions CI/CD pipeline
-├── src/                  # Source code
-├── build/                # Build artifacts (auto-created)
-├── dist/                 # Distributions (ISO, images)
-└── docs/                 # Documentation
-```
-
-## Configuration
-
-### build.conf
-Central configuration file that controls:
-- Versions of all components
-- Compiler flags and optimizations
-- Feature enablement (SSH, GUI, Python, etc.)
-- QEMU settings
-- Package management
-- Security hardening
-
-**Example customizations:**
-```bash
-# Change kernel version
-KERNEL_VERSION=6.18.33
-
-# Enable/disable features
-ENABLE_GUI=yes
-ENABLE_SSH=yes
-ENABLE_PYTHON=yes
-
-# Compiler optimization
-CFLAGS_COMMON=-Wall -Wextra -O3
-
-# Parallel compilation jobs
-PARALLEL_JOBS=8
-```
-
-## Build Targets
-
-### Using make directly:
-```bash
-make setup              # Prepare environment
-make kernel             # Build Linux kernel only
-make kernel-module      # Build nexa_proc kernel module
-make rootfs             # Build root filesystem
-make initramfs          # Build initramfs
-make disk               # Create disk image
-make apps               # Build applications
-make gui                # Build GUI components
-make iso                # Create bootable ISO
-make boot               # Boot in QEMU (serial)
-make boot-gui           # Boot in QEMU (GUI)
-make ci                 # Run full CI pipeline
-make docker             # Build in Docker
-make clean              # Remove build artifacts
-make distclean          # Complete clean
-make check-env          # Verify dependencies
-```
-
-### Using build.sh launcher:
-```bash
-./build.sh help         # Show all commands
-./build.sh setup        # Initialize
-./build.sh build        # Full build
-./build.sh boot         # Boot system
-./build.sh docker       # Docker build
-./build.sh clean        # Cleanup
-```
-
-## Advanced Usage
-
-### Custom Configuration
-```bash
-# Use custom build configuration
-make -f Makefile all KERNEL_VERSION=6.20
-
-# Override parallel jobs
-make all PARALLEL_JOBS=16
-
-# Build with verbose output
-make all VERBOSE=1
-```
-
-### Docker Build (Reproducible)
-```bash
-# Build Docker image
-docker build -t nexaos/build:latest .
-
-# Run build in container
-docker run --rm -v $(pwd):/workspace nexaos/build:latest make all
-
-# One-liner
-./build.sh docker
-```
-
-### Continuous Integration
-```bash
-# Run local CI pipeline (mimics GitHub Actions)
-make ci
-
-# This runs:
-# 1. Setup
-# 2. Build all
-# 3. Run tests
-# 4. Create ISO
-# 5. Validate artifacts
-```
-
-## Build Process Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. Setup: Create directories and verify environment         │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 2. Compile Core Binaries (init, httpd, monitor, etc.)       │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 3. Build Kernel (6.18.33)                                   │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 4. Build Kernel Module (nexa_proc)                          │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 5. Create Root Filesystem (etc, bin, lib, etc.)             │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 6. Build Initramfs (compressed root + init script)          │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 7. Create Disk Image (ext4, 1GB)                            │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 8. Build Applications and GUI                               │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 9. Create ISO Image (bootable)                              │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────────────┐
-│ 10. Ready to Boot (dist/nexa.img)                           │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## GitHub Actions CI/CD
-
-The `.github/workflows/ci.yml` provides:
-
-### Automatic Builds
-- Triggered on push, PR, or tag
-- Matrix builds (default + minimal configs)
-- Parallel compilation
-- Artifact storage
-
-### Testing
-- Environment verification
-- Binary validation
-- Boot testing in QEMU
-
-### Security
-- Trivy vulnerability scanning
-- CodeQL analysis
-- SARIF report upload
-
-### Releases
-- Automatic release creation on tags
-- Asset upload
-- Release notes generation
-
-### Container Registry
-- Docker image builds
-- Registry push (ghcr.io)
-- Build cache optimization
-
-**Triggering builds:**
-```bash
-# Push to main
-git push origin main          # Triggers build
-
-# Tag release
-git tag v3.1.0
-git push --tags              # Triggers release build
-```
-
-## Buildroot Integration
-
-For modern Linux distro building, use Buildroot:
+## First build
 
 ```bash
-# Initialize Buildroot
-make buildroot-init
-
-# Configure
-make buildroot-menuconfig
-
-# Build
-make buildroot-build
-
-# Output in output/
+make kernel   # once, and after changing kernel.config.6.18.33 (~20 min, ~8 min incremental)
+make iso      # rootfs + apps + initramfs + disk image + hybrid ISO
 ```
 
-The `buildroot.config` file pre-configures:
-- Kernel (6.18.33)
-- Toolchain (GCC 13, musl/glibc)
-- Packages (Busybox, SSH, Python, etc.)
-- Filesystems (ext4, ISO9660)
-- Security hardening
+The result is `dist/NexaOS-<version>.iso`, a hybrid image: BIOS (isolinux)
+and UEFI (GRUB) from a USB stick or DVD. Write it with Rufus (choose **DD
+image** mode if Rufus asks), `dd`, or balenaEtcher. Secure Boot must be off.
 
-## Troubleshooting
+The kernel source lives in `kernel/linux-6.18.33`; its config is
+`kernel.config.6.18.33` (copy it to `.config` there). The kernel is
+monolithic (no modules): every driver, including WiFi, Bluetooth, WireGuard
+and graphics, is built in.
 
-### Build fails
+## Everyday rebuilds
+
 ```bash
-# Check environment
-make check-env
-
-# View full build log
-cat build/build.log
-
-# Clean and retry
-make distclean
-make all
+make refresh  # ~5 min: re-provision packages/apps/configs into the existing rootfs,
+              # then initramfs, disk image and ISO
+make test     # host-side unit tests (no VM); about 15 suites
 ```
 
-### QEMU boot fails
+Change `build.conf` to add Alpine packages (`ALPINE_PACKAGES_*`) or bump the
+version. `make refresh` needs a rootfs from one earlier `make iso`.
+
+`rootfs/` and the images are owned by root (they are built in containers), so
+the `setup` step of `make kernel` cannot write there. If `make kernel` fails at
+`setup`, build the kernel directly:
+
 ```bash
-# Verify kernel and images exist
-ls -lh dist/{bzImage,initramfs.cpio.gz,nexa.img}
-
-# Check QEMU installation
-qemu-system-x86_64 --version
-
-# Boot with verbose output
-make boot VERBOSE=1
+cd kernel/linux-6.18.33 && make -j"$(nproc)" bzImage && cp arch/x86/boot/bzImage ../../dist/bzImage
 ```
 
-### Docker build issues
-```bash
-# Rebuild Docker image
-docker build -t nexaos/build:latest --no-cache .
+## Testing
 
-# Run with debug
-docker run -it nexaos/build:latest bash
+| Command | What it checks |
+|---|---|
+| `make test` | Unit tests: installer, privilege helpers, Wi-Fi/Bluetooth against mock D-Bus services, VPN file checks, browser history/downloads/Tor helpers, themes, Nexa Pulse |
+| `python3 scripts/test-live-boot.py` | Boots the ISO (UEFI, as a USB stick) in QEMU, screenshots the desktop, logs in on serial and reports Alpine version, firewall, kernel hardening, SSH off, firmware errors, running desktop parts, Bluetooth service, WireGuard |
+| `python3 scripts/test-install-cycle.py [--uefi]` | Boots the live ISO, installs to a blank virtual disk with a custom username and password, boots the installed disk alone and logs in |
+| `sh scripts/test-app-headless.sh APP_DIR MODULE out.png` | Runs one app in a headless Sway container and saves a screenshot (see the script for `SETUP`, `WALLPAPER`, `APP_ARGS`) |
+
+A VM has no real GPU, so QEMU always exercises the Sway session; Hyprland is
+validated with `Hyprland --verify-config` and needs real hardware.
+
+## Layout
+
+```
+Makefile, build.conf      build entry points and settings
+kernel.config.6.18.33     kernel configuration
+scripts/                  provisioning, image/ISO builders, staging (stage-*.sh), tests
+common/nexa_common/       shared Python: themes, titlebar, compositor, Wi-Fi, Bluetooth,
+                          privilege elevation, installer, VPN file checks
+common/tests/             unit tests (make test)
+shell/                    bar panels: start menu, Control Centre, Dock, Launchpad
+<app>/nexa_<app>/         one directory per app (browser, settings-app, pulse, ...)
+assets/                   icons, wallpapers
+legacy/                   early one-off scripts, kept for history (not used)
+dist/                     build output (git-ignored)
 ```
 
-## Performance Optimization
-
-### Parallel Compilation
-```bash
-# Auto-detect cores
-make all
-
-# Force specific job count
-make all PARALLEL_JOBS=8
-```
-
-### Build Caching
-```bash
-# Use ccache
-export PATH="/usr/lib/ccache:$PATH"
-make all
-```
-
-### Incremental Builds
-```bash
-# Rebuild only changed components
-make rootfs              # Only rootfs
-make apps                # Only applications
-```
-
-## Modernization Benefits
-
-| Old System | New System |
-|-----------|-----------|
-| Multiple shell scripts | Single Makefile |
-| Scattered parameters | build.conf |
-| Manual compilation | Automated tooling |
-| No CI/CD | GitHub Actions |
-| Non-reproducible | Docker containers |
-| Manual version tracking | Semantic versioning |
-| Limited error handling | Comprehensive logging |
-
-## Next Steps
-
-1. **Local Development**
-   ```bash
-   ./build.sh setup
-   ./build.sh build
-   ./build.sh boot
-   ```
-
-2. **GitHub Integration**
-   - Push to GitHub
-   - Enable Actions
-   - Automated builds trigger
-
-3. **Docker Hub**
-   - Push build image
-   - Enable auto-builds
-   - Distribute containers
-
-4. **Release Management**
-   - Tag versions: `git tag v3.1.0`
-   - Push tags: `git push --tags`
-   - Automatic release creation
-
-## Support & Documentation
-
-- Build system: `make help` or `./build.sh help`
-- Configuration: See `build.conf`
-- Logs: Check `build/build.log`
-- CI/CD: See `.github/workflows/ci.yml`
-
-## License
-
-NexaOS build system © 2024 Nexa Development Team
+See ARCHITECTURE.md for how the running system fits together.

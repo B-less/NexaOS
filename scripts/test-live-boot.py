@@ -3,7 +3,7 @@
 save a screenshot, log in on the serial console and print a health report.
 
 Usage: python3 scripts/test-live-boot.py [ISO] [--shot desktop.png]
-Defaults: dist/NexaOS-3.1.0.iso, screenshot to dist/live-desktop.png.
+Defaults: dist/NexaOS-<PROJECT_VERSION>.iso, screenshot to dist/live-desktop.png.
 Needs qemu-system-x86_64 with KVM and OVMF (/usr/share/qemu/OVMF.fd).
 A VM has no real GPU, so this exercises the Sway session.
 """
@@ -36,6 +36,14 @@ CHECKS = (
 )
 
 
+def project_version():
+    with open(os.path.join(REPO, "build.conf")) as f:
+        for line in f:
+            if line.startswith("PROJECT_VERSION="):
+                return line.split("=", 1)[1].strip()
+    return "3.1.0"
+
+
 def ppm_to_png(ppm_path, png_path, half=True):
     data = open(ppm_path, "rb").read()
     header = data.split(b"\n", 3)
@@ -57,7 +65,7 @@ def ppm_to_png(ppm_path, png_path, half=True):
 
 def main(argv):
     args = [a for a in argv if not a.startswith("--")]
-    iso = args[0] if args else os.path.join(REPO, "dist", "NexaOS-3.1.0.iso")
+    iso = args[0] if args else os.path.join(REPO, "dist", f"NexaOS-{project_version()}.iso")
     shot = argv[argv.index("--shot") + 1] if "--shot" in argv else os.path.join(REPO, "dist", "live-desktop.png")
     work = tempfile.mkdtemp(prefix="nexa-live-")
     mon, ser = os.path.join(work, "mon.sock"), os.path.join(work, "ser.sock")

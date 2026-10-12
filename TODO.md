@@ -14,7 +14,7 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [x] Installed systems start at the lock screen (password after every boot); per-user opt-out in Settings > Power; live USB unchanged
 - [x] Browser: WebKit sandbox on by default (verified: pages + JavaScript render with web content inside bwrap)
 - [x] Package server: the QEMU-only HTTP setting was dead config (only old fix_*.sh used it); apps install from Alpine's signed HTTPS repos
-- [ ] Further hardening (AppArmor, signed boot) — research + plan
+- [x] Further hardening — research + plan written: docs/HARDENING.md (kernel self-protection → Landlock for root helpers → AppArmor for internet-facing apps → own-key Secure Boot → disk encryption)
 
 ## 3. Installer
 - [x] BIOS + UEFI install tests pass on Alpine 3.24 with username "nexa" + password (BIOS boot in QEMU takes ~95 s: SeaBIOS reads the 37 MB initramfs slowly; harness wait raised to 240 s)
@@ -34,10 +34,10 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 
 ## 5. Hardware
 - [~] Bluetooth: kernel + bluez + Bluetooth audio + bt-probe firmware re-bind + Settings page with pairing agent (tested against a mock BlueZ; needs a real adapter: HP test)
-- [ ] Intel SOF audio, NVIDIA (nouveau), Intel Lunar Lake+ (xe) — evaluate
+- [ ] Intel SOF audio, NVIDIA (nouveau), Intel Lunar Lake+ (xe) — evaluated, not enabled yet: built-in GPU drivers load firmware before the root filesystem exists; nouveau (Turing+ GSP) and xe firmware are too big for the initramfs, and a driver that takes the screen over from simpledrm and then fails leaves it black. Needs either firmware-in-initramfs per GPU family or loadable modules. SOF: only needed on newer Intel laptops whose sound doesn't work with HDA (840 G6 sound works).
 
 ## 6. Release
-- [ ] Clean up one-off fix_*.sh / inject_*.sh scripts and old image backups
-- [ ] Update BUILDING.md / ARCHITECTURE.md
+- [x] Clean-up: one-off scripts moved to legacy/ (git mv); old image backups and logs moved to attic/ (git-ignored, 272 MB, delete when you like)
+- [x] BUILDING.md / ARCHITECTURE.md rewritten for the current system
 - [ ] Push to GitHub so CI runs *(needs you: create the repo)*
-- [ ] Version number and changelog
+- [x] Version 3.2.0 and CHANGELOG.md

@@ -1,310 +1,129 @@
-# NexaOS - Production Architecture
+# NexaOS Architecture
 
-## Overview
+NexaOS is Alpine Linux 3.24 (musl, OpenRC, apk) on a custom monolithic Linux
+6.18 kernel, with a Wayland desktop (Hyprland, or Sway as the fallback) and a
+set of Python 3 / GTK 3 apps written for it. Packages come from Alpine's
+signed HTTPS repositories.
 
-NexaOS is a **modern Linux-based desktop operating system** built from scratch with a real, production-grade technology stack.
+## Boot
 
-- **Base**: Alpine Linux 3.19.1 (minimal, musl libc)
-- **Kernel**: Linux 6.18.33 (optimized for desktop with DRM/GPU support)
-- **Display Server**: Wayland 1.22.0
-- **Compositor**: Sway 1.8.1 (tiling window manager)
-- **Taskbar**: Waybar 1.9.1
-- **Launcher**: Wofi
-- **Terminal**: Foot
-- **Package Manager**: APK (Alpine Package Keeper)
+1. **Firmware → bootloader.** The ISO is hybrid: isolinux for BIOS, a
+   standalone GRUB for UEFI. GRUB waits silently for 2 s (Esc shows the
+   menu). Installed disks get GRUB for both BIOS and UEFI.
+2. **Kernel.** Monolithic (`CONFIG_MODULES` off): storage, USB, graphics
+   (Intel i915, AMD amdgpu; simpledrm as the fallback), WiFi, Bluetooth, WireGuard and the
+   netfilter/policy-routing pieces are built in. GPU firmware (i915, amdgpu)
+   and `regulatory.db` are inside the initramfs, because built-in graphics
+   drivers ask for firmware before the root filesystem exists.
+3. **initramfs `/init`** (busybox). On the live medium (`nexa.live` on the
+   kernel command line) it loop-mounts `nexa.img` from the USB stick
+   read-only and puts a 1 GB RAM overlay on top, so the live session writes
+   nothing to the stick and forgets everything at shutdown. On an installed
+   disk it finds the root partition and mounts it. Then `switch_root`.
+4. **OpenRC.** The boot animation (`bootsplash`, a hexagon that builds itself
+   and writes NEXA) runs on the framebuffer while services start.
+   `wifi-probe` and `bt-probe` re-offer WiFi and USB Bluetooth adapters to
+   their drivers now that `/lib/firmware` is mounted. Then the firewall
+   (nftables: inbound dropped except replies), iwd, bluetoothd, PipeWire.
+5. **Session.** `nexa-session` logs the desktop user (uid 1000, whatever the
+   installer named it) in on tty1 and runs `nexa-desktop`, which starts
+   Hyprland on a real GPU (its driver is i915, xe, amdgpu, radeon or nouveau;
+   this kernel has i915 and amdgpu) and Sway otherwise,
+   or if Hyprland exits within 20 s. `~/.config/nexa/session` overrides it.
+   On installed systems `nexa-login-lock` asks for the password first.
 
-## Why This Stack?
+## Desktop
 
-| Component | Why |
-|-----------|-----|
-| **Alpine Linux** | Minimal (100MB base), security-first, production-used in containers |
-| **musl libc** | Smaller than glibc, statically linkable, reliable |
-| **Wayland** | Modern display protocol, replacing X11 (deprecated) |
-| **Sway** | Lightweight compositor, great for QEMU/minimal hardware |
-| **APK** | Fast, deterministic, excellent dependency resolution |
+| Part | What it is |
+|---|---|
+| Bar | waybar, with the start button, clock, Control Centre, tray |
+| `nexa-start` | Start menu: search, pinned apps, power (Super+D) |
+| `nexa-control` | Control Centre: Wi-Fi, volume, brightness, Do Not Disturb (Super+N) |
+| `nexa-dock` | Dock with magnification, running-app dots, Launchpad first |
+| `nexa-launchpad` | Full-screen app grid with type-to-search (Super+Space) |
+| `nexa-lock` | Lock screen; idle lock/blank set in Settings > Power |
+| mako | Notifications |
 
-## Architecture Diagram
+The shell panels are GTK layer-shell surfaces (namespaces `nexa-*`, which
+Hyprland blurs). `common/nexa_common/compositor.py` hides the
+Hyprland/Sway differences (window list, focus, minimize, wallpaper, keyboard
+layout).
 
-```
-┌─────────────────────────────────────────────────────┐
-│           NexaOS Desktop Environment                 │
-├─────────────────────────────────────────────────────┤
-│  Applications: Foot, Thunar, GIMP, Firefox, etc.    │
-├─────────────────────────────────────────────────────┤
-│         Wayland Protocols & XDG Base Dirs            │
-├─────────────────────────────────────────────────────┤
-│  Sway Compositor (tiling, Wayland implementation)   │
-├─────────────────────────────────────────────────────┤
-│        Wayland Server (libwayland-server)            │
-├─────────────────────────────────────────────────────┤
-│  wlroots (Wayland rendering, GPU access)            │
-├─────────────────────────────────────────────────────┤
-│  Mesa/DRM (GPU drivers, framebuffer access)         │
-├─────────────────────────────────────────────────────┤
-│  Linux Kernel 6.18.33 (DRM, virtio-gpu, KMS)        │
-├─────────────────────────────────────────────────────┤
-│  Alpine Linux (OpenRC, APK package manager)         │
-└─────────────────────────────────────────────────────┘
-```
+**Themes.** `themes.py` holds five themes (Horizon, Nebula, Aurora, Eclipse,
+Daybreak) and renders them into waybar, mako, foot, Sway, Hyprland and GTK
+settings, plus a palette of `@nexa_*` colours that every Nexa app's
+stylesheet uses. Apps watch `~/.config/nexa/theme.json` and restyle live.
+"Glass windows" makes app windows partly see-through (84% solid and blurred
+on Hyprland, 94% on Sway); `titlebar.py` paints that colour once per window.
 
-## Build System
+## Apps
 
-The Makefile orchestrates a **5-stage build**:
+Each app is a Python package `<dir>/nexa_<name>/` staged to
+`/usr/local/lib/nexa-<name>/` with a launcher in `/usr/local/bin` and a
+`.desktop` file (see `scripts/stage-*.sh`). All use the shared titlebar
+(minimize, maximize, close) and theme palette.
 
-### Stage 1: Environment Setup (`make setup`)
-- Create build directories
-- Verify dependencies
-- Initialize logs
+Files, Nexa Browser, Settings, Nexa Software, NexaOS Assistant (Claude),
+Nexa Pulse (task manager + system monitor, Ctrl+Shift+Esc), Editor, Nexa
+Notes, Music, Calculator, Nexa Viewer, Nexa PDF, Nexa Archive, Screenshot,
+Clipboard, Color Picker, Characters, Network, Volume, Power, Install NexaOS
+(live only). Nexa Tasks and Nexa System Monitor are still installed but
+hidden; Nexa Pulse replaces them.
 
-### Stage 2: Kernel Build (`make kernel`)
-- Compile Linux 6.18.33 for x86_64
-- Kernel modules support
-- DRM/GPU drivers enabled
+**Browser** (WebKitGTK 4.1): web content runs in WebKit's bubblewrap sandbox;
+history and sign-in cookies are saved per user, third-party cookies are
+refused; downloads go to `~/Downloads` with live speed; private windows keep
+nothing; Tor windows (`nexadark`) are private and send everything, DNS
+included, through a per-user Tor on 127.0.0.1:9150 started on demand.
 
-### Stage 3: Root Filesystem (`make rootfs`)
-- Download Alpine minirootfs
-- Configure APK repositories
-- Setup Wayland environment variables
-- Create user/group databases
+## Privileges
 
-### Stage 4: Disk Image Population (`make disk`)
-- Mount ext4 disk image
-- Copy Alpine rootfs
-- Use APK to install packages into rootfs
-  - Core: alpine-base, busybox, util-linux
-  - Wayland: wayland, libxkbcommon, mesa
-  - Sway: sway, waybar, wofi, swaylock
-  - Apps: foot, xdg-desktop-portal-wlr, grim, slurp
-- Configure Sway and Waybar
-- Create OpenRC services
+The desktop user is not root. Root-level actions go through small helper
+programs, each run with `doas` and each accepting one JSON request on stdin,
+checking every field, and touching only what it is for:
 
-### Stage 5: Bootable ISO (`make iso`)
-- Create ISO with GRUB 2 (UEFI) + ISOLINUX (BIOS)
-- Hybrid image supports both physical media and USB
+| Helper | Does | Password on installed systems |
+|---|---|---|
+| `nexa-software-helper` | install/remove Alpine packages | yes |
+| `nexa-install-helper` | install `.nexa` app bundles | yes |
+| `nexa-ai-control-helper` | the assistant's system actions | yes |
+| `nexa-settings-helper` | hostname, time zone, assistant config, VPN tunnels, Bluetooth rfkill | no |
+| `nexa-power-helper` | suspend, reboot, power off | no |
+| `nexa-mount-helper` | mount/unmount USB drives | no |
+| `nexa-setup-helper` | partition and install to a disk | live USB only; removed by the installer |
 
-## Key Files & Configuration
+`common/nexa_common/elevate.py` runs a helper with `doas -n` and, when doas
+wants a password, asks for it in a dialog (`askpass.py`) and passes it to
+doas through a pseudo-terminal. The installer rewrites `/etc/doas.conf` on
+the new system accordingly (`harden_privileges`).
 
-### build.conf
-Central configuration file with:
-- All component versions
-- Feature flags
-- APK package lists
-- QEMU settings
+**VPN.** Settings > VPN imports WireGuard `.conf` files through the settings
+helper, which refuses `PreUp`/`PostUp`/`PreDown`/`PostDown` (wg-quick would
+run them as root) and any unknown setting, stores tunnels in
+`/etc/wireguard` (root only), runs one at a time with `wg-quick`, and applies
+and restores the tunnel's DNS itself.
 
-### Makefile Targets
+**Bluetooth.** Settings > Bluetooth talks to BlueZ over D-Bus (allowed for
+local users by BlueZ's policy) and registers a pairing agent that shows or
+asks for codes; only lifting an rfkill block goes through the helper.
 
-**Building:**
-```bash
-make setup              # Initialize build environment
-make kernel             # Build kernel only
-make rootfs             # Create Alpine rootfs
-make disk               # Install packages and configure
-make iso                # Create bootable ISO
-make all                # Full build
-```
+## Hardening
 
-**Testing:**
-```bash
-make boot               # Boot in QEMU (serial)
-make boot-gui           # Boot in QEMU (Wayland/GPU)
-```
+- nftables: inbound traffic dropped unless it answers something we sent
+- sysctl: `kptr_restrict=2`, `dmesg_restrict`, no ICMP redirects, rp_filter,
+  SYN cookies, protected symlinks/hardlinks
+- sshd installed but off
+- password for package installs and assistant actions; lock screen after
+  every boot on installed systems
+- browser content sandboxed (bubblewrap); WebRTC and DNS prefetching off
 
-**Cleanup:**
-```bash
-make clean              # Remove build artifacts
-make distclean          # Remove everything
-```
+See `docs/HARDENING.md` for the plan beyond this (AppArmor, signed boot).
 
-## Disk Layout
+## Installer
 
-```
-/dev/sda
-├── /boot               # Kernel, initramfs
-├── /bin → /usr/bin    # Busybox utilities
-├── /sbin → /usr/sbin  # System utilities
-├── /lib → /usr/lib    # Libraries (musl)
-├── /etc                # Configuration
-│   ├── sway/           # Sway compositor config
-│   ├── xdg/waybar/     # Waybar config
-│   └── profile.d/      # Environment setup
-├── /usr
-│   ├── bin/            # Applications
-│   ├── lib/            # Libraries
-│   └── share/          # Data files
-├── /var/lib/apk/       # APK package database
-├── /run/user/1000      # Wayland XDG_RUNTIME_DIR
-└── /home/user/         # User home directory
-```
-
-## Booting Process
-
-### Serial Boot (`make boot`)
-1. QEMU loads kernel + initramfs
-2. Initramfs mounts /dev/sda as root
-3. OpenRC brings up basic services
-4. Serial console login shell
-
-### GUI Boot (`make boot-gui`)
-1. QEMU with virtio-gpu device
-2. Kernel initializes DRM/framebuffer
-3. Wayland display server starts
-4. Sway compositor launches
-5. Desktop environment ready
-
-## Package Management
-
-All applications installed via APK:
-
-```bash
-# Inside running system
-apk add package-name
-apk update && apk upgrade
-apk del package-name
-apk info                # List installed packages
-```
-
-### Pre-configured Packages
-
-**Core:**
-- alpine-base
-- busybox (utilities)
-- util-linux (system tools)
-- e2fsprogs (filesystem)
-
-**Desktop:**
-- wayland
-- sway
-- waybar
-- wofi (launcher)
-- foot (terminal)
-
-**Utilities:**
-- grim (screenshot)
-- slurp (selection)
-- xdg-desktop-portal-wlr
-- OpenRC (init system)
-
-## Planned Applications
-
-Real, production applications to be added:
-
-- **File Manager**: Thunar
-- **Text Editor**: gedit / mousepad
-- **Terminal**: Foot (already included)
-- **Calculator**: Calc
-- **System Monitor**: htop
-- **Network Manager**: nmcli / nmtui
-- **Package Manager GUI**: apk GUI wrapper
-- **Settings**: GNOME Control Center or custom
-- **Media Player**: VLC
-- **Image Viewer**: feh / Eye of MATE
-- **PDF Viewer**: Zathura
-- **Archive Manager**: xarchiver
-
-## Performance Optimization
-
-- **Static Linking**: Core binaries statically linked
-- **Minimal Init**: Alpine OpenRC (fast startup)
-- **Memory**: 4GB default in QEMU (configurable)
-- **CPU**: Multi-core support (4 cores default)
-- **GPU**: Virtio-GPU for QEMU acceleration
-- **Disk**: ext4 with modern defaults
-
-## Security Features
-
-- **ASLR**: Enabled
-- **DEP/NX**: Enabled
-- **Stack Protection**: Enabled
-- **musl libc**: Security-focused implementation
-- **No Default Passwords**: Users set on first boot
-- **Minimal Attack Surface**: Alpine base is very small
-
-## Kernel Configuration Requirements
-
-Critical kernel options for Wayland/Sway:
-
-```
-CONFIG_DRM=y                    # Direct Rendering Manager
-CONFIG_DRM_VIRTIO_GPU=y         # Virtio GPU support
-CONFIG_VIRTIO_GPU=y             # GPU virtualization
-CONFIG_FB=y                     # Framebuffer support
-CONFIG_DRM_KMS_HELPER=y         # KMS helpers
-CONFIG_INPUT_EVDEV=y            # Event input device
-```
-
-## Development Workflow
-
-1. **Modify build.conf** to add/remove packages
-2. **Update Makefile** if build process changes
-3. **Run `make distclean && make all`**
-4. **Boot with `make boot-gui`**
-5. **Test applications and Sway**
-
-## Extending with Applications
-
-To add a new application:
-
-1. **Source**: Clone repository
-2. **Configure**: `./configure --prefix=/usr --sysconfdir=/etc`
-3. **Build**: `make`
-4. **Install**: Add to disk via APK or manual installation in chroot
-5. **Package**: Create APK package for reproducibility
-
-Example (adding custom application):
-
-```bash
-# In Makefile disk target, after Sway installation:
-cd $(MNT_DIR) && \
-    chroot . /sbin/apk add --no-scripts custom-app-package
-```
-
-## Troubleshooting
-
-### Boot Issues
-- Check kernel DRM support: `grep CONFIG_DRM /boot/config-6.18.33`
-- Verify initramfs: `file dist/initramfs.cpio.gz`
-- Check disk: `e2fsck dist/nexa.img`
-
-### APK Errors
-- Update repositories: `apk update`
-- Check network inside chroot
-- Verify Alpine mirrors are accessible
-
-### Wayland Issues
-- Check XDG_RUNTIME_DIR: `echo $XDG_RUNTIME_DIR`
-- Verify DRM device: `ls -la /dev/dri/`
-- Check Wayland logs: `journalctl -xe`
-
-## Next Steps
-
-1. ✅ **Makefile Production Implementation** - DONE
-2. ✅ **Alpine Linux Integration** - DONE
-3. ✅ **Wayland/Sway Configuration** - DONE
-4. ⏳ **Kernel Validation** - TODO: Verify DRM/GPU support
-5. ⏳ **First Boot Testing** - TODO: Boot and verify
-6. ⏳ **Application Integration** - TODO: Add real apps
-7. ⏳ **ISO Testing** - TODO: Test ISO boot
-
-## Building & Testing
-
-```bash
-# First time: Download Alpine and build
-./build.sh build
-
-# Boot and test Wayland
-./build.sh boot-gui
-
-# Run CI pipeline
-./build.sh ci
-
-# Create ISO for physical media
-make iso
-```
-
-## References
-
-- **Alpine Linux**: https://alpinelinux.org
-- **Wayland**: https://wayland.freedesktop.org
-- **Sway**: https://swaywm.org
-- **wlroots**: https://gitlab.freedesktop.org/wlroots/wlroots
-- **APK Package Manager**: https://wiki.alpinelinux.org/wiki/Alpine_Linux_package_management
+`installer-os` (live USB only) asks for disk, username, password, host name,
+time zone and keyboard, then (`common/nexa_common/diskinstall.py`):
+GPT with an EFI partition and an ext4 root, copies the running system minus
+mounts, installs the kernel and GRUB for BIOS and UEFI, renames the account
+(uid stays 1000), sets the password, hardens doas, and turns on the startup
+lock. Wi-Fi networks joined in the live session come along.
