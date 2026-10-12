@@ -1,13 +1,12 @@
 """Shared window-chrome titlebar (minimize/maximize/close) for every Nexa GTK app."""
 import os
-import subprocess
 import sys
 
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gio, GLib, Gtk, Gdk
 
-from . import themes
+from . import compositor, themes
 
 CSS = b"""
 headerbar.nexa-titlebar { background-image: none; background-color: @nexa_surface; color: @nexa_text; border: none; box-shadow: none; }
@@ -58,50 +57,33 @@ def _icon_button(icon_name, tooltip, style_class=None):
     return btn
 
 
-# Sway criteria for this app's own window(s). Plain `swaymsg move ...` acts
-# on whatever is focused, which by the time a click is handled may be
-# another window entirely.
-_SELF = f"[pid={os.getpid()}]"
-
 # Largest share of the screen a window may open at; bigger defaults (e.g.
 # 800x900 on a 768-pixel-tall screen) would otherwise open cut off.
 MAX_SCREEN_FRACTION = 0.92
 
 
-def _sway(*commands):
-    try:
-        return subprocess.run(["swaymsg", f"{_SELF} " + ", ".join(commands)],
-                              capture_output=True, timeout=3).returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-
 def _minimize(window):
-    # Sway (like most wlroots compositors) does not act on xdg_toplevel's
-    # set_minimized request -- there's no taskbar to restore from, so
-    # window.iconify() would silently do nothing. Sway's scratchpad *is*
-    # a real hide/restore mechanism, so minimize is wired to that instead
-    # (restore via the waybar sway/scratchpad module or $mod+minus).
-    if not _sway("move scratchpad"):
+    # Wayland compositors ignore xdg_toplevel's set_minimized, so this hides
+    # the app's own window (by pid) in sway's scratchpad or Hyprland's
+    # special "minimized" workspace; the Dock brings it back.
+    if not compositor.minimize(os.getpid()):
         window.iconify()
 
 
 def _toggle_maximize(window):
-    # Every Nexa window is floating, and sway ignores maximize requests from
-    # floating windows, so GTK's maximize() did nothing. Instead, resize the
-    # window to the whole workspace (the area under the top bar) and put it
-    # back at its old size on the second click.
+    # Every Nexa window floats, and sway ignores maximize requests from
+    # floating windows, so GTK's maximize() did nothing there. On sway the
+    # window is resized to the whole workspace and put back on the second
+    # click; Hyprland has a real maximize mode that toggles.
+    if compositor.which() == "hyprland":
+        if not compositor.toggle_maximize(os.getpid()):
+            window.unmaximize() if window.is_maximized() else window.maximize()
+        return
     saved = getattr(window, "_nexa_restore_size", None)
-    if saved is None:
-        window._nexa_restore_size = window.get_size()
-        if not _sway("resize set width 100 ppt height 100 ppt", "move position 0 0"):
-            window._nexa_restore_size = None
-            window.maximize()
-    else:
+    window._nexa_restore_size = None if saved else window.get_size()
+    if not compositor.toggle_maximize(os.getpid(), restore_size=saved):
         window._nexa_restore_size = None
-        w, h = saved
-        if not _sway(f"resize set width {w} px height {h} px", "move position center"):
-            window.unmaximize()
+        window.unmaximize() if saved else window.maximize()
 
 
 def _fit_to_screen(window):

@@ -64,6 +64,7 @@ class Panel(Gtk.ApplicationWindow):
         self.set_app_paintable(True)
 
         GtkLayerShell.init_for_window(self)
+        GtkLayerShell.set_namespace(self, "nexa-panel")  # Hyprland blurs nexa-* layers
         GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GtkLayerShell.set_exclusive_zone(self, 0)

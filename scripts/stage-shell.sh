@@ -27,6 +27,14 @@ printf '%s\n' \
     > "$rootfs/usr/local/bin/nexa-theme"
 chmod +x "$rootfs/usr/local/bin/nexa-theme"
 
+# Applies the saved keyboard layout in a Hyprland session (sway reads it
+# from its config.d include instead).
+printf '%s\n' \
+    '#!/bin/sh' \
+    'exec env PYTHONPATH="/usr/local/lib/nexa-common:${PYTHONPATH:-}" python3 -c "from nexa_common import compositor, sysconf; compositor.set_keyboard_layout(sysconf.read_keyboard_layout())"' \
+    > "$rootfs/usr/local/bin/nexa-keyboard-layout"
+chmod +x "$rootfs/usr/local/bin/nexa-keyboard-layout"
+
 cp "$base/shell/nexa-bar-notify" "$rootfs/usr/local/bin/nexa-bar-notify"
 chmod +x "$rootfs/usr/local/bin/nexa-bar-notify"
 

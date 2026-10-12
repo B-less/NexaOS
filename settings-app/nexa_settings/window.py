@@ -8,7 +8,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from . import privileged
-from nexa_common import sysconf, themes
+from nexa_common import compositor, sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -266,8 +266,9 @@ class SettingsWindow(Gtk.Window):
     def _apply_wallpaper(self, path):
         try:
             shutil.copyfile(path, WALLPAPER_PATH)
-            subprocess.run(["swaymsg", "output", "*", "bg", WALLPAPER_PATH, "fill"], check=True)
-        except (OSError, subprocess.CalledProcessError) as e:
+            if not compositor.set_wallpaper(WALLPAPER_PATH):
+                raise OSError("the desktop session didn't accept the new wallpaper")
+        except OSError as e:
             self._set_label(self.appearance_status, f"Couldn't set wallpaper: {e}", error=True)
             return
         self._set_label(self.appearance_status, "Wallpaper updated.", error=False)
@@ -422,10 +423,10 @@ class SettingsWindow(Gtk.Window):
             self._set_label(self.time_status, "Unknown keyboard layout.", error=True)
             return
         try:
-            subprocess.run(["swaymsg", "input", "type:keyboard", "xkb_layout", code], check=True,
-                           capture_output=True)
+            if not compositor.set_keyboard_layout(code):
+                raise OSError("the desktop session didn't accept the layout")
             sysconf.write_keyboard_layout(code)
-        except (OSError, subprocess.CalledProcessError) as e:
+        except OSError as e:
             self._set_label(self.time_status, f"Couldn't change layout: {e}", error=True)
             return
         self._set_label(self.time_status, f"Keyboard layout set to {code}.", error=False)

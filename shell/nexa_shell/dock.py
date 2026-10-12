@@ -2,7 +2,6 @@
 under the pointer like the macOS Dock. Clicking opens an app, or brings a
 running one forward (restoring it if minimised); a launching app's icon
 bounces until its window appears. Follows theme changes live."""
-import json
 import math
 import os
 import time
@@ -14,8 +13,8 @@ gi.require_version("GtkLayerShell", "0.1")
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, GtkLayerShell, Pango, PangoCairo
 
-from nexa_common import desktopapps, themes
-from .panel import run_quiet, spawn
+from nexa_common import compositor, desktopapps, themes
+from .panel import spawn
 
 # Desktop-file ids, in order.
 PINNED = ["nexa-files", "nexa-browser", "org.codeberg.dnkl.foot", "nexa-settings", "nexa-software",
@@ -45,20 +44,8 @@ def _rgba(hex_colour, alpha=1.0):
 
 
 def _running_app_ids():
-    """app_ids of every window sway knows, including minimised ones."""
-    try:
-        tree = json.loads(run_quiet(["swaymsg", "-t", "get_tree"], timeout=2) or "{}")
-    except ValueError:
-        return set()
-    found, stack = set(), [tree]
-    while stack:
-        node = stack.pop()
-        app_id = node.get("app_id") or (node.get("window_properties") or {}).get("class")
-        if app_id and node.get("pid"):
-            found.add(ALIASES.get(app_id.lower(), app_id.lower()))
-        stack.extend(node.get("nodes", []))
-        stack.extend(node.get("floating_nodes", []))
-    return found
+    """app_ids of every open window, including minimised ones."""
+    return {ALIASES.get(w["app_id"], w["app_id"]) for w in compositor.windows()}
 
 
 class Dock(Gtk.ApplicationWindow):
@@ -70,6 +57,7 @@ class Dock(Gtk.ApplicationWindow):
         self.set_app_paintable(True)
 
         GtkLayerShell.init_for_window(self)
+        GtkLayerShell.set_namespace(self, "nexa-dock")  # Hyprland blurs nexa-* layers
         GtkLayerShell.set_layer(self, GtkLayerShell.Layer.TOP)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, True)
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
@@ -286,9 +274,7 @@ class Dock(Gtk.ApplicationWindow):
             spawn(["nexa-start"])
         elif it["running"]:
             window_id = next((k for k, v in ALIASES.items() if v == it["id"]), it["id"])
-            sel = f'[app_id="{window_id}"]'
-            if not run_quiet(["swaymsg", f"{sel} focus"]):
-                run_quiet(["swaymsg", f"{sel} scratchpad show"])
+            compositor.focus_app(window_id)
         else:
             desktopapps.launch(it["exec"])
             it["bounce"] = time.monotonic()

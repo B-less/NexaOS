@@ -6,7 +6,7 @@ Status as of 2026-10-11. Legend:
 - `[~]` partly done, or done but the result was never recorded — needs a re-check
 - `[ ]` not done
 
-**Progress: 50 of 93 done, 20 partial → ~65%** (partial counts as half)
+**Progress: 50 of 93 done, 23 partial → ~66%** (partial counts as half)
 
 ---
 
@@ -99,7 +99,7 @@ Status as of 2026-10-11. Legend:
 - [~] Firewall: nftables, incoming blocked except replies; kernel netfilter enabled — needs kernel + image rebuild
 - [~] Kernel hardening sysctls (kptr/dmesg restrict, link protections, no redirects, syncookies) — needs rebuild
 - [ ] Desktop auto-logs in as `user` on boot, so the password only guards SSH/console/lock screen
-- [ ] Alpine 3.19 is end-of-life (Nov 2025): no security updates; move to 3.24
+- [~] Alpine 3.19 is end-of-life: moving to 3.24.2 (see Roadmap)
 - [ ] Package server URL is QEMU-only (`PKG_SERVER_URL=http://10.0.2.2:8080`, plain HTTP)
 
 ## 11. Real-hardware drivers (kernel is monolithic, so each needs a rebuild)
@@ -126,7 +126,7 @@ Status as of 2026-10-11. Legend:
 
 - [~] New desktop (2026-10-11, needs rebuild + HP test): top bar redesign with Font Awesome icons; start menu (Super+D) with search, pinned apps, power; Control Centre (Super+N) with toggles, volume/brightness, battery, notifications, Do Not Disturb; 5 themes (Horizon, Nebula, Aurora, Eclipse, Daybreak) with transparency. Checked in a headless Sway container (screenshots), not on the HP yet
 - [~] Settings > Personalization: theme cards, transparency slider, wallpaper gallery + upload (needs HP test)
-- [ ] Alpine 3.19 → 3.24 upgrade (security fixes for the browser engine)
+- [~] Alpine 3.19 → 3.24.2 (all packages present; firmware now zstd → kernel option; Intel Wi-Fi firmware moved to linux-firmware-intel). Needs kernel + full rebuild and HP test
 - [ ] Private browsing mode over Tor (terminal command `nexadark`) and optional VPN
 - [ ] Signed updates from a GitHub repository (needs repo + signing key)
 - [ ] Remember Wi-Fi networks and browser history across reboots on installed systems
@@ -134,7 +134,7 @@ Status as of 2026-10-11. Legend:
 - [ ] System monitor app with its own name and keyboard shortcut (like Ctrl+Shift+Esc)
 - [~] macOS-style polish phase A (needs rebuild + HP test): apps follow the theme with live switching; start menu/Control Centre fade+slide animation; Dock with magnification, running dots, launch bounce; desktop icons removed. Checked in headless sway
 - [ ] Phase A remaining: translucent app windows, micro-animations in apps, Launchpad
-- [ ] Phase B (after Alpine 3.24): Hyprland with window animations, blur, rounded corners; Sway fallback without GPU
+- [~] Phase B: Hyprland session on GPU machines (window pop-in/out, workspace slide, blur behind bar/Dock/panels, rounded corners, shadows, 3-finger workspace swipe, themed gradient borders); Sway on other machines and as automatic fallback. Config passes `Hyprland --verify-config` (0.54.3); never run for real yet (no GPU here) — first run is the HP
 - [ ] Browser: turn WebKit's sandbox on by default (currently off, untested with real sites)
 - [ ] Further hardening (AppArmor, signed boot, sandboxing)
 

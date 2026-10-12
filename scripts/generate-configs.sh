@@ -323,7 +323,7 @@ if command -v sway >/dev/null 2>&1; then
         # its argument.
         DBUS_RUN="dbus-run-session --"
         command -v dbus-run-session >/dev/null 2>&1 || DBUS_RUN=""
-        exec su user -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; exec $DBUS_RUN $SWAY_CMD"
+        exec su user -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; exec $DBUS_RUN /usr/local/bin/nexa-desktop"
     fi
 
     unset WAYLAND_DISPLAY
@@ -850,6 +850,180 @@ include /home/user/.config/sway/config.d/*.conf
 # the same protocol and just prints "error reading from status command").
 SWAY_CONFIG_EOF
 
+    echo "[*] Generating Hyprland session (GPU machines)..."
+    mkdir -p "$MNT_DIR/etc/hypr"
+    cat > "$MNT_DIR/etc/hypr/hyprland.conf" << 'HYPR_EOF'
+# NexaOS Hyprland session: animations, blur, rounded corners and shadows.
+# Colours come from the active theme (nexa-theme writes the sourced file).
+monitor = , preferred, auto, 1
+source = ~/.config/hypr/nexa-theme.conf
+
+env = XCURSOR_THEME,Adwaita
+env = XCURSOR_SIZE,24
+
+exec-once = pipewire
+exec-once = pipewire-pulse
+exec-once = wireplumber
+exec-once = swaybg -i /usr/share/backgrounds/nexaos/wallpaper.png -m fill
+exec-once = waybar -c /etc/xdg/waybar/config-hyprland
+exec-once = mako
+exec-once = nexa-dock
+exec-once = nexa-idle
+exec-once = nexa-battery-watch
+exec-once = nexa-keyboard-layout
+
+general {
+    gaps_in = 6
+    gaps_out = 12
+    border_size = 2
+    layout = dwindle
+    resize_on_border = true
+}
+
+decoration {
+    rounding = 12
+    active_opacity = 1.0
+    inactive_opacity = 0.97
+    blur {
+        enabled = true
+        size = 8
+        passes = 3
+        vibrancy = 0.17
+    }
+    shadow {
+        enabled = true
+        range = 24
+        render_power = 3
+        color = rgba(00000073)
+    }
+}
+
+# macOS-like motion: fast start, long soft landing.
+animations {
+    enabled = true
+    bezier = nexa, 0.22, 1, 0.36, 1
+    bezier = nexaOut, 0.55, 0, 1, 0.45
+    animation = windowsIn, 1, 5, nexa, popin 80%
+    animation = windowsOut, 1, 4, nexaOut, popin 80%
+    animation = windowsMove, 1, 5, nexa
+    animation = fade, 1, 5, nexa
+    animation = border, 1, 8, nexa
+    animation = workspaces, 1, 6, nexa, slide
+    animation = specialWorkspace, 1, 5, nexa, slidevert
+    animation = layers, 1, 4, nexa, fade
+}
+
+input {
+    kb_layout = us
+    follow_mouse = 1
+    touchpad {
+        natural_scroll = true
+        tap-to-click = true
+        disable_while_typing = true
+    }
+}
+
+# Three fingers sideways switches workspaces, like a Mac trackpad.
+gesture = 3, horizontal, workspace
+
+misc {
+    disable_hyprland_logo = true
+    disable_splash_rendering = true
+    force_default_wallpaper = 0
+    focus_on_activate = true
+}
+
+# Normal-desktop feel: windows float and open centred (same as the sway session).
+windowrule = float on, match:class .*
+windowrule = center on, match:class .*
+
+# Frosted glass behind the bar, the Dock and the panels; the panels animate
+# themselves, so Hyprland's own layer animation is off for them.
+layerrule = blur on, match:namespace ^(waybar|nexa-.*)$
+layerrule = ignore_alpha 0.1, match:namespace ^(waybar|nexa-.*)$
+layerrule = no_anim on, match:namespace ^(nexa-panel)$
+
+bind = SUPER, Return, exec, foot
+bind = SUPER, D, exec, nexa-start
+bind = SUPER, N, exec, nexa-control
+bind = SUPER, A, exec, nexa-ai-gui
+bind = SUPER, E, exec, nexa-files
+bind = SUPER, W, exec, nexa-browser
+bind = SUPER SHIFT, C, killactive
+bind = SUPER SHIFT, E, exec, nexa-power
+bind = SUPER CTRL SHIFT, E, exit
+bind = SUPER SHIFT, R, exec, hyprctl reload
+bind = SUPER SHIFT, L, exec, nexa-lock
+bind = SUPER, M, fullscreen, 1
+bind = SUPER, F, fullscreen, 0
+bind = SUPER SHIFT, Space, togglefloating
+bind = , Print, exec, nexa-screenshot
+bind = SHIFT, Print, exec, nexa-screenshot --select
+bind = SUPER, Left, movefocus, l
+bind = SUPER, Right, movefocus, r
+bind = SUPER, Up, movefocus, u
+bind = SUPER, Down, movefocus, d
+bind = SUPER, Tab, cyclenext
+bind = SUPER, Tab, bringactivetotop
+bind = SUPER, 1, workspace, 1
+bind = SUPER, 2, workspace, 2
+bind = SUPER, 3, workspace, 3
+bind = SUPER, 4, workspace, 4
+bind = SUPER, 5, workspace, 5
+bind = SUPER SHIFT, 1, movetoworkspace, 1
+bind = SUPER SHIFT, 2, movetoworkspace, 2
+bind = SUPER SHIFT, 3, movetoworkspace, 3
+bind = SUPER SHIFT, 4, movetoworkspace, 4
+bind = SUPER SHIFT, 5, movetoworkspace, 5
+bindm = SUPER, mouse:272, movewindow
+bindm = SUPER, mouse:273, resizewindow
+bindel = , XF86AudioRaiseVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
+bindel = , XF86AudioLowerVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+bindl = , XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+bindel = , XF86MonBrightnessUp, exec, brightnessctl set 5%+
+bindel = , XF86MonBrightnessDown, exec, brightnessctl set 5%-
+bindl = , switch:on:Lid Switch, exec, nexa-lid
+HYPR_EOF
+
+    # Starts the user's desktop: Hyprland where a real GPU driver is loaded
+    # (animations, blur), Sway otherwise, or if Hyprland fails to come up.
+    cat > "$MNT_DIR/usr/local/bin/nexa-desktop" << 'DESKTOP_SESSION_EOF'
+#!/bin/sh
+# Override with one word, "sway" or "hyprland", in ~/.config/nexa/session
+# or /etc/nexa/session.
+choice=$(cat "$HOME/.config/nexa/session" /etc/nexa/session 2>/dev/null | head -n 1)
+
+gpu_ok() {
+    for drv in /sys/class/drm/card[0-9]*/device/driver; do
+        case "$(basename "$(readlink "$drv" 2>/dev/null)")" in
+            i915|xe|amdgpu|radeon|nouveau) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+start_sway() {
+    export WLR_RENDERER="${WLR_RENDERER:-pixman}"
+    exec sway -c /etc/sway/config
+}
+
+nexa-theme apply --saved --no-reload >/dev/null 2>&1
+case "$choice" in
+    sway) start_sway ;;
+    hyprland) ;;
+    *) { gpu_ok && command -v start-hyprland >/dev/null 2>&1; } || start_sway ;;
+esac
+
+mkdir -p "$HOME/.cache"
+started=$(date +%s)
+start-hyprland -- -c /etc/hypr/hyprland.conf >"$HOME/.cache/nexa-hyprland.log" 2>&1
+# Exiting within seconds means Hyprland couldn't use this GPU: fall back.
+if [ $(( $(date +%s) - started )) -lt 20 ]; then
+    start_sway
+fi
+DESKTOP_SESSION_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-desktop"
+
     echo "[*] Generating Waybar configuration..."
     mkdir -p "$MNT_DIR/etc/xdg/waybar"
     cat > "$MNT_DIR/etc/xdg/waybar/config" << 'WAYBAR_CONFIG_EOF'
@@ -933,6 +1107,10 @@ SWAY_CONFIG_EOF
     }
 }
 WAYBAR_CONFIG_EOF
+
+    sed -e 's#"sway/workspaces", "sway/mode", "sway/scratchpad"#"hyprland/workspaces"#' \
+        -e 's#"sway/workspaces": {#"hyprland/workspaces": {#' \
+        "$MNT_DIR/etc/xdg/waybar/config" > "$MNT_DIR/etc/xdg/waybar/config-hyprland"
 
     echo "[*] Generating Mako (notification daemon) configuration..."
     mkdir -p "$MNT_DIR/etc/xdg/mako"

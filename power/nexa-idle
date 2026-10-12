@@ -22,7 +22,11 @@ if [ "$lock" -gt 0 ]; then
     set -- "$@" timeout $((lock * 60)) nexa-lock
 fi
 if [ "$blank" -gt 0 ]; then
-    set -- "$@" timeout $((blank * 60)) 'swaymsg "output * power off"' resume 'swaymsg "output * power on"'
+    if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+        set -- "$@" timeout $((blank * 60)) 'hyprctl dispatch dpms off' resume 'hyprctl dispatch dpms on'
+    else
+        set -- "$@" timeout $((blank * 60)) 'swaymsg "output * power off"' resume 'swaymsg "output * power on"'
+    fi
 fi
 
 [ "$#" -gt 0 ] || exit 0
