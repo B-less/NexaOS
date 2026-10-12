@@ -11,6 +11,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from nexa_common.titlebar import attach_titlebar
 from . import packaging
+from nexa_common import askpass, elevate
 
 CSS = b"""
 window { background-image: none; background-color: @nexa_bg; }
@@ -28,12 +29,15 @@ window { background-image: none; background-color: @nexa_bg; }
 def _call_helper(action, **args):
     request = json.dumps({"action": action, "args": args})
     try:
-        result = subprocess.run(
-            ["doas", "/usr/local/bin/nexa-install-helper"],
-            input=request, capture_output=True, text=True, timeout=60,
+        result = elevate.run_interactive(
+            "/usr/local/bin/nexa-install-helper", request, askpass.ask("Installing a package adds it to the system for every user."), timeout=60,
         )
+    except elevate.WrongPassword:
+        return False, "Wrong password."
     except (subprocess.SubprocessError, OSError) as e:
         return False, str(e)
+    if result is None:
+        return False, "Cancelled."
     try:
         response = json.loads(result.stdout)
     except json.JSONDecodeError:

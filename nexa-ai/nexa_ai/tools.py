@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 
-from nexa_common import apkops, audioctl
+from nexa_common import apkops, audioctl, elevate
 
 READ = "read"
 CONTROL = "control"
@@ -901,16 +901,20 @@ def anthropic_tool_specs():
 
 
 def _run_control_via_doas(name, args):
+    from nexa_common import askpass  # GUI only when a password is actually needed
     try:
-        p = subprocess.run(
-            ["doas", "/usr/local/bin/nexa-ai-control-helper"],
-            input=json.dumps({"tool": name, "args": args}),
-            capture_output=True, text=True, timeout=30,
+        p = elevate.run_interactive(
+            "/usr/local/bin/nexa-ai-control-helper", json.dumps({"tool": name, "args": args}),
+            askpass.ask("The assistant wants to change a system setting."), timeout=30,
         )
+    except elevate.WrongPassword:
+        raise ToolError("wrong password")
     except FileNotFoundError:
         raise ToolError("doas is not installed; control actions need root and no escalation path is configured")
     except subprocess.TimeoutExpired:
         raise ToolError("control helper timed out")
+    if p is None:
+        raise ToolError("the user cancelled the password prompt")
     try:
         resp = json.loads(p.stdout)
     except json.JSONDecodeError:

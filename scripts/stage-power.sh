@@ -25,7 +25,7 @@ printf '%s\n' \
     > "$rootfs/usr/local/bin/nexa-power-helper"
 chmod +x "$rootfs/usr/local/bin/nexa-power-helper"
 
-for script in nexa-idle nexa-lid nexa-battery-watch; do
+for script in nexa-idle nexa-lid nexa-battery-watch nexa-login-lock; do
     cp "$base/power/$script" "$rootfs/usr/local/bin/$script"
     chmod +x "$rootfs/usr/local/bin/$script"
 done

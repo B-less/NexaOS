@@ -1,3 +1,4 @@
+import sys
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("WebKit2", "4.1")
@@ -145,7 +146,9 @@ class BrowserWindow(Gtk.Window):
 
 def main():
     Gtk.init()
-    win = BrowserWindow()
+    # `nexa-browser <url>` opens that page (links from other apps).
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    win = BrowserWindow(_to_uri(args[0])) if args else BrowserWindow()
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
     Gtk.main()

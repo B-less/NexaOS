@@ -755,7 +755,9 @@ input type:touchpad {
 # Closing the lid locks the screen and suspends (see nexa-lid).
 bindswitch --reload --locked lid:on exec nexa-lid
 
-# Startup applications
+# Startup applications. The lock comes first so an installed system shows
+# the lock screen before anything else (see nexa-login-lock).
+exec nexa-login-lock
 exec pipewire
 exec pipewire-pulse
 exec wireplumber
@@ -861,6 +863,7 @@ source = ~/.config/hypr/nexa-theme.conf
 env = XCURSOR_THEME,Adwaita
 env = XCURSOR_SIZE,24
 
+exec-once = nexa-login-lock
 exec-once = pipewire
 exec-once = pipewire-pulse
 exec-once = wireplumber

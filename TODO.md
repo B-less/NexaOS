@@ -5,15 +5,15 @@ item, commit it, move on. `[x]` done and verified · `[~]` built, waiting for
 an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 
 ## 1. Current build (Alpine 3.24 + Hyprland)
-- [ ] Fix missing app icons on 3.24 (hicolor-icon-theme, gtk-update-icon-cache) and rebuild the ISO
+- [x] Fix missing app icons on 3.24 (hicolor-icon-theme, gtk-update-icon-cache) and rebuild the ISO
 - [ ] Boot-test the ISO in QEMU (Sway path), check Dock/start-menu icons
 - [ ] HP test: Hyprland animations/blur, Dock, themes, battery, brightness, lid, Wi-Fi *(needs you)*
 
 ## 2. Security
-- [ ] Ask for the password before root-level actions (package installs) instead of passwordless doas
-- [ ] Optional auto-login: off by default on installed systems (password at boot)
-- [ ] Browser: WebKit sandbox on by default
-- [ ] Package server: no QEMU-only plain-HTTP default
+- [x] Ask for the password before root-level actions: software/package installs and the assistant's control tools need it on installed systems (checked against real OpenDoas); power/USB/Settings stay passwordless; the installer helper is removed from installed systems
+- [x] Installed systems start at the lock screen (password after every boot); per-user opt-out in Settings > Power; live USB unchanged
+- [x] Browser: WebKit sandbox on by default (verified: pages + JavaScript render with web content inside bwrap)
+- [x] Package server: the QEMU-only HTTP setting was dead config (only old fix_*.sh used it); apps install from Alpine's signed HTTPS repos
 - [ ] Further hardening (AppArmor, signed boot) — research + plan
 
 ## 3. Installer

@@ -14,14 +14,10 @@ find "$rootfs/usr/local/lib/nexa-browser/nexa_browser" -name '__pycache__' -exec
 printf '%s\n' \
     '#!/bin/sh' \
     '. /usr/local/lib/nexa-wayland-env.sh' \
-    '# WebKitGTK enables its bubblewrap-based sandbox by default and can refuse' \
-    '# to launch a web process without it; this rootfs does not ship bubblewrap' \
-    '# (a minimal, root-trusted, single-user system already outside that' \
-    '# sandbox'"'"'s threat model, same tradeoff as the rest of this OS).' \
-    '# bubblewrap + xdg-dbus-proxy are installed and the kernel supports user' \
-    '# namespaces now, but the sandbox has not been verified against real web' \
-    '# content yet, so it stays opt-in: run with NEXA_BROWSER_SANDBOX=1 to try it.' \
-    '[ "${NEXA_BROWSER_SANDBOX:-0}" = "1" ] || export WEBKIT_DISABLE_SANDBOX=1' \
+    '# Web content runs in WebKit'"'"'s bubblewrap sandbox (verified on Alpine' \
+    '# 3.24: pages and JavaScript work with it on). NEXA_BROWSER_SANDBOX=0' \
+    '# turns it off for troubleshooting only.' \
+    '[ "${NEXA_BROWSER_SANDBOX:-1}" = "0" ] && export WEBKIT_DISABLE_SANDBOX=1' \
     'exec env PYTHONPATH="/usr/local/lib/nexa-browser:/usr/local/lib/nexa-common:${PYTHONPATH:-}" python3 -m nexa_browser "$@"' \
     > "$rootfs/usr/local/bin/nexa-browser"
 chmod +x "$rootfs/usr/local/bin/nexa-browser"

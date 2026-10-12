@@ -330,6 +330,39 @@ def set_password(mountpoint, password):
     _sh(["chpasswd", "-c", "sha512", "-R", mountpoint], input=lines)
 
 
+# Root helpers that can change the system (install software, run the
+# assistant's control tools): on an installed system they need the user's
+# password. The live USB, which has no password, permits them without one.
+PASSWORD_HELPERS = ("/usr/local/bin/nexa-software-helper", "/usr/local/bin/nexa-install-helper",
+                    "/usr/local/bin/nexa-ai-control-helper")
+# Wipes whole disks; only meaningful on the live USB.
+LIVE_ONLY_HELPERS = ("/usr/local/bin/nexa-setup-helper",)
+
+
+def harden_privileges(mountpoint):
+    """Rewrite the installed system's doas rules (see PASSWORD_HELPERS)."""
+    conf = os.path.join(mountpoint, "etc", "doas.conf")
+    try:
+        with open(conf) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return
+    out = []
+    for line in lines:
+        words = line.split()
+        target = words[-1] if words else ""
+        if target in LIVE_ONLY_HELPERS:
+            continue
+        if target in PASSWORD_HELPERS and "nopass" in words:
+            words.remove("nopass")
+            line = " ".join(words)
+        out.append(line)
+    with open(conf, "w") as f:
+        f.write("\n".join(out) + "\n")
+    os.chown(conf, 0, 0)
+    os.chmod(conf, 0o400)
+
+
 def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_stage=None,
                 password=None):
     """Runs every step in order, always trying to unmount on failure so a
@@ -361,6 +394,10 @@ def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_st
         apply_identity(mountpoint, hostname, zone, keyboard_layout)
         if password is not None:
             set_password(mountpoint, password)
+            harden_privileges(mountpoint)
+            # Start the desktop locked on every boot (nexa-login-lock).
+            os.makedirs(os.path.join(mountpoint, "etc", "nexa"), exist_ok=True)
+            open(os.path.join(mountpoint, "etc", "nexa", "login-required"), "w").close()
     finally:
         report("unmount")
         unmount_target(mountpoint)

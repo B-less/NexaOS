@@ -1,0 +1,7 @@
+#!/bin/sh
+# Installed systems start the desktop locked, so the password is needed
+# after every boot (the session itself starts automatically). The live USB
+# has no /etc/nexa/login-required. Opt out per user from Settings > Power.
+[ -f /etc/nexa/login-required ] || exit 0
+[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/nexa/skip-login-lock" ] && exit 0
+exec nexa-lock
