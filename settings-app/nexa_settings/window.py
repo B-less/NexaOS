@@ -73,12 +73,12 @@ class SettingsWindow(Gtk.Window):
         content.pack_start(self.stack, True, True, 0)
         root.pack_start(content, True, True, 0)
 
-        self.stack.add_named(self._build_appearance_page(), "Personalization")
-        self.stack.add_named(self._build_system_page(), "System")
-        self.stack.add_named(self._build_time_page(), "Time & Keyboard")
-        self.stack.add_named(self._build_power_page(), "Power")
-        self.stack.add_named(self._build_assistant_page(), "Assistant")
-        self.stack.add_named(self._build_about_page(), "About")
+        self.stack.add_named(self._scrolled(self._build_appearance_page()), "Personalization")
+        self.stack.add_named(self._scrolled(self._build_system_page()), "System")
+        self.stack.add_named(self._scrolled(self._build_time_page()), "Time & Keyboard")
+        self.stack.add_named(self._scrolled(self._build_power_page()), "Power")
+        self.stack.add_named(self._scrolled(self._build_assistant_page()), "Assistant")
+        self.stack.add_named(self._scrolled(self._build_about_page()), "About")
 
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
@@ -94,6 +94,14 @@ class SettingsWindow(Gtk.Window):
             ctx.remove_class("active")
             if n == name:
                 ctx.add_class("active")
+
+    def _scrolled(self, page):
+        # A page taller than the screen otherwise forces the whole window to
+        # that height: it opened under the top bar with its bottom cut off.
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.add(page)
+        return scroller
 
     def _page(self, title):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
@@ -186,6 +194,7 @@ class SettingsWindow(Gtk.Window):
         gallery.set_max_children_per_line(4)
         gallery.set_column_spacing(10)
         gallery.set_row_spacing(10)
+        gallery.set_halign(Gtk.Align.START)  # keep thumbnails compact, not stretched
         for path in self._gallery_images():
             try:
                 thumb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 192, 108, False)

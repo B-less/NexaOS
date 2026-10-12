@@ -538,6 +538,18 @@ ZRAM_EOF
     chmod +x "$MNT_DIR/etc/init.d/zram"
     ln -sf /etc/init.d/zram "$MNT_DIR/etc/runlevels/default/zram"
 
+    echo "[*] System-wide GTK defaults..."
+    mkdir -p "$MNT_DIR/etc/gtk-3.0"
+    cat > "$MNT_DIR/etc/gtk-3.0/settings.ini" << 'GTK_EOF'
+[Settings]
+gtk-application-prefer-dark-theme=true
+gtk-theme-name=Adwaita
+gtk-icon-theme-name=Adwaita
+gtk-cursor-theme-name=Adwaita
+gtk-cursor-theme-size=24
+gtk-font-name=Noto Sans 10
+GTK_EOF
+
     echo "[*] Firewall and kernel hardening..."
     # Firewall: nothing gets in unless it answers a connection this machine
     # started. Outgoing traffic is unrestricted.
@@ -727,6 +739,10 @@ for_window [app_id=".*"] floating enable
 
 # Output configuration
 output * bg /usr/share/backgrounds/nexaos/wallpaper.png fill
+
+# Cursor: without a theme, GTK and sway disagree and the pointer changes
+# size and style between the desktop and apps.
+seat * xcursor_theme Adwaita 24
 
 # Laptop touchpads: tap to click, natural scrolling, ignore while typing.
 input type:touchpad {
