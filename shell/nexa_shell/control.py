@@ -3,6 +3,8 @@ notification list (mako's history) with Do Not Disturb."""
 import os
 import re
 
+import gi
+gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk, Pango
 
 from . import sysinfo

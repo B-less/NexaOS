@@ -1,10 +1,11 @@
 """Shared window-chrome titlebar (minimize/maximize/close) for every Nexa GTK app."""
 import os
 import subprocess
+import sys
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gio, Gtk, Gdk
+from gi.repository import Gio, GLib, Gtk, Gdk
 
 from . import themes
 
@@ -118,9 +119,20 @@ def _fit_to_screen(window):
         window.resize(min(w, max_w) if w > 0 else max_w, min(h, max_h) if h > 0 else max_h)
 
 
+def _set_app_id():
+    """Report a Wayland app_id matching the app's .desktop file
+    (python3 -m nexa_files -> "nexa-files"), so the Dock can tell which
+    apps are running; otherwise every Nexa app shows up as "python3"."""
+    spec = getattr(sys.modules.get("__main__"), "__spec__", None)
+    if spec and spec.name.startswith("nexa_"):
+        GLib.set_prgname(spec.name.split(".")[0].replace("_", "-"))
+
+
 def attach_titlebar(window, title):
     """Give `window` a custom titlebar with minimize/maximize/close buttons."""
     _ensure_css()
+    if not window.get_realized():
+        _set_app_id()  # read by GTK when the window is first shown
 
     bar = Gtk.HeaderBar()
     bar.set_show_close_button(False)

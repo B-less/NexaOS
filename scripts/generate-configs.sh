@@ -762,7 +762,7 @@ exec wireplumber
 # Render the saved theme (bar, notifications, terminal, borders) before the
 # bar and notification daemon read their config.
 exec sh -c 'nexa-theme apply --saved --no-reload >/dev/null 2>&1; swaymsg reload >/dev/null 2>&1; waybar & exec mako'
-exec nexa-desktop-icons
+exec nexa-dock
 exec nexa-idle
 exec nexa-battery-watch
 

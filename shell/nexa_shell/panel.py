@@ -8,11 +8,12 @@ toggles it.
 """
 import json
 import subprocess
+import time
 
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("GtkLayerShell", "0.1")
-from gi.repository import Gdk, Gio, Gtk, GtkLayerShell
+from gi.repository import Gdk, Gio, GLib, Gtk, GtkLayerShell
 
 from nexa_common import themes
 
@@ -40,6 +41,13 @@ def power(action):
         return
     payload = json.dumps({"action": action})
     spawn(["sh", "-c", f"echo '{payload}' | doas /usr/local/bin/nexa-power-helper"])
+
+
+# Open/close animation: fade plus a short slide down into place, eased out
+# (fast start, gentle landing), like macOS's Control Center.
+ANIM_MS = 170
+SLIDE_PX = 8  # margins cannot go below 0, so at most REST_MARGIN
+REST_MARGIN = 8
 
 
 class Panel(Gtk.ApplicationWindow):
@@ -79,10 +87,11 @@ class Panel(Gtk.ApplicationWindow):
         holder.connect("button-press-event", lambda *_a: True)
         holder.set_halign(Gtk.Align.START if self.ANCHOR == "left" else Gtk.Align.END)
         holder.set_valign(Gtk.Align.START)
-        holder.set_margin_top(8)
+        holder.set_margin_top(REST_MARGIN)
         holder.set_margin_start(8)
         holder.set_margin_end(8)
         backdrop.add(holder)
+        self.holder = holder
 
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.body.set_name("panel")
@@ -90,6 +99,35 @@ class Panel(Gtk.ApplicationWindow):
         holder.add(self.body)
 
         self.connect("key-press-event", self._on_key)
+        self._closing = False
+        self.body.set_opacity(0)
+        self.connect("map", lambda *_a: self._animate(opening=True))
+
+    def _animate(self, opening, done=None):
+        start = time.monotonic()
+
+        def step():
+            t = min(1.0, (time.monotonic() - start) * 1000 / ANIM_MS)
+            eased = 1 - (1 - t) ** 3
+            shown = eased if opening else 1 - eased
+            self.body.set_opacity(shown)
+            # Slides down from above its resting place as it appears.
+            self.holder.set_margin_top(max(0, int(round(REST_MARGIN - SLIDE_PX * (1 - shown)))))
+            if t >= 1.0:
+                if done:
+                    done()
+                return False
+            return True
+
+        GLib.timeout_add(12, step)
+
+    def close(self):
+        """Animate out, then really close. Every way of dismissing a panel
+        (Escape, clicking outside, launching an app, the toggle key) ends here."""
+        if self._closing:
+            return
+        self._closing = True
+        self._animate(opening=False, done=lambda: Gtk.ApplicationWindow.close(self))
 
     def _on_key(self, _w, event):
         if event.keyval == Gdk.KEY_Escape:

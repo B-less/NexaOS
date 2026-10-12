@@ -6,7 +6,7 @@ Status as of 2026-10-11. Legend:
 - `[~]` partly done, or done but the result was never recorded — needs a re-check
 - `[ ]` not done
 
-**Progress: 50 of 89 done, 19 partial → ~67%** (partial counts as half)
+**Progress: 50 of 93 done, 20 partial → ~65%** (partial counts as half)
 
 ---
 
@@ -132,6 +132,10 @@ Status as of 2026-10-11. Legend:
 - [ ] Remember Wi-Fi networks and browser history across reboots on installed systems
 - [ ] Browser download manager with live download speed
 - [ ] System monitor app with its own name and keyboard shortcut (like Ctrl+Shift+Esc)
+- [~] macOS-style polish phase A (needs rebuild + HP test): apps follow the theme with live switching; start menu/Control Centre fade+slide animation; Dock with magnification, running dots, launch bounce; desktop icons removed. Checked in headless sway
+- [ ] Phase A remaining: translucent app windows, micro-animations in apps, Launchpad
+- [ ] Phase B (after Alpine 3.24): Hyprland with window animations, blur, rounded corners; Sway fallback without GPU
+- [ ] Browser: turn WebKit's sandbox on by default (currently off, untested with real sites)
 - [ ] Further hardening (AppArmor, signed boot, sandboxing)
 
 ## 13. Real hardware & release
