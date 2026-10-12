@@ -27,6 +27,7 @@ Exec=/usr/local/bin/nexa-sysmon
 Icon=nexa-sysmon
 Terminal=false
 Categories=System;Monitor;
+NoDisplay=true
 DESKTOP_EOF
 
 echo "nexa-sysmon staged into $rootfs"

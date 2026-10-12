@@ -10,7 +10,7 @@ from .panel import Panel, power, run_panel
 
 # Shown first, in this order, when they are installed.
 PINNED = ["Files", "Nexa Browser", "Foot", "Settings", "Nexa Software", "NexaOS Assistant",
-          "Nexa Notes", "Music", "Editor", "Calculator", "Nexa System Monitor", "Screenshot"]
+          "Nexa Notes", "Music", "Editor", "Calculator", "Nexa Pulse", "Screenshot"]
 PINNED_COLUMNS = 6
 
 

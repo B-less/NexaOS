@@ -26,7 +26,7 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [ ] Signed updates from GitHub *(needs a GitHub repo + signing key from you)*
 - [ ] Remember Wi-Fi networks and browser history across reboots
 - [ ] Browser download manager with live download speed
-- [ ] System monitor with its own name and a Ctrl+Shift+Esc-style shortcut
+- [x] Nexa Pulse: one app for running apps + processes (search, End task, Force quit) and live CPU/memory/disk/network graphs; Ctrl+Shift+Esc in Sway and Hyprland; old Tasks/System Monitor hidden (checked in headless Sway: `scripts/test-app-headless.sh`)
 - [ ] Phase A extras: translucent app windows, micro-animations, Launchpad
 - [x] Nexa AI: claude-opus-5-5, max_tokens 16000, server-side refusal fallback, refusal/cut-off handling (tested against a fake API)
 

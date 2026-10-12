@@ -787,6 +787,7 @@ bindsym $mod+Shift+r reload
 # Screenshot (grim/slurp, see /usr/local/bin/nexa-screenshot)
 bindsym Print exec nexa-screenshot
 bindsym Shift+Print exec nexa-screenshot --select
+bindsym Ctrl+Shift+Escape exec nexa-pulse
 bindsym XF86AudioRaiseVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
 bindsym XF86AudioLowerVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
 bindsym XF86AudioMute exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
@@ -965,6 +966,7 @@ bind = SUPER, F, fullscreen, 0
 bind = SUPER SHIFT, Space, togglefloating
 bind = , Print, exec, nexa-screenshot
 bind = SHIFT, Print, exec, nexa-screenshot --select
+bind = CTRL SHIFT, Escape, exec, nexa-pulse
 bind = SUPER, Left, movefocus, l
 bind = SUPER, Right, movefocus, r
 bind = SUPER, Up, movefocus, u

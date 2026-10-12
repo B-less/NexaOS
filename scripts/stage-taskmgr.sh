@@ -27,6 +27,7 @@ Exec=/usr/local/bin/nexa-taskmgr
 Icon=nexa-taskmgr
 Terminal=false
 Categories=System;Monitor;
+NoDisplay=true
 DESKTOP_EOF
 
 echo "nexa-taskmgr staged into $rootfs"
