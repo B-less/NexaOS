@@ -17,10 +17,21 @@ from nexa_common import compositor, desktopapps, themes
 from .panel import spawn
 
 # Desktop-file ids, in order.
-PINNED = ["nexa-files", "nexa-browser", "org.codeberg.dnkl.foot", "nexa-settings", "nexa-software",
-          "nexa-ai", "nexa-notes", "nexa-music"]
+# Desktop-file ids, in order; a tuple lists names the same app has had in
+# different Alpine releases (foot: org.codeberg.dnkl.foot in 3.19, foot in 3.24).
+PINNED_CHOICES = ["nexa-files", "nexa-browser", ("foot", "org.codeberg.dnkl.foot"), "nexa-settings",
+                  "nexa-software", "nexa-ai", "nexa-notes", "nexa-music"]
 # Window app_id -> desktop-file id, where they differ.
 ALIASES = {"foot": "org.codeberg.dnkl.foot"}
+PINNED = []  # resolved against the installed apps when the Dock starts
+
+
+def _resolve_pinned(installed):
+    out = []
+    for choice in PINNED_CHOICES:
+        options = choice if isinstance(choice, tuple) else (choice,)
+        out.append(next((o for o in options if o in installed), options[0]))
+    return out
 START_ID = "__start__"
 
 BASE = 48          # icon size at rest
@@ -45,7 +56,15 @@ def _rgba(hex_colour, alpha=1.0):
 
 def _running_app_ids():
     """app_ids of every open window, including minimised ones."""
-    return {ALIASES.get(w["app_id"], w["app_id"]) for w in compositor.windows()}
+    found = set()
+    for w in compositor.windows():
+        app_id = w["app_id"]
+        # Only translate when the window's own id isn't an installed app.
+        found.add(app_id if app_id in _INSTALLED else ALIASES.get(app_id, app_id))
+    return found
+
+
+_INSTALLED = set()
 
 
 class Dock(Gtk.ApplicationWindow):
@@ -64,6 +83,9 @@ class Dock(Gtk.ApplicationWindow):
         GtkLayerShell.set_exclusive_zone(self, DOCK_H + BOTTOM)
 
         self.apps = {a["id"]: a for a in desktopapps.load_apps()}
+        _INSTALLED.clear()
+        _INSTALLED.update(self.apps)
+        PINNED[:] = _resolve_pinned(self.apps)
         self.items = []
         self.pointer_x = None
         self.hover = None

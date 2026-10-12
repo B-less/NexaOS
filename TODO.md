@@ -6,7 +6,7 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 
 ## 1. Current build (Alpine 3.24 + Hyprland)
 - [x] Fix missing app icons on 3.24 (hicolor-icon-theme, gtk-update-icon-cache) and rebuild the ISO
-- [ ] Boot-test the ISO in QEMU (Sway path), check Dock/start-menu icons
+- [x] Boot-test the ISO in QEMU (Sway path): Alpine 3.24.2, firewall, hardening, SSH off, no firmware errors, icons fixed (`scripts/test-live-boot.py`); terminal missing from the Dock (foot renamed in 3.24) — fixed
 - [ ] HP test: Hyprland animations/blur, Dock, themes, battery, brightness, lid, Wi-Fi *(needs you)*
 
 ## 2. Security

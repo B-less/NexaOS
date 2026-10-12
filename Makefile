@@ -25,7 +25,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps gui-apps stage-gui-rootfs install-deps check-env
+.PHONY: kernel rootfs disk initramfs apps gui-apps stage-gui-rootfs install-deps check-env refresh
 .SECONDARY:
 
 # ============================================================================
@@ -185,6 +185,23 @@ provision-rootfs: rootfs gui-apps wallpaper icons
 	@$(DOCKER_RUN) sh -c "apk add --no-cache bash >/dev/null && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
 	@echo "$(COLOR_GREEN)✓ rootfs provisioned$(COLOR_RESET)"
 	@du -sh $(ROOTFS_DIR) 2>/dev/null || true
+
+# Re-applies every NexaOS package, app, config and service to the existing
+# rootfs (no wipe and no fresh Alpine base), then rebuilds the initramfs,
+# disk image and ISO. Much faster than `make iso` after NexaOS code, config
+# or package-list changes; after changing ALPINE_VERSION use `make iso`.
+refresh: core-binaries gui-apps
+	@test -d $(ROOTFS_DIR)/etc || { echo "No rootfs yet: run 'make iso' once first."; exit 1; }
+	@echo "$(COLOR_BLUE)Refreshing rootfs (packages, apps, configs)...$(COLOR_RESET)"
+	@$(DOCKER_RUN) sh -c "apk add --no-cache bash >/dev/null && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
+	@mkdir -p $(DIST_DIR)
+	@bash scripts/build-initramfs.sh $(ROOTFS_DIR) $(DIST_DIR)/initramfs.cpio.gz
+	@rm -f $(DIST_DIR)/nexa.img
+	@$(DOCKER_RUN) sh scripts/build-disk-image.sh $(ROOTFS_RELDIR) $(DIST_RELDIR)/nexa.img $(DISK_SIZE)
+ifeq ($(BUILD_ISO),yes)
+	@$(DOCKER_RUN) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
+endif
+	@echo "$(COLOR_GREEN)✓ Refreshed: initramfs, disk image$(if $(filter yes,$(BUILD_ISO)), and ISO)$(COLOR_RESET)"
 
 # ============================================================================
 # INITRAMFS
