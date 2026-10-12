@@ -866,7 +866,8 @@ bindsym $mod+Shift+Right resize grow width 10px
 
 # Floating
 bindsym $mod+shift+space floating toggle
-bindsym $mod+space focus mode_toggle
+# Super+Space is Launchpad, so the tiled/floating focus toggle moves here.
+bindsym $mod+Ctrl+space focus mode_toggle
 
 # Cycle focus between open windows, alt-tab style
 bindsym $mod+Tab focus next

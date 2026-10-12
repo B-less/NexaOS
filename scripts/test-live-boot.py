@@ -2,7 +2,8 @@
 """Boot the live ISO in QEMU (UEFI, as a USB stick), wait for the desktop,
 save a screenshot, log in on the serial console and print a health report.
 
-Usage: python3 scripts/test-live-boot.py [ISO] [--shot desktop.png]
+Usage: python3 scripts/test-live-boot.py [ISO] [--shot desktop.png] [--run 'shell command']
+--run also runs that command as root on the booted system and prints its output.
 Defaults: dist/NexaOS-<PROJECT_VERSION>.iso, screenshot to dist/live-desktop.png.
 Needs qemu-system-x86_64 with KVM and OVMF (/usr/share/qemu/OVMF.fd).
 A VM has no real GPU, so this exercises the Sway session.
@@ -64,6 +65,8 @@ def ppm_to_png(ppm_path, png_path, half=True):
 
 
 def main(argv):
+    extra = argv[argv.index("--run") + 1] if "--run" in argv else None
+    argv = [a for i, a in enumerate(argv) if not (a == "--run" or (i and argv[i - 1] == "--run"))]
     args = [a for a in argv if not a.startswith("--")]
     iso = args[0] if args else os.path.join(REPO, "dist", f"NexaOS-{project_version()}.iso")
     shot = argv[argv.index("--shot") + 1] if "--shot" in argv else os.path.join(REPO, "dist", "live-desktop.png")
@@ -74,16 +77,29 @@ def main(argv):
          "-drive", f"file={iso},format=raw,if=none,id=u,readonly=on", "-device", "qemu-xhci",
          "-device", "usb-storage,drive=u", "-nic", "user,model=virtio", "-display", "none",
          "-serial", f"unix:{ser},server,nowait", "-monitor", f"unix:{mon},server,nowait"],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=open(os.path.join(work, "qemu.err"), "w"))
     try:
         for _ in range(100):
             if os.path.exists(mon) and os.path.exists(ser):
                 break
             time.sleep(0.1)
-        m = socket.socket(socket.AF_UNIX)
-        m.connect(mon)
-        s = socket.socket(socket.AF_UNIX)
-        s.connect(ser)
+        def connect(path):
+            # The socket file appears a moment before QEMU listens on it.
+            for _ in range(50):
+                sock = socket.socket(socket.AF_UNIX)
+                try:
+                    sock.connect(path)
+                    return sock
+                except ConnectionRefusedError:
+                    sock.close()
+                    if qemu.poll() is not None:
+                        raise SystemExit(f"QEMU exited with code {qemu.returncode}: "
+                                         + open(os.path.join(work, "qemu.err")).read().strip())
+                    time.sleep(0.1)
+            raise SystemExit(f"QEMU never accepted connections on {path}")
+
+        m = connect(mon)
+        s = connect(ser)
         s.settimeout(0.5)
         buf = b""
 
@@ -112,7 +128,8 @@ def main(argv):
         s.sendall(b"root\n")
         pump(3)
         marker = "NEXA_CHECKS_DONE"
-        s.sendall(("; ".join(CHECKS) + f"; echo {marker}\n").encode())
+        checks = list(CHECKS) + ([f"echo EXTRA_BEGIN; {extra}; echo EXTRA_END"] if extra else [])
+        s.sendall(("; ".join(checks) + f"; echo {marker}\n").encode())
         end = time.time() + 20
         while time.time() < end and buf.count(marker.encode()) < 2:
             pump(1)
@@ -122,6 +139,8 @@ def main(argv):
                                    "ICON_THEME=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
                                    "WIREGUARD=", "POLICY_ROUTING=", "APPS="))] if text.count(marker) >= 2 else []
         print("\n".join(report) if report else "no report (serial login failed?)")
+        if extra and text.count("EXTRA_END") >= 2:
+            print("--- --run output\n" + text.split("EXTRA_BEGIN")[-1].split("EXTRA_END")[0].strip())
         return 0
     finally:
         qemu.terminate()
