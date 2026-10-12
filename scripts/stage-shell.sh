@@ -12,7 +12,7 @@ rm -rf "$rootfs/usr/local/lib/nexa-shell/nexa_shell"
 cp -a "$base/shell/nexa_shell" "$rootfs/usr/local/lib/nexa-shell/nexa_shell"
 find "$rootfs/usr/local/lib/nexa-shell/nexa_shell" -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
 
-for panel in start control dock; do
+for panel in start control dock launchpad; do
     printf '%s\n' \
         '#!/bin/sh' \
         '. /usr/local/lib/nexa-wayland-env.sh' \
@@ -20,6 +20,19 @@ for panel in start control dock; do
         > "$rootfs/usr/local/bin/nexa-$panel"
     chmod +x "$rootfs/usr/local/bin/nexa-$panel"
 done
+
+mkdir -p "$rootfs/usr/share/applications"
+cat > "$rootfs/usr/share/applications/nexa-launchpad.desktop" << 'DESKTOP_EOF'
+[Desktop Entry]
+Type=Application
+Name=Launchpad
+Comment=All your apps in one place (Super+Space)
+Exec=/usr/local/bin/nexa-launchpad
+Icon=nexa-launchpad
+Terminal=false
+Categories=System;
+Keywords=apps;launcher;grid;
+DESKTOP_EOF
 
 printf '%s\n' \
     '#!/bin/sh' \

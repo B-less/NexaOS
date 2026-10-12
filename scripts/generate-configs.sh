@@ -807,6 +807,7 @@ exec nexa-battery-watch
 # Keybindings
 bindsym $mod+Return exec $term
 bindsym $mod+d exec $menu
+bindsym $mod+space exec nexa-launchpad
 bindsym $mod+n exec nexa-control
 bindsym $mod+a exec $assistant
 bindsym $mod+e exec $files
@@ -985,6 +986,7 @@ layerrule = no_anim on, match:namespace ^(nexa-panel)$
 
 bind = SUPER, Return, exec, foot
 bind = SUPER, D, exec, nexa-start
+bind = SUPER, Space, exec, nexa-launchpad
 bind = SUPER, N, exec, nexa-control
 bind = SUPER, A, exec, nexa-ai-gui
 bind = SUPER, E, exec, nexa-files

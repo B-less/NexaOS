@@ -130,7 +130,7 @@ class Card(Gtk.Box):
 class PulseWindow(Gtk.Window):
     def __init__(self):
         super().__init__(title="Nexa Pulse")
-        self.set_icon_name("utilities-system-monitor")
+        self.set_icon_name("nexa-pulse")
         attach_titlebar(self, "Nexa Pulse")
         self.set_default_size(820, 580)
 
