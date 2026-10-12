@@ -6,12 +6,12 @@ class PrivilegedError(Exception):
     pass
 
 
-def call(action, **fields):
+def call(action, timeout=15, **fields):
     request = {"action": action, **fields}
     try:
         p = subprocess.run(
             ["doas", "/usr/local/bin/nexa-settings-helper"],
-            input=json.dumps(request), capture_output=True, text=True, timeout=15,
+            input=json.dumps(request), capture_output=True, text=True, timeout=timeout,
         )
     except FileNotFoundError:
         raise PrivilegedError("doas is not installed")

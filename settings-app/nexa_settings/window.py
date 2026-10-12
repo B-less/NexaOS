@@ -2,12 +2,14 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from . import privileged
+from .connections import BluetoothPage, VpnPage
 from nexa_common import compositor, sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
@@ -23,6 +25,11 @@ window { background-image: none; background-color: @nexa_bg; }
 #entry { background-image: none; background-color: @nexa_field; color: @nexa_text_strong; border-radius: 6px; padding: 6px 10px; border: 1px solid @nexa_border; }
 #actionbtn { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 6px; padding: 6px 14px; font-weight: bold; }
 #actionbtn:hover { background-image: none; background-color: @nexa_accent_hover; }
+#actionbtn:disabled { background-color: @nexa_hover; color: @nexa_disabled; }
+#rowbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 12px; border: 1px solid @nexa_border; }
+#rowbtn:hover { background-image: none; background-color: @nexa_hover; }
+list, list row { background-image: none; background-color: transparent; }
+list row { border-bottom: 1px solid @nexa_border; }
 #toggle { border-radius: 12px; padding: 4px 12px; font-weight: bold; font-size: 9pt; }
 #toggle.on { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; }
 #toggle.off { background-image: none; background-color: @nexa_hover; color: @nexa_muted; }
@@ -39,7 +46,7 @@ WALLPAPER_GALLERY = "/usr/share/backgrounds/nexaos/gallery"
 LOGIN_REQUIRED = "/etc/nexa/login-required"  # written by the OS installer
 SKIP_LOGIN_LOCK = os.path.expanduser("~/.config/nexa/skip-login-lock")
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
-PAGES = ("Personalization", "System", "Time & Keyboard", "Power", "Assistant", "About")
+PAGES = ("Personalization", "Bluetooth", "VPN", "System", "Time & Keyboard", "Power", "Assistant", "About")
 
 
 class SettingsWindow(Gtk.Window):
@@ -76,6 +83,10 @@ class SettingsWindow(Gtk.Window):
         root.pack_start(content, True, True, 0)
 
         self.stack.add_named(self._scrolled(self._build_appearance_page()), "Personalization")
+        self.bluetooth_page = BluetoothPage(self)
+        self.stack.add_named(self._scrolled(self.bluetooth_page.page), "Bluetooth")
+        self.vpn_page = VpnPage(self)
+        self.stack.add_named(self._scrolled(self.vpn_page.page), "VPN")
         self.stack.add_named(self._scrolled(self._build_system_page()), "System")
         self.stack.add_named(self._scrolled(self._build_time_page()), "Time & Keyboard")
         self.stack.add_named(self._scrolled(self._build_power_page()), "Power")
@@ -629,4 +640,9 @@ def main():
     win = SettingsWindow()
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
+    # `nexa-settings bluetooth` (or vpn, power, ...) opens that page.
+    wanted = {p.lower().split()[0]: p for p in PAGES}
+    for arg in sys.argv[1:]:
+        if arg.lower() in wanted:
+            win._on_nav(None, wanted[arg.lower()])
     Gtk.main()

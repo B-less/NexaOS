@@ -29,6 +29,10 @@ CHECKS = (
     'pgrep -f "$p" >/dev/null && echo "RUN:$p" || echo "NOT:$p"; done',
     'echo ICON_THEME=$(test -f /usr/share/icons/hicolor/index.theme && echo ok || echo missing)',
     'echo BROWSER_SANDBOX=$(grep -c "NEXA_BROWSER_SANDBOX:-1" /usr/local/bin/nexa-browser)',
+    'echo BLUETOOTHD=$(rc-service bluetooth status 2>&1 | grep -o "started\\|stopped\\|crashed")',
+    'echo WIREGUARD=$(ip link add nexatest type wireguard 2>&1 && ip link del nexatest && echo ok)',
+    'echo POLICY_ROUTING=$(ip rule show | grep -c .)',
+    'echo APPS=$(for c in nexa-pulse nexadark tor wg-quick; do command -v $c >/dev/null && printf "%s," $c; done)',
 )
 
 
@@ -107,7 +111,8 @@ def main(argv):
         text = buf.decode(errors="replace").replace("\r", "")
         report = [l for l in text.split(marker)[-2].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
-                                   "ICON_THEME=", "BROWSER_SANDBOX="))] if text.count(marker) >= 2 else []
+                                   "ICON_THEME=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
+                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS="))] if text.count(marker) >= 2 else []
         print("\n".join(report) if report else "no report (serial login failed?)")
         return 0
     finally:

@@ -6,7 +6,8 @@
 #   e.g. sh scripts/test-app-headless.sh pulse nexa_pulse dist/pulse.png
 # SWAY_CMD (optional) is a swaymsg command run just before the screenshot.
 # Env: APP_ARGS (arguments for the app), WAIT (seconds before the shot, 5),
-#      SETUP (shell commands run in the container before the app starts).
+#      SETUP (shell commands run in the container before the app starts;
+#      it can write "export VAR=..." lines to /tmp/app.env for the app).
 # WebKit's bubblewrap sandbox can't nest inside Docker and there is no GPU, so the
 # sandbox and GPU rendering are off here;
 # the sandbox itself is checked on the real image (scripts/test-live-boot.py).
@@ -42,6 +43,7 @@ for i in $(seq 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; s
 export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
 export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
 [ -n "$SETUP" ] && sh -c "$SETUP"
+[ -f /tmp/app.env ] && . /tmp/app.env  # SETUP can export variables for the app here
 PYTHONPATH=/src/$APP:/src/common python3 -m $MODULE $APP_ARGS >/tmp/app.log 2>&1 &
 sleep ${WAIT:-5}
 [ -n "$SWAY_CMD" ] && swaymsg "$SWAY_CMD" >/dev/null && sleep 1

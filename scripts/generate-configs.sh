@@ -498,6 +498,39 @@ WIFIPROBE_EOF
     ln -sf /etc/init.d/wifi-probe "$MNT_DIR/etc/runlevels/default/wifi-probe"
     [ -x "$MNT_DIR/etc/init.d/iwd" ] && ln -sf /etc/init.d/iwd "$MNT_DIR/etc/runlevels/default/iwd"
 
+    # Bluetooth: same story as WiFi. btusb binds at boot, but the chip's
+    # firmware (Intel ibt-*, Realtek rtl_bt/, ...) lives on the root
+    # filesystem, so its setup fails. Unbind and re-bind each adapter once
+    # /lib/firmware is there, before bluetoothd starts.
+    cat > "$MNT_DIR/etc/init.d/bt-probe" << 'BTPROBE_EOF'
+#!/sbin/openrc-run
+description="Re-probe USB Bluetooth adapters now that firmware is available"
+
+depend() {
+    need localmount
+    after udev udev-trigger
+    before bluetooth
+}
+
+start() {
+    ebegin "Re-probing Bluetooth adapters"
+    local drv=/sys/bus/usb/drivers/btusb intf ids=""
+    for intf in "$drv"/*:*.0; do
+        [ -e "$intf" ] && ids="$ids ${intf##*/}"
+    done
+    for intf in $ids; do
+        echo "$intf" > "$drv/unbind" 2>/dev/null
+    done
+    for intf in $ids; do
+        echo "$intf" > "$drv/bind" 2>/dev/null
+    done
+    eend 0
+}
+BTPROBE_EOF
+    chmod +x "$MNT_DIR/etc/init.d/bt-probe"
+    ln -sf /etc/init.d/bt-probe "$MNT_DIR/etc/runlevels/default/bt-probe"
+    [ -x "$MNT_DIR/etc/init.d/bluetooth" ] && ln -sf /etc/init.d/bluetooth "$MNT_DIR/etc/runlevels/default/bluetooth"
+
     echo "[*] Generating zram swap service..."
     # Compressed swap in RAM: the kernel has ZRAM built in (creating zram0 at
     # boot); this sizes it to half of RAM and turns it on. Doubles as a
