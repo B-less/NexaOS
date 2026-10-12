@@ -26,10 +26,13 @@ BOOT_SRC = "/boot"  # the running system's own kernel/initramfs, see build-disk-
 
 MIN_DISK_BYTES = 6 * 1024**3  # headroom over the ~1GB rootfs for a real install
 MIN_PASSWORD_LEN = 4
-# The live image ships these with empty passwords; an install sets both to
-# the password chosen in the installer, so the installed disk never has a
-# passwordless login.
-PASSWORD_ACCOUNTS = ("user", "root")
+LIVE_USER = "user"   # the desktop account (uid 1000) as the live image ships it
+_USERNAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+# Names the installed system already uses, or that would be confusing.
+RESERVED_NAMES = {"root", "bin", "daemon", "adm", "lp", "sync", "shutdown", "halt", "mail", "news",
+                  "uucp", "operator", "man", "postmaster", "cron", "ftp", "sshd", "at", "squid",
+                  "xfs", "games", "cyrus", "vpopmail", "ntp", "smmsp", "guest", "nobody",
+                  "messagebus", "seatd", "seat", "wheel", "video", "audio", "input", "admin"}
 BIOS_GRUB_END_MIB = 2
 ESP_END_MIB = 322  # 320MiB ESP -- generous for holding more than one kernel later
 ESP_LABEL = "NEXABOOT"
@@ -321,12 +324,80 @@ def validate_password(password):
         raise InstallError("The password can't contain line breaks.")
 
 
-def set_password(mountpoint, password):
+def validate_username(name):
+    if not isinstance(name, str) or not _USERNAME_RE.match(name):
+        raise InstallError("The username must start with a lowercase letter and use only "
+                           "lowercase letters, digits, - and _ (up to 31 characters).")
+    if name in RESERVED_NAMES:
+        raise InstallError(f"'{name}' is reserved by the system; choose another username.")
+
+
+def rename_user(mountpoint, new):
+    """Rename the desktop account (uid 1000) from LIVE_USER to `new` on the
+    installed system: passwd, shadow, group (its own group and memberships),
+    the home directory and doas rules. The uid stays 1000, so file
+    ownership and everything that looks the account up by uid still works."""
+    validate_username(new)
+    if new == LIVE_USER:
+        return
+    etc = os.path.join(mountpoint, "etc")
+
+    def rewrite(name, fix):
+        path = os.path.join(etc, name)
+        try:
+            with open(path) as f:
+                lines = f.read().splitlines()
+        except OSError:
+            return
+        st = os.stat(path)
+        with open(path, "w") as f:
+            f.write("\n".join(fix(line) for line in lines) + "\n")
+        os.chmod(path, st.st_mode & 0o7777)
+
+    def passwd_line(line):
+        f = line.split(":")
+        if len(f) >= 7 and f[0] == LIVE_USER:
+            f[0], f[4], f[5] = new, new, f"/home/{new}"
+        elif len(f) >= 7 and f[0] == new:
+            raise InstallError(f"'{new}' already exists on the system; choose another username.")
+        return ":".join(f)
+
+    def shadow_line(line):
+        f = line.split(":")
+        if f and f[0] == LIVE_USER:
+            f[0] = new
+        return ":".join(f)
+
+    def group_line(line):
+        f = line.split(":")
+        if len(f) >= 4:
+            if f[0] == LIVE_USER:
+                f[0] = new
+            f[3] = ",".join(new if m == LIVE_USER else m for m in f[3].split(",") if m)
+        return ":".join(f)
+
+    def doas_line(line):
+        words = line.split()
+        if words and words[0] == "permit":
+            words = [new if w == LIVE_USER else w for w in words]
+        return " ".join(words)
+
+    rewrite("passwd", passwd_line)
+    rewrite("shadow", shadow_line)
+    rewrite("group", group_line)
+    rewrite("doas.conf", doas_line)
+    old_home = os.path.join(mountpoint, "home", LIVE_USER)
+    if os.path.isdir(old_home):
+        os.rename(old_home, os.path.join(mountpoint, "home", new))
+
+
+def set_password(mountpoint, password, username=LIVE_USER):
     validate_password(password)
     # Fed on stdin, never argv, so the password doesn't show up in ps.
     # -R makes chpasswd chroot into the installed system and edit its
-    # /etc/shadow (SHA-512 hashes), not the live session's.
-    lines = "".join(f"{account}:{password}\n" for account in PASSWORD_ACCOUNTS)
+    # /etc/shadow (SHA-512 hashes), not the live session's. The live image
+    # ships both accounts with empty passwords.
+    lines = "".join(f"{account}:{password}\n" for account in (username, "root"))
     _sh(["chpasswd", "-c", "sha512", "-R", mountpoint], input=lines)
 
 
@@ -364,7 +435,7 @@ def harden_privileges(mountpoint):
 
 
 def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_stage=None,
-                password=None):
+                password=None, username=None):
     """Runs every step in order, always trying to unmount on failure so a
     half-finished install doesn't leave the target disk's filesystems busy.
     password=None leaves the cloned accounts' passwords as they were."""
@@ -375,6 +446,8 @@ def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_st
     validate_disk(disk_name)
     if password is not None:
         validate_password(password)  # before anything is wiped
+    if username is not None:
+        validate_username(username)
     mountpoint = TARGET_ROOT
     try:
         report("partition")
@@ -392,8 +465,10 @@ def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_st
         install_bootloader(disk_name, mountpoint, esp_mount)
         report("identity")
         apply_identity(mountpoint, hostname, zone, keyboard_layout)
+        if username is not None:
+            rename_user(mountpoint, username)
         if password is not None:
-            set_password(mountpoint, password)
+            set_password(mountpoint, password, username or LIVE_USER)
             harden_privileges(mountpoint)
             # Start the desktop locked on every boot (nexa-login-lock).
             os.makedirs(os.path.join(mountpoint, "etc", "nexa"), exist_ok=True)

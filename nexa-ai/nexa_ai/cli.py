@@ -8,7 +8,7 @@ from . import agent, client, local_fallback
 
 CONFIG_PATH = "/etc/nexa-ai/config.json"
 LOG_PATH = "/var/log/nexa-ai.log"
-DEFAULT_MODEL = "claude-sonnet-5"
+DEFAULT_MODEL = "claude-opus-5-5"
 
 
 def load_config():

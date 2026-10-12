@@ -18,7 +18,7 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 
 ## 3. Installer
 - [ ] Re-run BIOS + UEFI install tests on Alpine 3.24 (with the password step)
-- [ ] Choose your own username during install
+- [x] Choose your own username during install (account renamed everywhere, uid stays 1000; system no longer depends on the name "user"); install test now uses "nexa"
 - [ ] Install to a real disk and boot it *(needs you)*
 
 ## 4. Features
@@ -28,7 +28,7 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [ ] Browser download manager with live download speed
 - [ ] System monitor with its own name and a Ctrl+Shift+Esc-style shortcut
 - [ ] Phase A extras: translucent app windows, micro-animations, Launchpad
-- [ ] Nexa AI: current Claude model, no truncated replies
+- [x] Nexa AI: claude-opus-5-5, max_tokens 16000, server-side refusal fallback, refusal/cut-off handling (tested against a fake API)
 
 ## 5. Hardware
 - [ ] Bluetooth (kernel + bluez + Settings page)

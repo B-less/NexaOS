@@ -3,7 +3,7 @@ from . import client, tools
 SYSTEM_PROMPT = """You are the built-in system assistant for NexaOS, running as a local process \
 on the machine you are inspecting. You have tools to read real hardware and kernel state (CPU, \
 memory, temperatures, PCI/USB devices, disks, kernel modules, logs); to browse, search, read, \
-write, move, copy, and delete files under the user's own home directory (/home/user); to list \
+write, move, copy, and delete files under the user's own home directory; to list \
 installed apps and launch them; to list, focus, and close open windows in the current Sway \
 session; to search installed apk packages and see what is installed; to read and change the \
 system volume and mute state; to see, connect to, disconnect from, and forget WiFi networks (never handling passwords - new secured networks are set up in the Network app); to show desktop notifications; and, when control is enabled, to \
@@ -36,6 +36,14 @@ def run(api_key, model, user_query, allow_control, require_confirmation, confirm
             api_key, model, SYSTEM_PROMPT, messages, tools.anthropic_tool_specs(),
         )
         content = resp.get("content", [])
+        stop = resp.get("stop_reason")
+        if stop == "refusal":
+            # Nothing usable came back; keep it out of the history so the
+            # next question starts from a valid conversation.
+            reason = (resp.get("stop_details") or {}).get("explanation")
+            on_event("text", "Claude declined this request." + (f" ({reason})" if reason else ""))
+            return messages
+        # Passed back unchanged (thinking blocks included) on the next turn.
         messages.append({"role": "assistant", "content": content})
 
         text_parts = [b["text"] for b in content if b.get("type") == "text"]
@@ -45,6 +53,8 @@ def run(api_key, model, user_query, allow_control, require_confirmation, confirm
             on_event("text", t)
 
         if not tool_uses:
+            if stop == "max_tokens":
+                on_event("text", "(The reply was cut off at the length limit.)")
             return messages
 
         tool_results = []

@@ -508,7 +508,7 @@ class SettingsWindow(Gtk.Window):
         page.pack_start(self._field_label("Model"), False, False, 0)
         self.model_entry = Gtk.Entry()
         self.model_entry.set_name("entry")
-        self.model_entry.set_text(cfg.get("model", "claude-sonnet-5"))
+        self.model_entry.set_text(cfg.get("model", "claude-opus-5-5"))
         page.pack_start(self.model_entry, False, False, 0)
 
         self.allow_control_toggle = self._toggle_row(
@@ -556,7 +556,7 @@ class SettingsWindow(Gtk.Window):
     def _on_save_assistant(self, _btn):
         data = {
             "api_key": self.api_key_entry.get_text(),
-            "model": self.model_entry.get_text().strip() or "claude-sonnet-5",
+            "model": self.model_entry.get_text().strip() or "claude-opus-5-5",
             "allow_control": self.allow_control_toggle.get_active(),
             "require_confirmation": self.require_confirmation_toggle.get_active(),
         }

@@ -190,6 +190,39 @@ check("installed system: power stays passwordless", "permit nopass user cmd /usr
 check("installed system: the disk-wiping installer helper is gone", not any("nexa-setup-helper" in r for r in rules))
 check("doas.conf stays root-only (0400)", oct(os.stat(os.path.join(conf_root, "etc", "doas.conf")).st_mode & 0o777) == "0o400")
 
+# ---- username
+for bad, why in (("", "empty"), ("Kwame", "uppercase"), ("1abc", "starts with a digit"),
+                 ("root", "reserved"), ("a b", "space"), ("x" * 40, "too long")):
+    check(f"username rejected: {why}", raises(di.validate_username, bad) is not None)
+check("username accepted: kwame-2", raises(di.validate_username, "kwame-2") is None)
+r = tempfile.mkdtemp(); os.makedirs(os.path.join(r, "etc")); os.makedirs(os.path.join(r, "home", "user", ".config"))
+open(os.path.join(r, "etc", "passwd"), "w").write("root:x:0:0:root:/root:/bin/sh\nuser:x:1000:1000:user:/home/user:/bin/sh\n")
+open(os.path.join(r, "etc", "shadow"), "w").write("root::0:0:99999:7:::\nuser::0:0:99999:7:::\n")
+os.chmod(os.path.join(r, "etc", "shadow"), 0o600)
+open(os.path.join(r, "etc", "group"), "w").write("root:x:0:\nuser:x:1000:\nwheel:x:10:user\nvideo:x:27:user,other\n")
+open(os.path.join(r, "etc", "doas.conf"), "w").write("permit nopass user cmd /usr/local/bin/nexa-power-helper\npermit user cmd /usr/local/bin/nexa-software-helper\n")
+di.rename_user(r, "kwame")
+passwd = open(os.path.join(r, "etc", "passwd")).read()
+check("passwd: name, gecos and home renamed, uid stays 1000", "kwame:x:1000:1000:kwame:/home/kwame:/bin/sh" in passwd and "user:" not in passwd, passwd)
+check("shadow renamed and still private", open(os.path.join(r, "etc", "shadow")).read().startswith("root::") and "\nkwame::" in open(os.path.join(r, "etc", "shadow")).read()
+      and oct(os.stat(os.path.join(r, "etc", "shadow")).st_mode & 0o777) == "0o600")
+group = open(os.path.join(r, "etc", "group")).read()
+check("own group and memberships renamed", "kwame:x:1000:" in group and "wheel:x:10:kwame" in group and "video:x:27:kwame,other" in group, group)
+doas = open(os.path.join(r, "etc", "doas.conf")).read()
+check("doas rules follow the new name", "permit nopass kwame cmd /usr/local/bin/nexa-power-helper" in doas
+      and "permit kwame cmd /usr/local/bin/nexa-software-helper" in doas, doas)
+check("home directory moved", os.path.isdir(os.path.join(r, "home", "kwame", ".config")) and not os.path.exists(os.path.join(r, "home", "user")))
+check("keeping the name 'user' changes nothing", di.rename_user(r, "user") is None)
+
+calls.clear(); stages.clear(); inputs.clear()
+di.run_install("sdb", hostname="h", on_stage=stages.append, password="hunter22", username="kwame")
+check("install with a username sets that account's password (and root's)",
+      inputs.get("chpasswd") == "kwame:hunter22\nroot:hunter22\n", repr(inputs.get("chpasswd")))
+calls.clear(); stages.clear()
+check("bad username is rejected before the disk is touched",
+      raises(lambda: di.run_install("sdb", password="hunter22", username="Root!", on_stage=stages.append)) is not None
+      and stages == [] and not any(c[0] in ("wipefs", "parted") for c in calls), f"{stages} {calls}")
+
 calls.clear(); stages.clear()
 check("bad password is rejected before the disk is touched",
       raises(lambda: di.run_install("sdb", password="ab", on_stage=stages.append)) is not None

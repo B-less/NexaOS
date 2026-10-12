@@ -270,9 +270,12 @@ MODE="${1:-}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"
 export NEXA_WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
 
+# The desktop account is uid 1000, whatever the installer named it.
+NEXA_USER=$(awk -F: '$3 == 1000 { print $1; exit }' /etc/passwd)
+
 mkdir -p "$XDG_RUNTIME_DIR" /run/dbus /var/log
 chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
-chown user:user "$XDG_RUNTIME_DIR" 2>/dev/null || true
+chown 1000:1000 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 
 if [ "$MODE" = "--check" ]; then
     exec /usr/local/bin/nexa-wayland-check
@@ -314,7 +317,7 @@ if command -v sway >/dev/null 2>&1; then
     # of the underlying virtual GPU or its acceleration state.
     export WLR_RENDERER="${WLR_RENDERER:-pixman}"
 
-    if id user >/dev/null 2>&1; then
+    if [ -n "$NEXA_USER" ]; then
         # waybar (and other apps) expect a session bus; without one, glib's
         # dbus autolaunch tries to use X11 and fails ("Cannot autolaunch
         # D-Bus without X11 $DISPLAY"), so give them a real one instead of
@@ -323,7 +326,7 @@ if command -v sway >/dev/null 2>&1; then
         # its argument.
         DBUS_RUN="dbus-run-session --"
         command -v dbus-run-session >/dev/null 2>&1 || DBUS_RUN=""
-        exec su user -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; exec $DBUS_RUN /usr/local/bin/nexa-desktop"
+        exec su "$NEXA_USER" -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; exec $DBUS_RUN /usr/local/bin/nexa-desktop"
     fi
 
     unset WAYLAND_DISPLAY
@@ -843,7 +846,7 @@ bindsym $mod+Shift+minus scratchpad show
 
 # Per-user settings written by the Settings app (e.g. keyboard layout). A stub
 # file is always shipped so the wildcard is guaranteed to match something.
-include /home/user/.config/sway/config.d/*.conf
+include ~/.config/sway/config.d/*.conf
 
 # Taskbar
 # Waybar is a standalone layer-shell bar (launched via `exec waybar` above,

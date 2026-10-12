@@ -286,7 +286,14 @@ class SetupWindow(Gtk.Window):
                 self.layout_combo.set_active(i)
         page.pack_start(self.layout_combo, False, False, 0)
 
-        page.pack_start(self._field_label("Password (for the \"user\" account and administrator access)"),
+        page.pack_start(self._field_label("Username"), False, False, 0)
+        self.username_entry = Gtk.Entry()
+        self.username_entry.set_name("entry")
+        self.username_entry.set_text(diskinstall.LIVE_USER)
+        self.username_entry.connect("changed", lambda *_a: self._update_password_state())
+        page.pack_start(self.username_entry, False, False, 0)
+
+        page.pack_start(self._field_label("Password (for your account and administrator access)"),
                         False, False, 0)
         self.password_entry = self._password_entry("Password")
         page.pack_start(self.password_entry, False, False, 0)
@@ -307,6 +314,10 @@ class SetupWindow(Gtk.Window):
         return entry
 
     def _password_problem(self):
+        try:
+            diskinstall.validate_username(self.username_entry.get_text().strip())
+        except diskinstall.InstallError as e:
+            return str(e)
         password = self.password_entry.get_text()
         try:
             diskinstall.validate_password(password)
@@ -319,7 +330,8 @@ class SetupWindow(Gtk.Window):
     def _update_password_state(self):
         problem = self._password_problem()
         # Don't nag before anything has been typed.
-        typed = self.password_entry.get_text() or self.password_confirm_entry.get_text()
+        typed = (self.password_entry.get_text() or self.password_confirm_entry.get_text()
+                 or self.username_entry.get_text().strip() != diskinstall.LIVE_USER)
         self.password_hint.set_text(problem if (problem and typed) else "")
         if self.stack.get_visible_child_name() == "setup":
             self.next_btn.set_sensitive(problem is None)
@@ -399,6 +411,7 @@ class SetupWindow(Gtk.Window):
             "zone": self._chosen_zone(),
             "keyboard": self._chosen_layout(),
             "password": self.password_entry.get_text(),
+            "username": self.username_entry.get_text().strip(),
         }
         try:
             proc = subprocess.Popen(

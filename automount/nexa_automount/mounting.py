@@ -119,7 +119,7 @@ def _safe_name(label, kname):
 
 def _user_ids():
     try:
-        u = pwd.getpwnam("user")
+        u = pwd.getpwuid(1000)  # the desktop account, whatever the installer named it
         return u.pw_uid, u.pw_gid
     except KeyError:
         return 1000, 1000

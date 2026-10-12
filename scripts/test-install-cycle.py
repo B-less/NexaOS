@@ -49,6 +49,7 @@ OVMF_CANDIDATES = [
     ("/usr/share/edk2/x64/OVMF_CODE.fd", "/usr/share/edk2/x64/OVMF_VARS.fd"),
 ]
 TEST_PASSWORD = "nexa-test-pw"
+TEST_USER = "nexa"   # installs under a non-default name, so the rename is tested too
 PTS_RE = re.compile(r"char device redirected to (/dev/pts/\d+)")
 # Strips ANSI/terminal-query escape sequences (e.g. ESC[6n cursor-position
 # requests some subprocess emits) before we print captured output to the
@@ -221,7 +222,7 @@ def main():
     qemu.send(
         "cat > /tmp/req.json << 'EOF'\n"
         '{"disk": "vdb", "hostname": "nexa-test", "zone": null, "keyboard": null, '
-        f'"password": "{TEST_PASSWORD}"}}\n'
+        f'"password": "{TEST_PASSWORD}", "username": "{TEST_USER}"}}\n'
         "EOF"
     )
     time.sleep(1)
@@ -289,7 +290,7 @@ def main():
     # a failed command, and the marker below would still print -- a false PASS.
     phase("Logging in to the installed system with the password set by the installer")
     time.sleep(2)
-    boot2.send("user")
+    boot2.send(TEST_USER)
     if not boot2.wait_for("Password:", 15):
         tail = boot2.buf[-1000:].decode(errors="replace")
         boot2.close()
@@ -299,12 +300,33 @@ def main():
     # contains "NEXA_LOGIN_user".
     time.sleep(2)
     boot2.send("echo NEXA_LOGIN_$(id -un)")
-    logged_in = boot2.wait_for("NEXA_LOGIN_user", 20)
-    tail = boot2.buf[-1000:].decode(errors="replace")
-    boot2.close()
+    logged_in = boot2.wait_for(f"NEXA_LOGIN_{TEST_USER}", 20)
     if not logged_in:
-        fail("logging in as user with the installer-set password failed. Last output:\n" + tail)
-    print("[ok] logged in as user with the password chosen at install time")
+        tail = boot2.buf[-1000:].decode(errors="replace")
+        boot2.close()
+        fail(f"logging in as {TEST_USER} with the installer-set password failed. Last output:\n" + tail)
+    print(f"[ok] logged in as {TEST_USER} with the password chosen at install time")
+
+    # The installed system's privilege setup (no root needed to read these).
+    checks = {
+        "HOME": f"test -d /home/{TEST_USER} && echo yes",
+        "SOFTWARE_NEEDS_PW": f"grep -cx 'permit {TEST_USER} cmd /usr/local/bin/nexa-software-helper' /etc/doas.conf 2>/dev/null || ls -l /etc/doas.conf",
+        "LOGIN_LOCK": "test -f /etc/nexa/login-required && echo yes",
+    }
+    for key, cmd in checks.items():
+        boot2.send(f"echo NEXA_{key}=$({cmd})")
+    boot2.wait_for("NEXA_LOGIN_LOCK=", 15)
+    time.sleep(1)
+    boot2._pump(time.time() + 2)
+    out = boot2.buf.decode(errors="replace")
+    boot2.close()
+    import re as _re
+    found = {k: (_re.findall(rf"NEXA_{k}=([^\r\n]*)", out) or [""])[-1].strip() for k in checks}
+    if found["HOME"] != "yes":
+        fail(f"home directory /home/{TEST_USER} missing after the rename ({found})")
+    if found["LOGIN_LOCK"] != "yes":
+        fail(f"/etc/nexa/login-required missing: the desktop would start unlocked ({found})")
+    print(f"[ok] account renamed, starts locked; doas.conf check: {found['SOFTWARE_NEEDS_PW']}")
 
     print(f"\nPASS: the installed disk booted on its own via GRUB ({'UEFI' if UEFI else 'BIOS'} mode), "
           "no -kernel/-initrd needed, and the installer-set password works.")

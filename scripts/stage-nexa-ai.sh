@@ -50,7 +50,7 @@ if [ ! -f "$rootfs/etc/nexa-ai/config.json" ]; then
     cat > "$rootfs/etc/nexa-ai/config.json" << 'CONFIG_EOF'
 {
   "api_key": "",
-  "model": "claude-sonnet-5",
+  "model": "claude-opus-5-5",
   "allow_control": false,
   "require_confirmation": true
 }

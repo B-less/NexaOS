@@ -12,7 +12,7 @@ from nexa_common import diskinstall
 # install stage to stdout (flushed immediately) so the GUI can show real
 # progress on what is normally a multi-minute operation, then one final
 # {"ok": ...} line. The request (on stdin, so the password never appears in
-# argv) is {"disk", "password", "hostname", "zone", "keyboard"}.
+# argv) is {"disk", "password", "username", "hostname", "zone", "keyboard"}.
 
 
 def _report(stage):
@@ -34,7 +34,7 @@ def main():
     try:
         result = diskinstall.run_install(
             disk, req.get("hostname"), req.get("zone"), req.get("keyboard"),
-            on_stage=_report, password=password,
+            on_stage=_report, password=password, username=req.get("username"),
         )
     except diskinstall.InstallError as e:
         print(json.dumps({"ok": False, "error": str(e)}), flush=True)

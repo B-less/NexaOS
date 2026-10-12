@@ -1,5 +1,6 @@
 import json
 import os
+import pwd
 import re
 import shlex
 import shutil
@@ -20,7 +21,15 @@ ACTION = "action"
 _ALLOWED_GOVERNORS = {"performance", "powersave", "ondemand", "conservative", "schedutil", "userspace"}
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 _FIELD_CODE_RE = re.compile(r"%[fFuUick]")
-HOME_DIR = "/home/user"
+def _desktop_home():
+    # The desktop account is uid 1000, whatever the installer named it.
+    try:
+        return pwd.getpwuid(1000).pw_dir
+    except KeyError:
+        return "/home/user"
+
+
+HOME_DIR = _desktop_home()
 APPS_DIR = "/usr/share/applications"
 
 
@@ -261,7 +270,7 @@ def _safe_home_path(path, must_exist=False):
     real = os.path.realpath(path)
     real_home = os.path.realpath(HOME_DIR)
     if real != real_home and not real.startswith(real_home + os.sep):
-        raise ToolError("path must be inside /home/user")
+        raise ToolError(f"path must be inside {HOME_DIR}")
     if must_exist and not os.path.exists(real):
         raise ToolError(f"no such file or directory: {path}")
     return real
@@ -662,9 +671,9 @@ TOOLS = {
     },
     "list_dir": {
         "category": READ, "func": list_dir,
-        "description": "List files and directories under a path inside the user's home directory (/home/user).",
+        "description": "List files and directories under a path inside the user's home directory.",
         "input_schema": {"type": "object", "properties": {
-            "path": {"type": "string", "description": "Path relative to or under /home/user, defaults to the home directory itself"},
+            "path": {"type": "string", "description": "Path relative to or under the home directory, defaults to the home directory itself"},
         }},
     },
     "read_text_file": {
