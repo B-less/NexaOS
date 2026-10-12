@@ -10,28 +10,28 @@ from nexa_common import diskinstall, sysconf
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#heading { color: #ffffff; font-size: 18pt; font-weight: bold; }
-#subheading { color: #9a9a9a; font-size: 10pt; }
-#navbar { background-image: none; background-color: #232323; }
-#navbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 8px 18px; }
-#navbtn:hover { background-image: none; background-color: #3a3a3a; }
-#navbtn:disabled { color: #5a5a5a; }
-#primarybtn { background-image: none; background-color: #7aa2f7; color: #1e1e1e; border-radius: 6px; padding: 8px 20px; font-weight: bold; }
-#primarybtn:hover { background-image: none; background-color: #92b6ff; }
-#primarybtn:disabled { background-image: none; background-color: #3a3a3a; color: #5a5a5a; }
-#dangerbtn { background-image: none; background-color: #f7768e; color: #1e1e1e; border-radius: 6px; padding: 8px 20px; font-weight: bold; }
-#dangerbtn:hover { background-image: none; background-color: #ff8fa3; }
-#dangerbtn:disabled { background-image: none; background-color: #3a3a3a; color: #5a5a5a; }
-#diskrow { background-image: none; background-color: #252525; border-radius: 8px; padding: 4px; }
-#diskrow:selected { background-image: none; background-color: #2c3a52; }
-#diskname { color: #e0e0e0; font-size: 11pt; }
-#diskmeta { color: #8a8a8a; font-size: 9pt; }
-#warning { color: #f7768e; font-size: 10pt; }
-#entry { background-image: none; background-color: #2a2a2a; color: #ffffff; border-radius: 6px; padding: 6px 10px; border: 1px solid #3c3c3c; }
-#fieldlabel { color: #9a9a9a; font-size: 9pt; }
-#stagelabel { color: #d4d4d4; font-size: 11pt; }
-#errorlabel { color: #f7768e; font-size: 10pt; }
+window { background-image: none; background-color: @nexa_bg; }
+#heading { color: @nexa_text_strong; font-size: 18pt; font-weight: bold; }
+#subheading { color: @nexa_muted; font-size: 10pt; }
+#navbar { background-image: none; background-color: @nexa_surface; }
+#navbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 8px 18px; }
+#navbtn:hover { background-image: none; background-color: @nexa_hover; }
+#navbtn:disabled { color: @nexa_disabled; }
+#primarybtn { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 6px; padding: 8px 20px; font-weight: bold; }
+#primarybtn:hover { background-image: none; background-color: @nexa_accent_hover; }
+#primarybtn:disabled { background-image: none; background-color: @nexa_hover; color: @nexa_disabled; }
+#dangerbtn { background-image: none; background-color: @nexa_crit; color: @nexa_on_accent; border-radius: 6px; padding: 8px 20px; font-weight: bold; }
+#dangerbtn:hover { background-image: none; background-color: @nexa_crit_hover; }
+#dangerbtn:disabled { background-image: none; background-color: @nexa_hover; color: @nexa_disabled; }
+#diskrow { background-image: none; background-color: @nexa_surface; border-radius: 8px; padding: 4px; }
+#diskrow:selected { background-image: none; background-color: @nexa_selected; }
+#diskname { color: @nexa_text; font-size: 11pt; }
+#diskmeta { color: @nexa_muted; font-size: 9pt; }
+#warning { color: @nexa_crit; font-size: 10pt; }
+#entry { background-image: none; background-color: @nexa_field; color: @nexa_text_strong; border-radius: 6px; padding: 6px 10px; border: 1px solid @nexa_border; }
+#fieldlabel { color: @nexa_muted; font-size: 9pt; }
+#stagelabel { color: @nexa_text; font-size: 11pt; }
+#errorlabel { color: @nexa_crit; font-size: 10pt; }
 """
 
 STAGE_LABELS = {

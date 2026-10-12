@@ -10,24 +10,24 @@ from .cli import load_config, make_logger
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#header { background-image: none; background-color: #252525; color: #e0e0e0; }
-#status { color: #9a9a9a; font-size: 9pt; }
-#scroller { background-image: none; background-color: #1e1e1e; }
-#entry { background-image: none; background-color: #2a2a2a; color: #ffffff; border-radius: 8px; padding: 8px; border: 1px solid #3c3c3c; }
-#send { background-image: none; background-color: #7aa2f7; color: #1e1e1e; border-radius: 8px; padding: 6px 14px; font-weight: bold; }
-#send:hover { background-image: none; background-color: #92b6ff; }
+window { background-image: none; background-color: @nexa_bg; }
+#header { background-image: none; background-color: @nexa_surface; color: @nexa_text; }
+#status { color: @nexa_muted; font-size: 9pt; }
+#scroller { background-image: none; background-color: @nexa_bg; }
+#entry { background-image: none; background-color: @nexa_field; color: @nexa_text_strong; border-radius: 8px; padding: 8px; border: 1px solid @nexa_border; }
+#send { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 8px; padding: 6px 14px; font-weight: bold; }
+#send:hover { background-image: none; background-color: @nexa_accent_hover; }
 #control-toggle { border-radius: 12px; padding: 4px 12px; font-weight: bold; font-size: 9pt; }
-#control-toggle.control-off { background-image: none; background-color: #3a3a3a; color: #9a9a9a; }
-#control-toggle.control-on { background-image: none; background-color: #f7768e; color: #1e1e1e; }
+#control-toggle.control-off { background-image: none; background-color: @nexa_hover; color: @nexa_muted; }
+#control-toggle.control-on { background-image: none; background-color: @nexa_crit; color: @nexa_on_accent; }
 
 .bubble { border-radius: 14px; padding: 8px 12px; }
-.bubble-user { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
-.bubble-ai { background-image: none; background-color: #26322a; color: #d9ead9; }
-.bubble-sys { background-image: none; background-color: transparent; color: #9a9a9a; font-style: italic; }
-.bubble-tool { background-image: none; background-color: #232323; color: #8a8a8a; font-family: monospace; font-size: 9.5pt; border: 1px solid #333333; }
-.bubble-tool-error { color: #f7768e; }
-.bubble-thinking { background-image: none; background-color: transparent; color: #6a6a6a; font-style: italic; }
+.bubble-user { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
+.bubble-ai { background-image: none; background-color: mix(@nexa_surface_hi, @nexa_ok, 0.14); color: @nexa_text_strong; }
+.bubble-sys { background-image: none; background-color: transparent; color: @nexa_muted; font-style: italic; }
+.bubble-tool { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-family: monospace; font-size: 9.5pt; border: 1px solid @nexa_border; }
+.bubble-tool-error { color: @nexa_crit; }
+.bubble-thinking { background-image: none; background-color: transparent; color: @nexa_disabled; font-style: italic; }
 """
 
 ROLE_STYLE = {

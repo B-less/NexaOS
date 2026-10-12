@@ -10,24 +10,24 @@ from nexa_common.titlebar import attach_titlebar
 from nexa_common import apkops
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#searchentry { background-image: none; background-color: #2a2a2a; color: #ffffff; border-radius: 14px; padding: 6px 12px; border: 1px solid #3c3c3c; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 10px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-#toolbtn:disabled { color: #5a5a5a; }
-#actionbtn { background-image: none; background-color: #7aa2f7; color: #1e1e1e; border-radius: 6px; padding: 6px 14px; font-weight: bold; }
-#actionbtn:hover { background-image: none; background-color: #92b6ff; }
-#actionbtn:disabled { background-image: none; background-color: #3a3a3a; color: #5a5a5a; }
-#removebtn { background-image: none; background-color: #f7768e; color: #1e1e1e; border-radius: 6px; padding: 6px 14px; font-weight: bold; }
-#removebtn:hover { background-image: none; background-color: #ff8fa3; }
-#removebtn:disabled { background-image: none; background-color: #3a3a3a; color: #5a5a5a; }
-treeview { background-image: none; background-color: #1e1e1e; color: #d4d4d4; }
-treeview:selected { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
-treeview header button { background-image: none; background-color: #232323; color: #9a9a9a; }
-#statusbar { background-image: none; background-color: #202020; color: #8a8a8a; font-size: 9pt; }
-notebook tab { background-image: none; background-color: #232323; color: #9a9a9a; padding: 6px 14px; }
-notebook tab:checked { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#searchentry { background-image: none; background-color: @nexa_field; color: @nexa_text_strong; border-radius: 14px; padding: 6px 12px; border: 1px solid @nexa_border; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+#toolbtn:disabled { color: @nexa_disabled; }
+#actionbtn { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 6px; padding: 6px 14px; font-weight: bold; }
+#actionbtn:hover { background-image: none; background-color: @nexa_accent_hover; }
+#actionbtn:disabled { background-image: none; background-color: @nexa_hover; color: @nexa_disabled; }
+#removebtn { background-image: none; background-color: @nexa_crit; color: @nexa_on_accent; border-radius: 6px; padding: 6px 14px; font-weight: bold; }
+#removebtn:hover { background-image: none; background-color: @nexa_crit_hover; }
+#removebtn:disabled { background-image: none; background-color: @nexa_hover; color: @nexa_disabled; }
+treeview { background-image: none; background-color: @nexa_bg; color: @nexa_text; }
+treeview:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
+treeview header button { background-image: none; background-color: @nexa_surface; color: @nexa_muted; }
+#statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
+notebook tab { background-image: none; background-color: @nexa_surface; color: @nexa_muted; padding: 6px 14px; }
+notebook tab:checked { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
 """
 
 COL_NAME, COL_VERSION, COL_DESC = range(3)

@@ -246,6 +246,47 @@ client.urgent           {t['crit']} {t['crit']} #ffffff {t['crit']} {t['crit']}
 """
 
 
+def _mix(a, b, t):
+    """Blend two colours ("#rrggbb" or RGB tuples); t=0 -> a, t=1 -> b."""
+    a = _rgb_of(a) if isinstance(a, str) else a
+    b = _rgb_of(b) if isinstance(b, str) else b
+    return _hex(tuple(int(round(x + (y - x) * t)) for x, y in zip(a, b)))
+
+
+def app_palette(t):
+    """Named colour roles every Nexa app's stylesheet refers to (as
+    @nexa_<role>), so the apps follow the theme instead of fixed greys."""
+    dark = t["dark"]
+    bg, surface, text = _hex(t["bg"]), _hex(t["surface"]), t["text"]
+    lift = "#ffffff" if dark else "#000000"
+    return {
+        "bg": _mix(bg, surface, 0.35),
+        "bg_deep": bg,
+        "surface": _mix(bg, surface, 0.7),
+        "surface_hi": _mix(surface, lift, 0.06),
+        "hover": _mix(surface, lift, 0.13),
+        "field": _mix(bg, surface, 0.55),
+        "border": _mix(surface, text, 0.16),
+        "text": _mix(text, t["muted"], 0.15),
+        "text_strong": text,
+        "muted": t["muted"],
+        "disabled": _mix(t["muted"], bg, 0.45),
+        "accent": t["accent"],
+        "accent_hover": _mix(t["accent"], lift, 0.18),
+        "on_accent": bg if dark else "#ffffff",
+        "selected": _mix(surface, t["accent"], 0.32),
+        "selected_text": text,
+        "crit": t["crit"],
+        "crit_hover": _mix(t["crit"], lift, 0.18),
+        "ok": t["term"][2],
+        "warn": t["warn"],
+    }
+
+
+def app_palette_css(t):
+    return "".join(f"@define-color nexa_{k} {v};\n" for k, v in app_palette(t).items())
+
+
 def gtk_settings(t):
     """~/.config/gtk-3.0/settings.ini: without it GTK falls back to its light
     default, so dialogs, file pickers, menus and scrollbars came up light

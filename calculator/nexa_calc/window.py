@@ -7,17 +7,17 @@ from gi.repository import Gtk, Gdk
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#display { background-image: none; background-color: #1e1e1e; color: #ffffff; font-size: 36pt; font-weight: 300; }
-#opdisplay { background-image: none; background-color: #1e1e1e; color: #8a8a8a; font-size: 11pt; }
-#calcbtn { background-image: none; background-color: #2f2f2f; color: #e0e0e0; font-size: 16pt; border-radius: 8px; }
-#calcbtn:hover { background-image: none; background-color: #3a3a3a; }
-#opbtn { background-image: none; background-color: #3a3a3a; color: #7aa2f7; font-size: 18pt; font-weight: bold; border-radius: 8px; }
-#opbtn:hover { background-image: none; background-color: #454545; }
-#eqbtn { background-image: none; background-color: #7aa2f7; color: #1e1e1e; font-size: 18pt; font-weight: bold; border-radius: 8px; }
-#eqbtn:hover { background-image: none; background-color: #92b6ff; }
-#clearbtn { background-image: none; background-color: #2f2f2f; color: #f7768e; font-size: 14pt; border-radius: 8px; }
-#clearbtn:hover { background-image: none; background-color: #3a3a3a; }
+window { background-image: none; background-color: @nexa_bg; }
+#display { background-image: none; background-color: @nexa_bg; color: @nexa_text_strong; font-size: 36pt; font-weight: 300; }
+#opdisplay { background-image: none; background-color: @nexa_bg; color: @nexa_muted; font-size: 11pt; }
+#calcbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; font-size: 16pt; border-radius: 8px; }
+#calcbtn:hover { background-image: none; background-color: @nexa_hover; }
+#opbtn { background-image: none; background-color: @nexa_hover; color: @nexa_accent; font-size: 18pt; font-weight: bold; border-radius: 8px; }
+#opbtn:hover { background-image: none; background-color: @nexa_hover; }
+#eqbtn { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; font-size: 18pt; font-weight: bold; border-radius: 8px; }
+#eqbtn:hover { background-image: none; background-color: @nexa_accent_hover; }
+#clearbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_crit; font-size: 14pt; border-radius: 8px; }
+#clearbtn:hover { background-image: none; background-color: @nexa_hover; }
 """
 
 OPS = {

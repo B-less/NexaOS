@@ -5,12 +5,12 @@ from gi.repository import Gtk, Gdk
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#searchentry { background-image: none; background-color: #2a2a2a; color: #ffffff; border-radius: 14px; padding: 6px 12px; border: 1px solid #3c3c3c; }
-#charbtn { background-image: none; background-color: #2a2a2a; border-radius: 8px; font-size: 20pt; padding: 6px; }
-#charbtn:hover { background-image: none; background-color: #3a3a3a; }
-#statusbar { background-image: none; background-color: #202020; color: #a6e3a1; font-size: 9pt; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#searchentry { background-image: none; background-color: @nexa_field; color: @nexa_text_strong; border-radius: 14px; padding: 6px 12px; border: 1px solid @nexa_border; }
+#charbtn { background-image: none; background-color: @nexa_field; border-radius: 8px; font-size: 20pt; padding: 6px; }
+#charbtn:hover { background-image: none; background-color: @nexa_hover; }
+#statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_ok; font-size: 9pt; }
 """
 
 EMOJI = [

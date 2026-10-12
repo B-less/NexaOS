@@ -8,13 +8,13 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 10px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-#toolbtn:disabled { color: #5a5a5a; }
-#filelabel { color: #9a9a9a; font-size: 9pt; }
-#viewport { background-image: none; background-color: #101010; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+#toolbtn:disabled { color: @nexa_disabled; }
+#filelabel { color: @nexa_muted; font-size: 9pt; }
+#viewport { background-image: none; background-color: @nexa_bg_deep; }
 """
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp"}

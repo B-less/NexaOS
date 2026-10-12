@@ -6,12 +6,12 @@ from gi.repository import Gtk, Gdk, GLib, WebKit2
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#urlentry { background-image: none; background-color: #2a2a2a; color: #ffffff; border-radius: 14px; padding: 6px 12px; border: 1px solid #3c3c3c; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 10px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-#toolbtn:disabled { color: #5a5a5a; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#urlentry { background-image: none; background-color: @nexa_field; color: @nexa_text_strong; border-radius: 14px; padding: 6px 12px; border: 1px solid @nexa_border; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+#toolbtn:disabled { color: @nexa_disabled; }
 """
 
 HOME_URL = "https://duckduckgo.com/"

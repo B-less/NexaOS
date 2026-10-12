@@ -13,15 +13,15 @@ from nexa_common.titlebar import attach_titlebar
 from . import packaging
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#namelabel { color: #ffffff; font-size: 18pt; font-weight: bold; }
-#metalabel { color: #9a9a9a; font-size: 10pt; }
-#desclabel { color: #d4d4d4; font-size: 11pt; }
-#installbtn { background-image: none; background-color: #7aa2f7; color: #1e1e1e; border-radius: 6px; padding: 10px 24px; font-weight: bold; font-size: 12pt; }
-#installbtn:hover { background-image: none; background-color: #92b6ff; }
-#installbtn:disabled { background-image: none; background-color: #3a3a3a; color: #5a5a5a; }
-#statuslabel { color: #a6e3a1; font-size: 10pt; }
-#errorlabel { color: #f7768e; font-size: 10pt; }
+window { background-image: none; background-color: @nexa_bg; }
+#namelabel { color: @nexa_text_strong; font-size: 18pt; font-weight: bold; }
+#metalabel { color: @nexa_muted; font-size: 10pt; }
+#desclabel { color: @nexa_text; font-size: 11pt; }
+#installbtn { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 6px; padding: 10px 24px; font-weight: bold; font-size: 12pt; }
+#installbtn:hover { background-image: none; background-color: @nexa_accent_hover; }
+#installbtn:disabled { background-image: none; background-color: @nexa_hover; color: @nexa_disabled; }
+#statuslabel { color: @nexa_ok; font-size: 10pt; }
+#errorlabel { color: @nexa_crit; font-size: 10pt; }
 """
 
 

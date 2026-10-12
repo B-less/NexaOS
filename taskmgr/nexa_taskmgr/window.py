@@ -8,15 +8,15 @@ from gi.repository import Gtk, Gdk, GLib
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 10px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-#toolbtn:disabled { color: #5a5a5a; }
-treeview { background-image: none; background-color: #1e1e1e; color: #d4d4d4; }
-treeview:selected { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
-treeview header button { background-image: none; background-color: #232323; color: #9a9a9a; }
-#statusbar { background-image: none; background-color: #202020; color: #8a8a8a; font-size: 9pt; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+#toolbtn:disabled { color: @nexa_disabled; }
+treeview { background-image: none; background-color: @nexa_bg; color: @nexa_text; }
+treeview:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
+treeview header button { background-image: none; background-color: @nexa_surface; color: @nexa_muted; }
+#statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
 """
 
 COL_PID, COL_NAME, COL_USER, COL_CPU, COL_MEM = range(5)

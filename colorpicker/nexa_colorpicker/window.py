@@ -9,13 +9,13 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 10px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-#swatch { border-radius: 8px; border: 2px solid #3c3c3c; }
-#hexlabel { color: #ffffff; font-size: 14pt; font-weight: bold; font-family: monospace; }
-#statusbar { background-image: none; background-color: #202020; color: #8a8a8a; font-size: 9pt; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+#swatch { border-radius: 8px; border: 2px solid @nexa_border; }
+#hexlabel { color: @nexa_text_strong; font-size: 14pt; font-weight: bold; font-family: monospace; }
+#statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
 """
 
 

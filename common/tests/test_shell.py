@@ -46,6 +46,19 @@ for key, t in themes.THEMES.items():
         if not ok: break
     check(f"theme '{key}' renders every target", ok)
     check(f"theme '{key}' has 8 terminal colours", len(t["term"]) == 8)
+for key, t in themes.THEMES.items():
+    pal = themes.app_palette(t)
+    ok = all(isinstance(v, str) and len(v) == 7 and v.startswith("#") for v in pal.values())
+    check(f"theme '{key}' app palette is complete hex colours", ok and {"bg", "text", "accent", "on_accent"} <= set(pal), str(pal))
+css = themes.app_palette_css(themes.THEMES["horizon"])
+check("palette CSS defines @nexa_ colours", css.count("@define-color nexa_") == len(themes.app_palette(themes.THEMES["horizon"])))
+import glob, re
+used = set()
+for f in glob.glob(os.path.join(os.path.dirname(os.path.dirname(HERE)), "*", "nexa_*", "*.py")) + \
+         glob.glob(os.path.join(os.path.dirname(HERE), "nexa_common", "*.py")):
+    used |= set(re.findall(r"@nexa_([a-z_]+)", open(f).read()))
+missing = used - set(themes.app_palette(themes.THEMES["horizon"]))
+check("every @nexa_ colour the apps use is defined", not missing, str(missing))
 open(themes.settings_path(home), "w").write("{broken")
 check("a corrupt settings file falls back to defaults", themes.load_settings(home)["theme"] == "horizon")
 

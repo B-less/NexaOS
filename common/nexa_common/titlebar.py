@@ -4,28 +4,46 @@ import subprocess
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk
+from gi.repository import Gio, Gtk, Gdk
+
+from . import themes
 
 CSS = b"""
-headerbar.nexa-titlebar { background-image: none; background-color: #252525; color: #e0e0e0; border: none; box-shadow: none; }
-headerbar.nexa-titlebar .title { color: #e0e0e0; font-weight: 600; }
+headerbar.nexa-titlebar { background-image: none; background-color: @nexa_surface; color: @nexa_text; border: none; box-shadow: none; }
+headerbar.nexa-titlebar .title { color: @nexa_text_strong; font-weight: 600; }
 headerbar.nexa-titlebar button { background-image: none; background-color: transparent; border: none; box-shadow: none; padding: 4px 10px; }
-headerbar.nexa-titlebar button:hover { background-image: none; background-color: #3a3a3a; }
-headerbar.nexa-titlebar button.nexa-titlebar-close:hover { background-image: none; background-color: #f7768e; }
+headerbar.nexa-titlebar button:hover { background-image: none; background-color: @nexa_hover; }
+headerbar.nexa-titlebar button.nexa-titlebar-close:hover { background-image: none; background-color: @nexa_crit; }
 """
 
 _provider = None
+_palette = None
+_monitor = None
+
+
+def _load_palette(*_args):
+    """(Re)define the @nexa_* colours from the saved theme. Called again when
+    the theme changes, which restyles every open window of this app."""
+    settings = themes.load_settings()
+    _palette.load_from_data(themes.app_palette_css(themes.THEMES[settings["theme"]]).encode())
 
 
 def _ensure_css():
-    global _provider
+    global _provider, _palette, _monitor
     if _provider is not None:
         return
+    screen = Gdk.Screen.get_default()
+    # The palette goes in first and at a lower priority than the apps' own
+    # stylesheets, which only refer to its colours by name.
+    _palette = Gtk.CssProvider()
+    _load_palette()
+    Gtk.StyleContext.add_provider_for_screen(screen, _palette, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION - 1)
     _provider = Gtk.CssProvider()
     _provider.load_from_data(CSS)
-    Gtk.StyleContext.add_provider_for_screen(
-        Gdk.Screen.get_default(), _provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
-    )
+    Gtk.StyleContext.add_provider_for_screen(screen, _provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    # Follow theme changes made in Settings while the app is open.
+    _monitor = Gio.File.new_for_path(themes.settings_path()).monitor_file(Gio.FileMonitorFlags.NONE, None)
+    _monitor.connect("changed", _load_palette)
 
 
 def _icon_button(icon_name, tooltip, style_class=None):

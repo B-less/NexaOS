@@ -8,14 +8,14 @@ from gi.repository import Gtk, Gdk, GLib
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#heading { color: #e0e0e0; font-size: 14pt; font-weight: bold; }
-#powerbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 8px; padding: 12px 18px; font-size: 11pt; }
-#powerbtn:hover { background-image: none; background-color: #3a3a3a; }
-#dangerbtn { background-image: none; background-color: #2f2f2f; color: #f7768e; border-radius: 8px; padding: 12px 18px; font-size: 11pt; }
-#dangerbtn:hover { background-image: none; background-color: #3a3a3a; }
-#armed { background-image: none; background-color: #f7768e; color: #1e1e1e; border-radius: 8px; padding: 12px 18px; font-size: 11pt; font-weight: bold; }
-#errorlabel { color: #f7768e; font-size: 10pt; }
+window { background-image: none; background-color: @nexa_bg; }
+#heading { color: @nexa_text; font-size: 14pt; font-weight: bold; }
+#powerbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 8px; padding: 12px 18px; font-size: 11pt; }
+#powerbtn:hover { background-image: none; background-color: @nexa_hover; }
+#dangerbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_crit; border-radius: 8px; padding: 12px 18px; font-size: 11pt; }
+#dangerbtn:hover { background-image: none; background-color: @nexa_hover; }
+#armed { background-image: none; background-color: @nexa_crit; color: @nexa_on_accent; border-radius: 8px; padding: 12px 18px; font-size: 11pt; font-weight: bold; }
+#errorlabel { color: @nexa_crit; font-size: 10pt; }
 """
 
 CONFIRM_SECONDS = 4

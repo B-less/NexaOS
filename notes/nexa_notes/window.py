@@ -8,16 +8,16 @@ from gi.repository import Gtk, Gdk
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#sidebar { background-image: none; background-color: #232323; }
-#notebtn { background-image: none; background-color: transparent; color: #d4d4d4; border-radius: 6px; padding: 8px 10px; }
-#notebtn:hover { background-image: none; background-color: #2f2f2f; }
-#notebtn.active { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
-#toolbar { background-image: none; background-color: #252525; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 10px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-textview { background-image: none; background-color: #1e1e1e; color: #e0e0e0; font-size: 11pt; }
-textview text { background-image: none; background-color: #1e1e1e; }
+window { background-image: none; background-color: @nexa_bg; }
+#sidebar { background-image: none; background-color: @nexa_surface; }
+#notebtn { background-image: none; background-color: transparent; color: @nexa_text; border-radius: 6px; padding: 8px 10px; }
+#notebtn:hover { background-image: none; background-color: @nexa_surface_hi; }
+#notebtn.active { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+textview { background-image: none; background-color: @nexa_bg; color: @nexa_text; font-size: 11pt; }
+textview text { background-image: none; background-color: @nexa_bg; }
 """
 
 NOTES_DIR = os.path.join(os.environ.get("HOME", "/home/user"), ".local", "share", "nexa-notes")

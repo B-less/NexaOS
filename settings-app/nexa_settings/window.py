@@ -12,26 +12,26 @@ from nexa_common import sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#sidebar { background-image: none; background-color: #232323; }
-#navbtn { background-image: none; background-color: transparent; color: #b0b0b0; border-radius: 6px; padding: 8px 14px; }
-#navbtn:hover { background-image: none; background-color: #2f2f2f; }
-#navbtn.active { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
-#pagetitle { color: #ffffff; font-size: 16pt; font-weight: bold; }
-#fieldlabel { color: #9a9a9a; font-size: 9pt; }
-#value { color: #d4d4d4; }
-#entry { background-image: none; background-color: #2a2a2a; color: #ffffff; border-radius: 6px; padding: 6px 10px; border: 1px solid #3c3c3c; }
-#actionbtn { background-image: none; background-color: #7aa2f7; color: #1e1e1e; border-radius: 6px; padding: 6px 14px; font-weight: bold; }
-#actionbtn:hover { background-image: none; background-color: #92b6ff; }
+window { background-image: none; background-color: @nexa_bg; }
+#sidebar { background-image: none; background-color: @nexa_surface; }
+#navbtn { background-image: none; background-color: transparent; color: @nexa_muted; border-radius: 6px; padding: 8px 14px; }
+#navbtn:hover { background-image: none; background-color: @nexa_surface_hi; }
+#navbtn.active { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
+#pagetitle { color: @nexa_text_strong; font-size: 16pt; font-weight: bold; }
+#fieldlabel { color: @nexa_muted; font-size: 9pt; }
+#value { color: @nexa_text; }
+#entry { background-image: none; background-color: @nexa_field; color: @nexa_text_strong; border-radius: 6px; padding: 6px 10px; border: 1px solid @nexa_border; }
+#actionbtn { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 6px; padding: 6px 14px; font-weight: bold; }
+#actionbtn:hover { background-image: none; background-color: @nexa_accent_hover; }
 #toggle { border-radius: 12px; padding: 4px 12px; font-weight: bold; font-size: 9pt; }
-#toggle.on { background-image: none; background-color: #7aa2f7; color: #1e1e1e; }
-#toggle.off { background-image: none; background-color: #3a3a3a; color: #9a9a9a; }
-#status { color: #a6e3a1; font-size: 9pt; }
-#error { color: #f7768e; font-size: 9pt; }
-#wordmark { color: #ffffff; font-size: 22pt; font-weight: bold; }
-#themecard { background-image: none; background-color: #262626; border-radius: 14px; padding: 8px; border: 2px solid transparent; }
-#themecard:hover { background-color: #2f2f2f; }
-#themecard.chosen { border-color: #7aa2f7; }
+#toggle.on { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; }
+#toggle.off { background-image: none; background-color: @nexa_hover; color: @nexa_muted; }
+#status { color: @nexa_ok; font-size: 9pt; }
+#error { color: @nexa_crit; font-size: 9pt; }
+#wordmark { color: @nexa_text_strong; font-size: 22pt; font-weight: bold; }
+#themecard { background-image: none; background-color: @nexa_surface; border-radius: 14px; padding: 8px; border: 2px solid transparent; }
+#themecard:hover { background-color: @nexa_surface_hi; }
+#themecard.chosen { border-color: @nexa_accent; }
 """
 
 WALLPAPER_PATH = "/usr/share/backgrounds/nexaos/wallpaper.png"

@@ -9,19 +9,19 @@ from .player import Player
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 10px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-#transport { background-image: none; background-color: #2f2f2f; color: #e0e0e0; border-radius: 20px; padding: 6px 14px; font-size: 13pt; }
-#transport:hover { background-image: none; background-color: #3a3a3a; }
-#playbtn { background-image: none; background-color: #7aa2f7; color: #1e1e1e; border-radius: 22px; padding: 6px 16px; font-size: 15pt; font-weight: bold; }
-#playbtn:hover { background-image: none; background-color: #92b6ff; }
-#nowplaying { color: #e0e0e0; font-weight: bold; }
-#timelabel { color: #8a8a8a; font-size: 9pt; }
-treeview { background-image: none; background-color: #1e1e1e; color: #d4d4d4; }
-treeview:selected { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
-#playerbar { background-image: none; background-color: #202020; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+#transport { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 20px; padding: 6px 14px; font-size: 13pt; }
+#transport:hover { background-image: none; background-color: @nexa_hover; }
+#playbtn { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 22px; padding: 6px 16px; font-size: 15pt; font-weight: bold; }
+#playbtn:hover { background-image: none; background-color: @nexa_accent_hover; }
+#nowplaying { color: @nexa_text; font-weight: bold; }
+#timelabel { color: @nexa_muted; font-size: 9pt; }
+treeview { background-image: none; background-color: @nexa_bg; color: @nexa_text; }
+treeview:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
+#playerbar { background-image: none; background-color: @nexa_surface; }
 """
 
 AUDIO_EXTS = (".mp3", ".wav", ".ogg", ".flac", ".m4a", ".opus")

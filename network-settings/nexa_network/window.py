@@ -8,23 +8,23 @@ from nexa_common import wifi
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#heading { color: #e0e0e0; font-size: 15pt; font-weight: bold; }
-#statuslabel { color: #9a9a9a; font-size: 10pt; }
-#connected { color: #a6e3a1; font-size: 10pt; }
-#errorlabel { color: #f7768e; font-size: 10pt; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 12px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-#toolbtn:disabled { color: #5a5a5a; }
-#primarybtn { background-image: none; background-color: #7aa2f7; color: #1e1e1e; border-radius: 6px; padding: 4px 14px; font-weight: bold; }
-#primarybtn:hover { background-image: none; background-color: #92b6ff; }
-#primarybtn:disabled { background-image: none; background-color: #3a3a3a; color: #5a5a5a; }
-list { background-image: none; background-color: #1e1e1e; }
-row { color: #d4d4d4; padding: 2px 4px; }
-row:selected { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#heading { color: @nexa_text; font-size: 15pt; font-weight: bold; }
+#statuslabel { color: @nexa_muted; font-size: 10pt; }
+#connected { color: @nexa_ok; font-size: 10pt; }
+#errorlabel { color: @nexa_crit; font-size: 10pt; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 12px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+#toolbtn:disabled { color: @nexa_disabled; }
+#primarybtn { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 6px; padding: 4px 14px; font-weight: bold; }
+#primarybtn:hover { background-image: none; background-color: @nexa_accent_hover; }
+#primarybtn:disabled { background-image: none; background-color: @nexa_hover; color: @nexa_disabled; }
+list { background-image: none; background-color: @nexa_bg; }
+row { color: @nexa_text; padding: 2px 4px; }
+row:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
 #netname { font-size: 11pt; }
-#netmeta { color: #8a8a8a; font-size: 9pt; }
+#netmeta { color: @nexa_muted; font-size: 9pt; }
 """
 
 SECURITY_LABEL = {"open": "Open", "psk": "Secured", "8021x": "Enterprise", "wep": "WEP"}

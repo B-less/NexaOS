@@ -6,12 +6,12 @@ from nexa_common import audioctl
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#volumelabel { color: #e0e0e0; font-size: 28pt; font-weight: bold; }
-#mutebtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 8px; padding: 8px 16px; font-size: 11pt; }
-#mutebtn:hover { background-image: none; background-color: #3a3a3a; }
-#mutebtn:checked { background-image: none; background-color: #f7768e; color: #1e1e1e; }
-#errorlabel { color: #f7768e; font-size: 10pt; }
+window { background-image: none; background-color: @nexa_bg; }
+#volumelabel { color: @nexa_text; font-size: 28pt; font-weight: bold; }
+#mutebtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 8px; padding: 8px 16px; font-size: 11pt; }
+#mutebtn:hover { background-image: none; background-color: @nexa_hover; }
+#mutebtn:checked { background-image: none; background-color: @nexa_crit; color: @nexa_on_accent; }
+#errorlabel { color: @nexa_crit; font-size: 10pt; }
 """
 
 

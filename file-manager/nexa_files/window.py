@@ -15,16 +15,16 @@ DEFAULT_ICON_SIZE_INDEX = 2  # 24px, matches the size the old fixed icon-name re
 CONFIG_PATH = os.path.expanduser("~/.config/nexa-files/config.json")
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#toolbar { background-image: none; background-color: #252525; }
-#pathentry { background-image: none; background-color: #2a2a2a; color: #ffffff; border-radius: 6px; padding: 6px 10px; border: 1px solid #3c3c3c; }
-#toolbtn { background-image: none; background-color: #2f2f2f; color: #d4d4d4; border-radius: 6px; padding: 4px 10px; }
-#toolbtn:hover { background-image: none; background-color: #3a3a3a; }
-#toolbtn:disabled { color: #5a5a5a; }
-treeview { background-image: none; background-color: #1e1e1e; color: #d4d4d4; }
-treeview:selected { background-image: none; background-color: #2c3a52; color: #dbe4f5; }
-treeview header button { background-image: none; background-color: #232323; color: #9a9a9a; }
-#statusbar { background-image: none; background-color: #202020; color: #8a8a8a; font-size: 9pt; }
+window { background-image: none; background-color: @nexa_bg; }
+#toolbar { background-image: none; background-color: @nexa_surface; }
+#pathentry { background-image: none; background-color: @nexa_field; color: @nexa_text_strong; border-radius: 6px; padding: 6px 10px; border: 1px solid @nexa_border; }
+#toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
+#toolbtn:hover { background-image: none; background-color: @nexa_hover; }
+#toolbtn:disabled { color: @nexa_disabled; }
+treeview { background-image: none; background-color: @nexa_bg; color: @nexa_text; }
+treeview:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
+treeview header button { background-image: none; background-color: @nexa_surface; color: @nexa_muted; }
+#statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
 """
 
 COL_ICON, COL_NAME, COL_SIZE, COL_MTIME, COL_PATH, COL_IS_DIR = range(6)

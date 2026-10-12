@@ -8,10 +8,10 @@ from gi.repository import Gtk, Gdk, GLib
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
-window { background-image: none; background-color: #1e1e1e; }
-#statlabel { color: #d4d4d4; font-size: 10pt; font-weight: 600; }
-progressbar trough { background-image: none; background-color: #2f2f2f; border-radius: 4px; min-height: 8px; }
-progressbar progress { background-image: none; background-color: #7aa2f7; border-radius: 4px; min-height: 8px; }
+window { background-image: none; background-color: @nexa_bg; }
+#statlabel { color: @nexa_text; font-size: 10pt; font-weight: 600; }
+progressbar trough { background-image: none; background-color: @nexa_surface_hi; border-radius: 4px; min-height: 8px; }
+progressbar progress { background-image: none; background-color: @nexa_accent; border-radius: 4px; min-height: 8px; }
 """
 
 HISTORY_LEN = 60
