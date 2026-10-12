@@ -194,6 +194,14 @@ class SettingsWindow(Gtk.Window):
         self._opacity.connect("format-value", lambda _s, v: f"{int(round(100 - v))}% see-through")
         page.pack_start(self._opacity, False, False, 0)
 
+        glass_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        glass_row.pack_start(self._field_label("Glass windows: let the desktop show through app windows "
+                                               "(blurred on Hyprland)"), True, True, 0)
+        self._glass = Gtk.Switch(active=saved["glass"], valign=Gtk.Align.CENTER)
+        self._glass.connect("notify::active", lambda sw, _p: themes.apply(glass=sw.get_active()))
+        glass_row.pack_start(self._glass, False, False, 0)
+        page.pack_start(glass_row, False, False, 0)
+
         apply_btn = Gtk.Button(label="Apply Theme")
         apply_btn.set_name("actionbtn")
         apply_btn.set_halign(Gtk.Align.START)

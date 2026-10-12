@@ -9,7 +9,7 @@ from gi.repository import Gio, GLib, Gtk, Gdk
 from . import compositor, themes
 
 CSS = b"""
-headerbar.nexa-titlebar { background-image: none; background-color: @nexa_surface; color: @nexa_text; border: none; box-shadow: none; }
+headerbar.nexa-titlebar { background-image: none; background-color: @nexa_titlebar; color: @nexa_text; border: none; box-shadow: none; }
 headerbar.nexa-titlebar .title { color: @nexa_text_strong; font-weight: 600; }
 headerbar.nexa-titlebar button { background-image: none; background-color: transparent; border: none; box-shadow: none; padding: 4px 10px; }
 headerbar.nexa-titlebar button:hover { background-image: none; background-color: @nexa_hover; }
@@ -25,7 +25,14 @@ def _load_palette(*_args):
     """(Re)define the @nexa_* colours from the saved theme. Called again when
     the theme changes, which restyles every open window of this app."""
     settings = themes.load_settings()
-    _palette.load_from_data(themes.app_palette_css(themes.THEMES[settings["theme"]]).encode())
+    glass = glass_alpha() if settings["glass"] else None
+    _palette.load_from_data(themes.app_palette_css(themes.THEMES[settings["theme"]], glass).encode())
+
+
+def glass_alpha():
+    """How solid glass windows are: Hyprland blurs what is behind them, so
+    they can be clearer; Sway can't blur, so they stay nearly solid there."""
+    return 0.84 if compositor.which() == "hyprland" else 0.94
 
 
 def _ensure_css():
@@ -41,6 +48,20 @@ def _ensure_css():
     _provider = Gtk.CssProvider()
     _provider.load_from_data(CSS)
     Gtk.StyleContext.add_provider_for_screen(screen, _provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    # Each toplevel paints the window colour once. One level above the apps'
+    # own stylesheets: GTK only weighs selector specificity inside a single
+    # stylesheet, so their plain `window { ... }` rules would otherwise win.
+    glass = Gtk.CssProvider()
+    glass.load_from_data(b"""
+window.background { background-color: @nexa_glass; }
+/* micro-animations: buttons, rows and tabs ease between states */
+button, row, notebook tab, entry, switch, scale slider {
+    transition: background-color 160ms ease-out, color 160ms ease-out,
+                box-shadow 200ms ease-out, border-color 160ms ease-out;
+}
+button:active { box-shadow: inset 0 1px 3px alpha(black, 0.25); }
+""")
+    Gtk.StyleContext.add_provider_for_screen(screen, glass, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
     # Follow theme changes made in Settings while the app is open.
     _monitor = Gio.File.new_for_path(themes.settings_path()).monitor_file(Gio.FileMonitorFlags.NONE, None)
     _monitor.connect("changed", _load_palette)
@@ -135,6 +156,12 @@ def attach_titlebar(window, title):
     bar.pack_end(min_btn)
 
     window.set_titlebar(bar)
+    # An RGBA visual lets the compositor show (and blur) what is behind the
+    # window where the theme's glass colours are see-through.
+    screen = window.get_screen()
+    visual = screen.get_rgba_visual()
+    if visual is not None and screen.is_composited():
+        window.set_visual(visual)
     _fit_to_screen(window)
     window.connect("realize", _fit_to_screen)
     return bar

@@ -71,6 +71,7 @@ THEMES = {
 }
 DEFAULT_THEME = "horizon"
 DEFAULT_OPACITY = 0.72
+DEFAULT_GLASS = True  # app windows let the (blurred) desktop show through
 MIN_OPACITY, MAX_OPACITY = 0.35, 1.0
 
 
@@ -101,7 +102,9 @@ def load_settings(home=None):
     except (OSError, ValueError):
         data = {}
     name = data.get("theme") if data.get("theme") in THEMES else DEFAULT_THEME
-    return {"theme": name, "opacity": clamp_opacity(data.get("opacity", DEFAULT_OPACITY))}
+    glass = data.get("glass", DEFAULT_GLASS)
+    return {"theme": name, "opacity": clamp_opacity(data.get("opacity", DEFAULT_OPACITY)),
+            "glass": glass if isinstance(glass, bool) else DEFAULT_GLASS}
 
 
 def _hex(rgb):
@@ -253,13 +256,15 @@ def _mix(a, b, t):
     return _hex(tuple(int(round(x + (y - x) * t)) for x, y in zip(a, b)))
 
 
-def app_palette(t):
+def app_palette(t, glass=None):
     """Named colour roles every Nexa app's stylesheet refers to (as
-    @nexa_<role>), so the apps follow the theme instead of fixed greys."""
+    @nexa_<role>), so the apps follow the theme instead of fixed greys.
+    glass (0..1, e.g. 0.84) is how solid app windows are, so the desktop
+    shows through; text, fields and buttons stay solid."""
     dark = t["dark"]
     bg, surface, text = _hex(t["bg"]), _hex(t["surface"]), t["text"]
     lift = "#ffffff" if dark else "#000000"
-    return {
+    pal = {
         "bg": _mix(bg, surface, 0.35),
         "bg_deep": bg,
         "surface": _mix(bg, surface, 0.7),
@@ -281,10 +286,24 @@ def app_palette(t):
         "ok": t["term"][2],
         "warn": t["warn"],
     }
+    # "glass" is painted once, on each toplevel window (see titlebar.py).
+    # In glass mode the many inner widgets that paint @nexa_bg go clear, as
+    # stacked translucent layers would add up to solid again.
+    pal["glass"] = pal["bg"]
+    pal["titlebar"] = pal["surface"]  # outside the window's own background, so it carries the glass itself
+    if glass:
+        def rgba(hex_colour, alpha):
+            r, g, b = _rgb_of(hex_colour)
+            return f"rgba({r}, {g}, {b}, {alpha:.2f})"
+        pal["glass"] = rgba(pal["bg"], glass)
+        pal["titlebar"] = rgba(pal["surface"], glass)
+        pal["bg"] = rgba(pal["bg"], 0)
+        pal["surface"] = rgba(pal["surface"], 0.6)
+    return pal
 
 
-def app_palette_css(t):
-    return "".join(f"@define-color nexa_{k} {v};\n" for k, v in app_palette(t).items())
+def app_palette_css(t, glass=None):
+    return "".join(f"@define-color nexa_{k} {v};\n" for k, v in app_palette(t, glass).items())
 
 
 def hypr_conf(t):
@@ -376,11 +395,12 @@ def _quiet(argv):
         pass
 
 
-def apply(name=None, opacity=None, home=None, reload=True):
+def apply(name=None, opacity=None, home=None, reload=True, glass=None):
     """Render and install the theme; returns the settings that were applied."""
     current = load_settings(home)
     name = name if name in THEMES else current["theme"]
     opacity = clamp_opacity(current["opacity"] if opacity is None else opacity)
+    glass = current["glass"] if glass is None else bool(glass)
     t = THEMES[name]
     cfg = _config_dir(home)
     _write(os.path.join(cfg, "waybar", "style.css"), waybar_css(t, opacity))
@@ -389,13 +409,13 @@ def apply(name=None, opacity=None, home=None, reload=True):
     _write(os.path.join(cfg, "sway", "config.d", "20-nexa-theme.conf"), sway_conf(t))
     _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t))
     _write(os.path.join(cfg, "hypr", "nexa-theme.conf"), hypr_conf(t))
-    _write(settings_path(home), json.dumps({"theme": name, "opacity": round(opacity, 2)}) + "\n")
+    _write(settings_path(home), json.dumps({"theme": name, "opacity": round(opacity, 2), "glass": glass}) + "\n")
     if reload:
         _quiet(["pkill", "-USR2", "-x", "waybar"])   # reload style
         _quiet(["makoctl", "reload"])
         from . import compositor
         compositor.reload()
-    return {"theme": name, "opacity": opacity}
+    return {"theme": name, "opacity": opacity, "glass": glass}
 
 
 def main(argv):
