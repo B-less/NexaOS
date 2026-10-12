@@ -22,6 +22,25 @@ printf '%s\n' \
     > "$rootfs/usr/local/bin/nexa-browser"
 chmod +x "$rootfs/usr/local/bin/nexa-browser"
 
+# nexadark: a private browser window that goes through Tor. Tor runs as the
+# user on 127.0.0.1 only, started on demand (see nexa_browser/tor.py).
+cat > "$rootfs/usr/local/bin/nexadark" << 'NEXADARK_EOF'
+#!/bin/sh
+case "${1:-}" in
+    status|stop)
+        exec env PYTHONPATH="/usr/local/lib/nexa-browser:${PYTHONPATH:-}" python3 -m nexa_browser.tor "$1" ;;
+    -h|--help)
+        echo "usage: nexadark [URL]   open a private browser window that goes through Tor"
+        echo "       nexadark status  is Tor running / connected"
+        echo "       nexadark stop    stop Tor"
+        exit 0 ;;
+esac
+echo "Opening a Tor window. Nothing from it is saved; it hides your IP address,"
+echo "but it is not Tor Browser (sites can still fingerprint it)."
+exec /usr/local/bin/nexa-browser --tor "$@" >/dev/null 2>&1
+NEXADARK_EOF
+chmod +x "$rootfs/usr/local/bin/nexadark"
+
 cat > "$rootfs/usr/share/applications/nexa-browser.desktop" << 'DESKTOP_EOF'
 [Desktop Entry]
 Type=Application
@@ -31,6 +50,27 @@ Exec=/usr/local/bin/nexa-browser
 Icon=nexa-browser
 Terminal=false
 Categories=Network;WebBrowser;
+Actions=private;tor;
+
+[Desktop Action private]
+Name=New private window
+Exec=/usr/local/bin/nexa-browser --private
+
+[Desktop Action tor]
+Name=New Tor window
+Exec=/usr/local/bin/nexadark
+DESKTOP_EOF
+
+cat > "$rootfs/usr/share/applications/nexa-browser-tor.desktop" << 'DESKTOP_EOF'
+[Desktop Entry]
+Type=Application
+Name=Tor Window
+Comment=Private browsing through the Tor network
+Exec=/usr/local/bin/nexadark
+Icon=nexa-browser
+Terminal=false
+Categories=Network;WebBrowser;
+Keywords=tor;private;anonymous;nexadark;onion;
 DESKTOP_EOF
 
 echo "nexa-browser staged into $rootfs"

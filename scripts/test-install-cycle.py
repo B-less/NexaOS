@@ -276,7 +276,10 @@ def main():
                          "-drive", f"if=pflash,format=raw,file={vars_copy}"]
 
     boot2 = Serial(argv)
-    reached = boot2.wait_for("login:", 90)
+    # BIOS mode is slow here only because QEMU's SeaBIOS reads disks through
+    # emulated int13 calls: GRUB takes ~70 s to load the 37 MB initramfs
+    # (firmware for i915/amdgpu lives in it), then the OS boots in ~25 s.
+    reached = boot2.wait_for("login:", 240)
     if not reached:
         tail = boot2.buf[-2000:].decode(errors="replace")
         boot2.close()

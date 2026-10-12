@@ -17,15 +17,17 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [ ] Further hardening (AppArmor, signed boot) — research + plan
 
 ## 3. Installer
-- [ ] Re-run BIOS + UEFI install tests on Alpine 3.24 (with the password step)
+- [x] BIOS + UEFI install tests pass on Alpine 3.24 with username "nexa" + password (BIOS boot in QEMU takes ~95 s: SeaBIOS reads the 37 MB initramfs slowly; harness wait raised to 240 s)
 - [x] Choose your own username during install (account renamed everywhere, uid stays 1000; system no longer depends on the name "user"); install test now uses "nexa"
 - [ ] Install to a real disk and boot it *(needs you)*
 
 ## 4. Features
-- [ ] Private browsing over Tor (`nexadark` terminal command)
+- [x] Private browsing over Tor: `nexadark` (or Tor window button / start menu) opens a private window through a per-user Tor on 127.0.0.1:9150; verified check.torproject.org says "configured to use Tor" with normal DNS switched off. Honest note in the window: not Tor Browser (fingerprinting)
+- [x] Private windows (Ctrl+Shift+N): nothing saved
+- [ ] VPN: WireGuard (kernel option is off — do it with the Bluetooth kernel rebuild) + Settings page
 - [ ] Signed updates from GitHub *(needs a GitHub repo + signing key from you)*
-- [ ] Remember Wi-Fi networks and browser history across reboots
-- [ ] Browser download manager with live download speed
+- [x] Remember Wi-Fi networks and browser history across reboots: browser history (search, URL-bar suggestions, clear) and sign-in cookies are saved; Wi-Fi was already remembered by iwd on installed systems, and networks joined in the live session carry over at install. The live USB itself forgets everything at shutdown (RAM overlay) — persistence there would need a storage partition
+- [x] Browser download manager: files go to ~/Downloads (safe, unique names), panel shows size, live speed and time left, Cancel / Show; non-viewable files and attachments download instead of failing
 - [x] Nexa Pulse: one app for running apps + processes (search, End task, Force quit) and live CPU/memory/disk/network graphs; Ctrl+Shift+Esc in Sway and Hyprland; old Tasks/System Monitor hidden (checked in headless Sway: `scripts/test-app-headless.sh`)
 - [ ] Phase A extras: translucent app windows, micro-animations, Launchpad
 - [x] Nexa AI: claude-opus-5-5, max_tokens 16000, server-side refusal fallback, refusal/cut-off handling (tested against a fake API)
