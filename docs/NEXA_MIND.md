@@ -178,7 +178,7 @@ The assistant acts through the same tool layer NexaOS already has
 |---|---|---|
 | M1 | **Runtime**: llama.cpp in the image, model manager with SHA-256 check, `nexa-mind` service on a Unix socket, auto-tune; the assistant's agent talks to it (tool calls included) | offline question answered with a tool call, in QEMU and on the HP |
 | M2 | **Kernel**: PSI, UCLAMP_TASK, POWERCAP/RAPL, THP (madvise); cgroup for the model | readings visible in Pulse; model throttled under load |
-| M3 | **Permission broker** + audit log + untrusted-content guard | tests: injected file text can't trigger a silent action |
+| M3 | **Rust tool runner** (`nexa-tools`) + **permission broker** + audit log + untrusted-content guard. Tools: files (read, write/edit with **undo** — every write keeps the previous version — create, rename, move, copy, delete to a recoverable Nexa trash, search by name and by meaning), documents (summarise, extract text from PDF/Office/images), organise (sort a folder, batch rename, duplicates; shows the whole plan first), apps and web (open, read a page as untrusted), settings (Wi-Fi, Bluetooth, VPN, theme, brightness, volume, Do Not Disturb via the same services Settings uses), system (status, logs, services, packages, power), screen (copy text, ask about it). Each call runs under Landlock limited to the folders it names. | tests: injected file text can't trigger a silent action; a write is undoable; a sandboxed call can't read `~/.ssh` |
 | M4 | **Context index** (text, PDF) + Nexus file search by meaning | finds a file by describing it |
 | M5 | **Screen**: copy text from screen, ask about screen | OCR round trip test |
 | M6 | **Voice**: push-to-talk in and out | spoken question answered offline |
