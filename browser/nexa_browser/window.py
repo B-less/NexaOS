@@ -8,6 +8,7 @@ from gi.repository import Gtk, Gdk, Gio, GLib, Pango, WebKit2
 from nexa_common.titlebar import attach_titlebar
 
 from . import downloads, tor
+from .urls import HOME_URL, to_uri as _to_uri
 from .history import History
 
 CSS = b"""
@@ -27,33 +28,10 @@ popover progressbar progress { background-image: none; background-color: @nexa_a
 #panel-row { padding: 6px 4px; }
 """
 
-HOME_URL = "https://duckduckgo.com/"
 TOR_HOME_URL = "https://check.torproject.org/"  # first page says whether Tor is working
 TOR_NOTE = ("Traffic from this window goes through the Tor network and nothing is saved. "
             "It hides your IP address from websites and your network, but it is not Tor Browser: "
             "sites can still fingerprint the browser, and anything you sign in to knows it is you.")
-
-
-def _looks_like_url(text):
-    if " " in text:
-        return False
-    if text.startswith(("http://", "https://", "file://", "about:")):
-        return True
-    # bare "host.tld" or "host.tld/path" with no spaces -- treat as a URL,
-    # otherwise (no dot, or multiple words) treat it as a search query.
-    host = text.split("/", 1)[0]
-    return "." in host and " " not in host
-
-
-def _to_uri(text):
-    text = text.strip()
-    if not text:
-        return HOME_URL
-    if _looks_like_url(text):
-        if "://" not in text:
-            text = "https://" + text
-        return text
-    return "https://duckduckgo.com/?q=" + GLib.uri_escape_string(text, None, False)
 
 
 def _data_dir():

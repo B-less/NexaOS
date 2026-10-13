@@ -23,7 +23,7 @@ version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
 image=nexa-apptest:${version%.*}
 # Built once and reused: installing GTK + WebKit takes minutes.
 if ! docker image inspect "$image" >/dev/null 2>&1; then
-    printf 'FROM alpine:%s\nRUN apk add -q sway grim py3-gobject3 py3-cairo gtk+3.0 gtk-layer-shell webkit2gtk-4.1 swaybg tor curl gcc musl-dev wayland-dev wlr-protocols linux-headers font-dejavu adwaita-icon-theme hicolor-icon-theme\n' \
+    printf 'FROM alpine:%s\nRUN apk add -q sway grim py3-gobject3 py3-cairo gtk+3.0 gtk-layer-shell webkit2gtk-4.1 swaybg tor curl gcc musl-dev wayland-dev wlr-protocols linux-headers poppler-glib gtksourceview4 imagemagick font-dejavu adwaita-icon-theme hicolor-icon-theme\n' \
         "${version%.*}" | docker build -q -t "$image" - >/dev/null
 fi
 mkdir -p "$(dirname "$out")"

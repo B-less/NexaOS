@@ -4,7 +4,7 @@ The browser's history store and download helpers (no GTK, no WebKit)."""
 import os, stat, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "browser"))
-from nexa_browser import downloads, history, tor
+from nexa_browser import downloads, history, tor, urls
 
 failures = []
 def check(label, cond, detail=""):
@@ -78,5 +78,19 @@ check("tor: not running without a pid file", not tor.running())
 os.makedirs(tor.runtime_dir())
 open(tor.pid_path(), "w").write(str(os.getpid()))
 check("tor: a pid that isn't tor doesn't count", not tor.running())
+
+for typed, expected in (
+        ("about:blank", "about:blank"),                      # was turned into https://about:blank
+        ("example.com", "https://example.com"),
+        ("example.com/a?b=1", "https://example.com/a?b=1"),
+        ("http://x.org", "http://x.org"),
+        ("localhost:8080", "http://localhost:8080"),
+        ("192.168.1.1", "http://192.168.1.1"),
+        ("nexa os news", "https://duckduckgo.com/?q=nexa%20os%20news"),
+        ("c++ & rust", "https://duckduckgo.com/?q=c%2B%2B%20%26%20rust"),
+        ("mailto:a@b.c", "mailto:a@b.c"),
+        ("", urls.HOME_URL),
+        (HERE, "file://" + HERE)):
+    check(f"address bar: {typed!r}", urls.to_uri(typed) == expected, urls.to_uri(typed))
 
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)

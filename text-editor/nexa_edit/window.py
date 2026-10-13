@@ -3,8 +3,9 @@ import os
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("GtkSource", "4")
-from gi.repository import Gtk, Gdk, Gio, GtkSource, Pango
+from gi.repository import Gtk, Gdk, Gio, GLib, GtkSource, Pango
 
+from nexa_common import themes
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -15,7 +16,9 @@ window { background-image: none; background-color: @nexa_bg; }
 #statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
 """
 
-DARK_SCHEMES = ("oblivion", "cobalt", "solarized-dark", "classic")
+# "nexa" is written by nexa-theme in the current theme's colours; the rest
+# are fallbacks if it hasn't been generated yet.
+SCHEMES = ("nexa", "oblivion", "classic")
 
 
 class EditorWindow(Gtk.Window):
@@ -33,6 +36,16 @@ class EditorWindow(Gtk.Window):
         else:
             self._update_title()
         self.connect("delete-event", self._on_delete)
+
+    def _apply_scheme(self):
+        manager = GtkSource.StyleSchemeManager.get_default()
+        manager.force_rescan()
+        for name in SCHEMES:
+            scheme = manager.get_scheme(name)
+            if scheme:
+                self.buffer.set_style_scheme(scheme)
+                break
+        return False
 
     def _build_ui(self):
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -54,12 +67,11 @@ class EditorWindow(Gtk.Window):
         scroller = Gtk.ScrolledWindow()
         lang_manager = GtkSource.LanguageManager.get_default()
         self.buffer = GtkSource.Buffer()
-        scheme_manager = GtkSource.StyleSchemeManager.get_default()
-        for name in DARK_SCHEMES:
-            scheme = scheme_manager.get_scheme(name)
-            if scheme:
-                self.buffer.set_style_scheme(scheme)
-                break
+        self._apply_scheme()
+        # Follow theme changes made in Settings while the editor is open.
+        self._theme_monitor = Gio.File.new_for_path(themes.settings_path()).monitor_file(
+            Gio.FileMonitorFlags.NONE, None)
+        self._theme_monitor.connect("changed", lambda *_a: GLib.timeout_add(300, self._apply_scheme))
         self.buffer.connect("changed", self._on_buffer_changed)
 
         self.view = GtkSource.View(buffer=self.buffer)
