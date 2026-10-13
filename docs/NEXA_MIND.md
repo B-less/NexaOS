@@ -7,8 +7,8 @@ meet it (Nexus search, the assistant window, voice, "ask about this
 screen"). Claude stays as an optional online mode; nothing about your
 files leaves the machine unless you send it.
 
-This document goes layer by layer, bottom up. Every number marked
-*measured* was measured on the reference machine; the rest are targets.
+This document goes layer by layer, bottom up. Numbers in "Measured on the reference machine" were measured there;
+the rest are targets.
 
 **Reference machine:** HP EliteBook 840 G6 — Intel Core i5-8365U (4 cores /
 8 threads, AVX2 + FMA, no AVX-512, no NPU), Intel UHD 620, 8 GB RAM.
@@ -71,6 +71,30 @@ checked before first use. Only permissively licensed models.
 | Embeddings (search) | nomic-embed-text-v1.5 Q8_0 | 0.14 GB | Apache-2.0 | all |
 | Speech to text | whisper base.en | 0.14 GB | MIT | all |
 | Voice out | espeak-ng (no model) | — | GPL-3 | all |
+
+### Measured on the reference machine
+
+`llama-bench`, Alpine's llama.cpp (AVX2 code path picked automatically),
+Qwen2.5-1.5B-Instruct Q4_K_M (1.04 GiB, SHA-256 `6a1a2eb6…e9407e`), under
+WSL2 on the HP itself, 2026-10-13:
+
+| Threads | Prompt reading | Answer writing |
+|---|---|---|
+| **4** (one per core) | **40 tokens/s** | **12.3 tokens/s** |
+| 8 (with hyper-threads) | 36 tokens/s | 9.5 tokens/s |
+
+What follows from it:
+- **Writing at ~12 tokens/s (~9 words/s) is faster than people read**: the
+  1.5B model is the right default for 8 GB machines.
+- **Threads = physical cores.** Hyper-threads made it 23 % slower; the
+  auto-tune must measure, not assume.
+- **Prompt reading is the bottleneck**: a 1,000-token system prompt plus
+  tool list would take ~25 s before the first word. Prompt caching
+  (`--slot-save-path`, cache reuse) is therefore not optional: the fixed
+  part is evaluated once and reloaded, and the tool list is kept short and
+  loaded on demand per topic.
+- 7B-class models (~4× slower) are for 16 GB+ machines with patience or a
+  real GPU.
 
 ## L2 — The Nexa Mind service
 
