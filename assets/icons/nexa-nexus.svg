@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="#2a2a2a"/>
+  <!-- a small honeycomb: seven hexagons -->
+  <g stroke="#14182a" stroke-width="2">
+    <polygon points="64,26 77,33.5 77,48.5 64,56 51,48.5 51,33.5" fill="#7aa2f7"/>
+    <polygon points="90,41 103,48.5 103,63.5 90,71 77,63.5 77,48.5" fill="#bb9af7"/>
+    <polygon points="38,41 51,48.5 51,63.5 38,71 25,63.5 25,48.5" fill="#7dcfff"/>
+    <polygon points="64,56 77,63.5 77,78.5 64,86 51,78.5 51,63.5" fill="#c0caf5"/>
+    <polygon points="90,71 103,78.5 103,93.5 90,101 77,93.5 77,78.5" fill="#a6e3a1"/>
+    <polygon points="38,71 51,78.5 51,93.5 38,101 25,93.5 25,78.5" fill="#e0af68"/>
+    <polygon points="64,86 77,93.5 77,108.5 64,116 51,108.5 51,93.5" fill="#f7768e"/>
+  </g>
+</svg>

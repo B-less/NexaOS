@@ -811,7 +811,7 @@ exec nexa-battery-watch
 # Keybindings
 bindsym $mod+Return exec $term
 bindsym $mod+d exec $menu
-bindsym $mod+space exec nexa-launchpad
+bindsym $mod+space exec nexa-nexus
 bindsym $mod+n exec nexa-control
 bindsym $mod+a exec $assistant
 bindsym $mod+e exec $files
@@ -870,7 +870,7 @@ bindsym $mod+Shift+Right resize grow width 10px
 
 # Floating
 bindsym $mod+shift+space floating toggle
-# Super+Space is Launchpad, so the tiled/floating focus toggle moves here.
+# Super+Space is Nexus, so the tiled/floating focus toggle moves here.
 bindsym $mod+Ctrl+space focus mode_toggle
 
 # Cycle focus between open windows, alt-tab style
@@ -991,7 +991,7 @@ layerrule = no_anim on, match:namespace ^(nexa-panel)$
 
 bind = SUPER, Return, exec, foot
 bind = SUPER, D, exec, nexa-start
-bind = SUPER, Space, exec, nexa-launchpad
+bind = SUPER, Space, exec, nexa-nexus
 bind = SUPER, N, exec, nexa-control
 bind = SUPER, A, exec, nexa-ai-gui
 bind = SUPER, E, exec, nexa-files

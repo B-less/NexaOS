@@ -68,7 +68,7 @@ run volume       volume-mixer    nexa_volume
 for page in personalization bluetooth vpn system time power assistant about; do
     run settings-$page settings-app nexa_settings $page
 done
-for panel in start control launchpad dock; do
+for panel in nexus control dock; do
     run shell-$panel shell nexa_shell $panel
 done
 '

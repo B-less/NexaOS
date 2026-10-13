@@ -239,10 +239,18 @@ def _short_result(result, limit=400):
 
 
 def main():
+    import sys
     Gtk.init()
     win = NexaAssistantWindow()
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
+    # `nexa-ai-gui --ask "question"` (from Nexus's search) asks straight away.
+    if "--ask" in sys.argv[1:]:
+        i = sys.argv.index("--ask")
+        question = " ".join(sys.argv[i + 1:]).strip()
+        if question:
+            win.entry.set_text(question)
+            GLib.idle_add(lambda: win._on_send(None) and False)
     Gtk.main()
 
 

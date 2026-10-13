@@ -84,6 +84,7 @@ check("global CSS sets the Hexa typeface and themed text fields",
 check("reduce motion turns transitions off", "0ms" in design.global_css(reduce_motion=True))
 
 
+# ---- desktop apps
 d = tempfile.mkdtemp()
 def entry(fname, body): open(os.path.join(d, fname), "w").write("[Desktop Entry]\n" + body)
 entry("files.desktop", "Type=Application\nName=Files\nExec=/usr/local/bin/nexa-files %U\nComment=Browse your files\nKeywords=folder;explorer;\n")
@@ -99,6 +100,25 @@ check("search matches descriptions too", {a["name"] for a in desktopapps.search(
 check("no match -> empty", desktopapps.search(apps, "zzz") == [])
 check("empty query -> everything", len(desktopapps.search(apps, "  ")) == 2)
 check("field codes are dropped from the command", desktopapps.command("/usr/local/bin/nexa-files %U") == ["/usr/local/bin/nexa-files"])
+
+# ---- Nexus search
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "shell"))
+from nexa_shell import search as nsearch
+check("calculator: arithmetic", nsearch.calculate("2+2*3") == 8 and nsearch.calculate("10/4") == 2.5
+      and nsearch.calculate("3 × 4") == 12)
+check("calculator: never runs code", nsearch.calculate("__import__('os').system('id')") is None
+      and nsearch.calculate("(1).__class__") is None)
+check("calculator: refuses huge powers and division by zero", nsearch.calculate("9**9**9") is None and nsearch.calculate("1/0") is None)
+check("calculator: plain words aren't sums", nsearch.calculate("hello") is None and nsearch.calculate("42") is None)
+apps_ = [{"name": "Nexa Pulse", "comment": "Task manager", "keywords": "processes;", "icon": "nexa-pulse", "exec": "/usr/local/bin/nexa-pulse %U"}]
+r = nsearch.search(apps_, "pulse")
+check("search: app first, its command without field codes", r[0]["kind"] == "app" and r[0]["command"] == ["/usr/local/bin/nexa-pulse"], str(r))
+r = nsearch.search(apps_, "wallpaper")
+check("search: settings pages by what they contain", r[0] == {"kind": "setting", "title": "Personalization", "subtitle": "Settings",
+                                                              "icon": "nexa-settings", "command": ["nexa-settings", "personalization"]}, str(r))
+r = nsearch.search(apps_, "why is my laptop slow")
+check("search: anything else goes to Nexa", r[-1]["kind"] == "ask" and r[-1]["command"] == ["nexa-ai-gui", "--ask", "why is my laptop slow"], str(r))
+check("search: sums don't offer Nexa", [x["kind"] for x in nsearch.search(apps_, "7*6")] == ["calc"])
 
 # ---- Control Centre parsers
 check("volume", sysinfo.parse_volume("Volume: 0.40") == (40, False))

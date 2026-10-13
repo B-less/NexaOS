@@ -24,7 +24,7 @@ for n, line in enumerate(text.splitlines(), 1):
     sway.setdefault((flags, combo), []).append(n)
 dups = {k: v for k, v in sway.items() if len(v) > 1}
 check(f"sway: {len(sway)} bindings, none bound twice", sway and not dups, str(dups))
-check("sway: Launchpad on Super+Space", ("", "$mod+space") in sway)
+check("sway: Nexus on Super+Space", ("", "$mod+space") in sway)
 check("sway: Nexa Pulse on Ctrl+Shift+Esc", ("", "ctrl+escape+shift") in sway)
 
 # Hyprland: "bind = MODS, KEY, dispatcher, args". Super+Tab is bound twice
@@ -39,6 +39,6 @@ for n, line in enumerate(text.splitlines(), 1):
     hypr.setdefault(key, []).append(n)
 dups = {k: v for k, v in hypr.items() if len(v) > 1 and k not in ALLOWED}
 check(f"hyprland: {len(hypr)} bindings, none bound twice by accident", hypr and not dups, str(dups))
-check("hyprland: Launchpad and Nexa Pulse bound", ("super", "space") in hypr and ("ctrl shift", "escape") in hypr)
+check("hyprland: Nexus and Nexa Pulse bound", ("super", "space") in hypr and ("ctrl shift", "escape") in hypr)
 
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)
