@@ -316,8 +316,9 @@ def main():
         "SOFTWARE_NEEDS_PW": f"grep -cx 'permit {TEST_USER} cmd /usr/local/bin/nexa-software-helper' /etc/doas.conf 2>/dev/null || ls -l /etc/doas.conf",
         # The lock screen checks passwords as the desktop user through PAM's
         # unix_chkpwd; it once couldn't read /etc/shadow, so nothing unlocked.
-        "UNLOCK_RIGHT": f"printf %s '{TEST_PASSWORD}' | /usr/sbin/unix_chkpwd {TEST_USER} nonull; echo $?",
-        "UNLOCK_WRONG": f"printf %s 'not-the-password' | /usr/sbin/unix_chkpwd {TEST_USER} nonull; echo $?",
+        # (PAM hands it the password followed by a NUL byte, so the test does too.)
+        "UNLOCK_RIGHT": f"printf '%s\\0' '{TEST_PASSWORD}' | /usr/sbin/unix_chkpwd {TEST_USER} nonull; echo $?",
+        "UNLOCK_WRONG": f"printf '%s\\0' 'not-the-password' | /usr/sbin/unix_chkpwd {TEST_USER} nonull; echo $?",
         "LOGIN_LOCK": "test -f /etc/nexa/login-required && echo yes",
     }
     for key, cmd in checks.items():

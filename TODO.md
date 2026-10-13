@@ -16,6 +16,9 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [x] Package server: the QEMU-only HTTP setting was dead config (only old fix_*.sh used it); apps install from Alpine's signed HTTPS repos
 - [x] Further hardening — research + plan written: docs/HARDENING.md (kernel self-protection → Landlock for root helpers → AppArmor for internet-facing apps → own-key Secure Boot → disk encryption)
 
+- [x] Lock screen: unlocks again (PAM couldn't read /etc/shadow; live USB ignored the empty Enter), new look (blur, clock, theme colours); verified in QEMU: empty Enter unlocks the live USB, installed system accepts the right password and refuses a wrong one
+- [x] Dragging windows: Nexa apps drag by their titlebars (verified with a virtual mouse); the terminal now has its own title bar and drags; Sway gives a title bar to any other app without one
+
 ## 3. Installer
 - [x] BIOS + UEFI install tests pass on Alpine 3.24 with username "nexa" + password (UEFI re-run on the 3.2.0 ISO: PASS) (BIOS boot in QEMU takes ~95 s: SeaBIOS reads the 37 MB initramfs slowly; harness wait raised to 240 s)
 - [x] Choose your own username during install (account renamed everywhere, uid stays 1000; system no longer depends on the name "user"); install test now uses "nexa"
