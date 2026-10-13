@@ -72,7 +72,18 @@ check("every @nexa_ colour the apps use is defined", not missing, str(missing))
 open(themes.settings_path(home), "w").write("{broken")
 check("a corrupt settings file falls back to defaults", themes.load_settings(home)["theme"] == "horizon")
 
-# ---- desktop apps
+# ---- Hexa design tokens
+from nexa_common import design
+import math
+pts = design.hex_points(10, 10, 5)
+check("hexagon: 6 corners, all on the radius, top corner straight up",
+      len(pts) == 6 and all(abs(math.hypot(x - 10, y - 10) - 5) < 1e-9 for x, y in pts) and abs(pts[0][0] - 10) < 1e-9 and pts[0][1] < 10)
+css = design.global_css()
+check("global CSS sets the Hexa typeface and themed text fields",
+      f'"{design.FONT_UI}"' in css and "@nexa_field" in css and "160ms" in css)
+check("reduce motion turns transitions off", "0ms" in design.global_css(reduce_motion=True))
+
+
 d = tempfile.mkdtemp()
 def entry(fname, body): open(os.path.join(d, fname), "w").write("[Desktop Entry]\n" + body)
 entry("files.desktop", "Type=Application\nName=Files\nExec=/usr/local/bin/nexa-files %U\nComment=Browse your files\nKeywords=folder;explorer;\n")

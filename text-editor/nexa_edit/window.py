@@ -80,7 +80,7 @@ class EditorWindow(Gtk.Window):
         self.view.set_tab_width(4)
         self.view.set_insert_spaces_instead_of_tabs(True)
         self.view.set_monospace(True)
-        self.view.override_font(Pango.FontDescription("monospace 11"))
+        self.view.override_font(Pango.FontDescription("JetBrains Mono, monospace 11"))
         self.view.get_buffer().connect("notify::cursor-position", self._on_cursor_moved)
         scroller.add(self.view)
         root.pack_start(scroller, True, True, 0)

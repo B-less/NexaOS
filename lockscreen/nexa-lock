@@ -18,7 +18,7 @@ pgrep -x swaylock >/dev/null 2>&1 && exit 0
 set -- --daemonize --screenshots --effect-blur 9x4 --effect-vignette 0.4:0.6 \
     --clock --timestr "%H:%M" --datestr "%A, %d %B" \
     --indicator --indicator-radius 120 --indicator-thickness 8 \
-    --font sans --fade-in 0.25 --show-failed-attempts
+    --font Inter --fade-in 0.25 --show-failed-attempts
 
 if [ -f /etc/nexa/login-required ]; then
     set -- "$@" --ignore-empty-password

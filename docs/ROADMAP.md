@@ -30,7 +30,7 @@ wallpapers — shapes nobody else uses.
 | Dock | macOS-style magnifying dock | **Orbit**: a floating rail; app icons sit in hex frames, running apps get a light ring that pulses with activity; no magnification |
 | Quick settings | "Control Centre" panel | **Deck**: stacked cards that slide out from the bar's right edge (Wi-Fi, Bluetooth, VPN, focus, brightness, volume, now playing) |
 | Window overview | none | **Constellation**: all windows as nodes on a star map, grouped by app, with lines between windows of the same project/workspace |
-| Window buttons | right side, Windows-style boxes | Left-aligned **hex dots**, drawn in the theme's accent; close/minimise/maximise reveal glyphs on hover |
+| Window buttons | Windows-style boxes | **Hexa buttons**: hexagon outlines with a small symbol (maximise is a hexagon in a hexagon), filled with the accent on hover, red for close (done in 3.3) |
 | Notifications | mako popups | **Signals**: notification capsules that dock into the bar's edge; grouped by app; actions inline |
 | Lock screen | swaylock | **Nexa Lock** (own design: hexagon clock face, time arc, battery and notifications count; still a secure session-lock client underneath) |
 | Typography | system default | **Inter** for UI, **JetBrains Mono** for code (both OFL-licensed) with a defined type scale |
