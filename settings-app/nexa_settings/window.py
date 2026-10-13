@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 
 import gi
 gi.require_version("Gtk", "3.0")
@@ -10,7 +11,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from . import privileged
 from .connections import BluetoothPage, VpnPage
-from nexa_common import compositor, sysconf, themes
+from nexa_common import compositor, persist, sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -330,7 +331,52 @@ class SettingsWindow(Gtk.Window):
         self.system_status = Gtk.Label(label="")
         self.system_status.set_xalign(0)
         page.pack_start(self.system_status, False, False, 0)
+
+        st = persist.status()
+        if st["live"]:
+            self._build_persist_section(page, st)
         return page
+
+    def _build_persist_section(self, page, st):
+        page.pack_start(Gtk.Box(), False, False, 6)
+        page.pack_start(self._field_label("Live USB"), False, False, 0)
+        if st["active"]:
+            text = ("Your files and settings are kept on this USB stick between restarts. "
+                    "To start once without them, choose \"Live, don't load saved changes\" in the boot menu (Esc).")
+        elif st["possible"]:
+            text = (f"Right now everything you do is forgotten when you shut down. NexaOS can keep your files, "
+                    f"settings, Wi-Fi networks and apps on this stick instead, using its {st['free_gb']} GB of free "
+                    f"space. What you have now is copied over.")
+        else:
+            text = f"Files are forgotten when you shut down. {st['reason']}"
+        info = Gtk.Label(label=text, xalign=0)
+        info.set_line_wrap(True)
+        info.set_name("value")
+        page.pack_start(info, False, False, 0)
+        self.persist_status = Gtk.Label(label="", xalign=0)
+        self.persist_status.set_line_wrap(True)
+        if st["possible"]:
+            btn = Gtk.Button(label="Keep my files on this USB")
+            btn.set_name("actionbtn")
+            btn.set_halign(Gtk.Align.START)
+            btn.connect("clicked", self._on_persist)
+            page.pack_start(btn, False, False, 0)
+            self.persist_btn = btn
+        page.pack_start(self.persist_status, False, False, 0)
+
+    def _on_persist(self, btn):
+        btn.set_sensitive(False)
+        self._set_label(self.persist_status, "Setting up the stick, this takes a minute…", error=False)
+
+        def work():
+            try:
+                result = privileged.call("persist_create", timeout=600)
+                GLib.idle_add(self._set_label, self.persist_status,
+                              f"Done: {result['size_gb']} GB for your files. Restart to start using it.", False)
+            except privileged.PrivilegedError as e:
+                GLib.idle_add(self._set_label, self.persist_status, f"Couldn't set it up: {e}", True)
+                GLib.idle_add(btn.set_sensitive, True)
+        threading.Thread(target=work, daemon=True).start()
 
     def _on_apply_hostname(self, _btn):
         name = self.hostname_entry.get_text().strip()

@@ -53,6 +53,13 @@ for src, label in ((f"{dev}/sdb1", "ISO mode, partition"), (f"{dev}/sdb", "DD mo
     open(procm, "w").write(f"overlay / overlay rw 0 0\n{src} {di.LIVE_MEDIUM_MOUNT} vfat ro 0 0\n")
     live = {d["name"] for d in di.list_target_disks()}
     check(f"live USB medium never offered ({label})", "sdb" not in live and "vda" in live, str(live))
+# DD mode with persistence: the ISO is mounted through a loop device on the
+# stick (so the stick's NEXA_PERSIST partition can be mounted as well).
+os.makedirs(os.path.join(sysroot, "devices", "loop0", "block", "loop0", "loop"), exist_ok=True)
+open(os.path.join(sysroot, "devices", "loop0", "block", "loop0", "loop", "backing_file"), "w").write("/dev/sdb\n")
+open(procm, "w").write(f"overlay / overlay rw 0 0\n{dev}/loop0 {di.LIVE_MEDIUM_MOUNT} iso9660 ro 0 0\n")
+live = {d["name"] for d in di.list_target_disks()}
+check("live USB medium never offered (mounted through a loop device)", "sdb" not in live and "vda" in live, str(live))
 open(procm, "w").write(f"{dev}/vda1 / ext4 rw 0 0\nproc /proc proc rw 0 0\n")
 
 check("sdX partition naming", di.partition_path("sdb", 3) == f"{dev}/sdb3")

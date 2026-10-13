@@ -19,6 +19,8 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [x] Lock screen: unlocks again (PAM couldn't read /etc/shadow; live USB ignored the empty Enter), new look (blur, clock, theme colours); verified in QEMU: empty Enter unlocks the live USB, installed system accepts the right password and refuses a wrong one
 - [x] Dragging windows: Nexa apps drag by their titlebars (verified with a virtual mouse); the terminal now has its own title bar and drags; Sway gives a title bar to any other app without one
 
+- [x] Persistent live USB: Settings > System > "Keep my files on this USB" adds a NEXA_PERSIST partition after the ISO (DD-mode sticks); files, settings, Wi-Fi and apps survive reboots; home survives writing a newer ISO; "don't load saved changes" boot entry. QEMU test (3 boots, 8 GB stick): PASS
+
 ## 3. Installer
 - [x] BIOS + UEFI install tests pass on Alpine 3.24 with username "nexa" + password (UEFI re-run on the 3.2.0 ISO: PASS) (BIOS boot in QEMU takes ~95 s: SeaBIOS reads the 37 MB initramfs slowly; harness wait raised to 240 s)
 - [x] Choose your own username during install (account renamed everywhere, uid stays 1000; system no longer depends on the name "user"); install test now uses "nexa"

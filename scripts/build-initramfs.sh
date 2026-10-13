@@ -47,7 +47,7 @@ link_applets usr/sbin usr/sbin "../../bin/"
 # guaranteed-busybox copy of what it actually calls, independent of
 # whatever the full system later installs over the same names.
 for applet in mount umount switch_root mkdir mknod cat grep sed cut ls \
-              sleep basename losetup mktemp; do
+              sleep basename losetup mktemp readlink dirname cp rm stat blkid; do
     ln -sf busybox "$STAGE/bin/$applet"
 done
 
@@ -257,6 +257,26 @@ while [ -z "$LIVE_DEV" ] && [ "$LIVE_TRIES" -lt 30 ]; do
 done
 
 if [ -n "$LIVE_DEV" ] && [ -f /mnt/cdrom/nexa.img ]; then
+    # A whole-disk medium (a USB stick written in DD mode) is remounted
+    # through a loop device: Linux refuses to mount a partition of a disk a
+    # filesystem holds directly, and the persistence partition (below) is on
+    # this same stick. CDs (sr*) and partitions (Rufus ISO mode) stay as is.
+    if [ ! -e "/sys/class/block/$LIVE_DEV/partition" ]; then
+        case "$LIVE_DEV" in
+            sr*) ;;
+            *)
+                MEDIUM_FS=$(grep " /mnt/cdrom " /proc/mounts | cut -d' ' -f3)
+                [ -b /dev/loop1 ] || mknod /dev/loop1 b 7 1
+                if umount /mnt/cdrom && losetup -r /dev/loop1 "/dev/$LIVE_DEV" \
+                    && mount -t "$MEDIUM_FS" -o ro /dev/loop1 /mnt/cdrom; then
+                    echo "[INIT] Medium /dev/$LIVE_DEV mounted through /dev/loop1"
+                else
+                    losetup -d /dev/loop1 2>/dev/null
+                    mount -t "$MEDIUM_FS" -o ro "/dev/$LIVE_DEV" /mnt/cdrom
+                fi
+                ;;
+        esac
+    fi
     echo "[INIT] Setting up loop + overlay..."
     mkdir -p /mnt/lower /mnt/live
     # noload: nexa.img's ext4 journal may be "dirty" (not cleanly unmounted --
@@ -267,12 +287,60 @@ if [ -n "$LIVE_DEV" ] && [ -f /mnt/cdrom/nexa.img ]; then
     # of the live overlay below, never written to directly.
     if losetup /dev/loop0 /mnt/cdrom/nexa.img 2>/dev/null \
         && mount -t ext4 -o ro,noload /dev/loop0 /mnt/lower 2>/dev/null; then
-        mount -t tmpfs -o size=1G tmpfs /mnt/live
-        mkdir -p /mnt/live/upper /mnt/live/work
+        # Persistent live USB: a partition labelled NEXA_PERSIST on the same
+        # stick (made by Settings > System, see nexa_common/persist.py) keeps
+        # changes instead of RAM. system-<id> holds system changes for this
+        # exact nexa.img (a newer ISO starts clean); home/ survives updates.
+        PERSIST_DEV=
+        if ! grep -qw nexa.nopersist /proc/cmdline 2>/dev/null; then
+            for P in /sys/class/block/*; do
+                [ -e "$P/partition" ] || continue
+                [ "$(basename "$(dirname "$(readlink -f "$P")")")" = "$LIVE_DEV" ] || continue
+                N=$(basename "$P")
+                ensure_block_node "$N"
+                if /bin/busybox blkid "/dev/$N" 2>/dev/null | grep -q 'LABEL="NEXA_PERSIST"'; then
+                    PERSIST_DEV=$N
+                    break
+                fi
+            done
+        fi
+        if [ -n "$PERSIST_DEV" ]; then
+            mkdir -p /mnt/persist
+            if mount -t ext4 -o rw,noatime "/dev/$PERSIST_DEV" /mnt/persist 2>/dev/null; then
+                IMG_ID=$(/bin/busybox stat -c '%s-%Y' /mnt/cdrom/nexa.img)
+                SYSDIR=/mnt/persist/system-$IMG_ID
+                for OLD in /mnt/persist/system-*; do
+                    [ -d "$OLD" ] && [ "$OLD" != "$SYSDIR" ] && rm -rf "$OLD"
+                done
+                mkdir -p "$SYSDIR/upper" "$SYSDIR/work" /mnt/persist/home
+                UPPER=$SYSDIR/upper
+                WORK=$SYSDIR/work
+                echo "[INIT] Keeping changes on /dev/$PERSIST_DEV"
+                splash 30 "Opening your saved files..."
+            else
+                echo "[INIT] WARN: could not mount /dev/$PERSIST_DEV; changes will not be saved"
+                PERSIST_DEV=
+            fi
+        fi
+        if [ -z "$PERSIST_DEV" ]; then
+            mount -t tmpfs -o size=1G tmpfs /mnt/live
+            mkdir -p /mnt/live/upper /mnt/live/work
+            UPPER=/mnt/live/upper
+            WORK=/mnt/live/work
+        fi
         if mount -t overlay overlay \
-            -o lowerdir=/mnt/lower,upperdir=/mnt/live/upper,workdir=/mnt/live/work \
+            -o lowerdir=/mnt/lower,upperdir="$UPPER",workdir="$WORK" \
             /mnt/root 2>/dev/null; then
             echo "[INIT] Live overlay mounted"
+            if [ -n "$PERSIST_DEV" ]; then
+                # /home lives on the partition itself (not in system-<id>),
+                # seeded from the image the first time.
+                [ -n "$(ls -A /mnt/persist/home 2>/dev/null)" ] || cp -a /mnt/root/home/. /mnt/persist/home/
+                mount -o bind /mnt/persist/home /mnt/root/home
+                mkdir -p /mnt/root/mnt/nexa-persist
+                mount -o move /mnt/persist /mnt/root/mnt/nexa-persist \
+                    || echo "[INIT] WARN: could not move the persistence mount"
+            fi
             if [ -x /mnt/root/sbin/init ]; then
                 # Keep the medium visible after switch_root at a fixed path
                 # so the OS installer can tell which disk it is and never

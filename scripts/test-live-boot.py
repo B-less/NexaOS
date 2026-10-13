@@ -4,6 +4,8 @@ save a screenshot, log in on the serial console and print a health report.
 
 Usage: python3 scripts/test-live-boot.py [ISO] [--shot desktop.png] [--run 'shell command']
 --run also runs that command as root on the booted system and prints its output.
+--disk FILE boots a writable USB-stick image (e.g. the ISO written into a bigger
+file) instead of the read-only ISO; used by scripts/test-persistence.py.
 Defaults: dist/NexaOS-<PROJECT_VERSION>.iso, screenshot to dist/live-desktop.png.
 Needs qemu-system-x86_64 with KVM and OVMF (/usr/share/qemu/OVMF.fd).
 A VM has no real GPU, so this exercises the Sway session.
@@ -69,7 +71,9 @@ def ppm_to_png(ppm_path, png_path, half=True):
 
 def main(argv):
     extra = argv[argv.index("--run") + 1] if "--run" in argv else None
-    argv = [a for i, a in enumerate(argv) if not (a == "--run" or (i and argv[i - 1] == "--run"))]
+    disk = argv[argv.index("--disk") + 1] if "--disk" in argv else None
+    argv = [a for i, a in enumerate(argv)
+            if not (a in ("--run", "--disk") or (i and argv[i - 1] in ("--run", "--disk")))]
     args = [a for a in argv if not a.startswith("--")]
     iso = args[0] if args else os.path.join(REPO, "dist", f"NexaOS-{project_version()}.iso")
     shot = argv[argv.index("--shot") + 1] if "--shot" in argv else os.path.join(REPO, "dist", "live-desktop.png")
@@ -77,7 +81,8 @@ def main(argv):
     mon, ser = os.path.join(work, "mon.sock"), os.path.join(work, "ser.sock")
     qemu = subprocess.Popen(
         ["qemu-system-x86_64", "-enable-kvm", "-cpu", "host", "-m", "4G", "-smp", "2", "-bios", OVMF,
-         "-drive", f"file={iso},format=raw,if=none,id=u,readonly=on", "-device", "qemu-xhci",
+         "-drive", (f"file={disk},format=raw,if=none,id=u" if disk
+                    else f"file={iso},format=raw,if=none,id=u,readonly=on"), "-device", "qemu-xhci",
          "-device", "usb-storage,drive=u", "-nic", "user,model=virtio", "-display", "none",
          "-serial", f"unix:{ser},server,nowait", "-monitor", f"unix:{mon},server,nowait"],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=open(os.path.join(work, "qemu.err"), "w"))
@@ -133,7 +138,7 @@ def main(argv):
         marker = "NEXA_CHECKS_DONE"
         checks = list(CHECKS) + ([f"echo EXTRA_BEGIN; {extra}; echo EXTRA_END"] if extra else [])
         s.sendall(("; ".join(checks) + f"; echo {marker}\n").encode())
-        end = time.time() + 20
+        end = time.time() + (120 if extra else 20)
         while time.time() < end and buf.count(marker.encode()) < 2:
             pump(1)
         text = buf.decode(errors="replace").replace("\r", "")

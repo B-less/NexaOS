@@ -57,6 +57,11 @@ LABEL nexa
   MENU LABEL NexaOS (live)
   KERNEL /boot/vmlinuz
   APPEND initrd=/boot/initramfs.cpio.gz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+
+LABEL fresh
+  MENU LABEL NexaOS (live, don't load saved changes)
+  KERNEL /boot/vmlinuz
+  APPEND initrd=/boot/initramfs.cpio.gz nexa.live nexa.nopersist mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
 CFG_EOF
 
 # UEFI. The volume label can't be used to find the boot files: Rufus's ISO
@@ -84,6 +89,12 @@ set menu_color_highlight=black/light-gray
 
 menuentry "NexaOS (live)" {
     linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+    initrd /boot/initramfs.cpio.gz
+}
+# Persistent live USB: start once without the files and settings kept on
+# the stick (e.g. if a saved change stops the desktop from starting).
+menuentry "NexaOS (live, don't load saved changes)" {
+    linux /boot/vmlinuz nexa.live nexa.nopersist mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
     initrd /boot/initramfs.cpio.gz
 }
 # Skips the i915/amdgpu drivers and stays on the firmware framebuffer.

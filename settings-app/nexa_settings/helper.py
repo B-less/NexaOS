@@ -3,7 +3,7 @@ import os
 import re
 import sys
 
-from nexa_common import sysconf, wgconf
+from nexa_common import persist, sysconf, wgconf
 
 # Runs as root via `doas nexa-settings-helper` (see /etc/doas.conf — that rule
 # permits "user" to run this exact binary, nothing else). Reads one
@@ -220,7 +220,16 @@ def bluetooth_unblock(req):
     return {"ok": True}
 
 
+def persist_create(req):
+    """Live USB only: add the NEXA_PERSIST partition (see persist.py)."""
+    try:
+        return {"ok": True, **persist.create()}
+    except persist.PersistError as e:
+        return {"ok": False, "error": str(e)}
+
+
 ACTIONS = {
+    "persist_create": persist_create,
     "set_hostname": set_hostname,
     "write_ai_config": write_ai_config,
     "set_timezone": set_timezone,

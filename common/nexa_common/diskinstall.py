@@ -81,6 +81,18 @@ def _disk_of(source):
     if not source or not source.startswith(f"{DEV}/"):
         return None
     kname = os.path.basename(source)
+    if kname.startswith("loop"):
+        # The live medium is mounted through a loop device on the USB stick
+        # (so a persistence partition on the same stick can be mounted too):
+        # follow it to the stick, which must never be offered as a target.
+        try:
+            with open(os.path.join(SYS, "class", "block", kname, "loop", "backing_file")) as f:
+                backing = f.read().strip()
+        except OSError:
+            return None
+        if not backing.startswith("/dev/"):  # the kernel's own path, whatever DEV is
+            return None
+        kname = os.path.basename(backing)
     return re.sub(r"p?\d+$", "", kname) if re.match(r"^nvme\d+n\d+p\d+$", kname) else re.sub(r"\d+$", "", kname)
 
 
@@ -197,7 +209,10 @@ def _clone_exclude_patterns(mountpoint):
     mp_norm = mountpoint.rstrip("/")
     patterns = set(_ALWAYS_EXCLUDE)
     for _src, mp in _mounts():
-        if mp == "/" or not mp.startswith("/"):
+        # /home is its own mount on a persistent live USB (bound from the
+        # stick's NEXA_PERSIST partition); it is the user's files and must
+        # be copied like the rest of the system, not skipped.
+        if mp in ("/", "/home") or not mp.startswith("/"):
             continue
         if mp == mp_norm or mp.startswith(mp_norm + "/"):
             patterns.add(mp.lstrip("/").split("/")[0])
