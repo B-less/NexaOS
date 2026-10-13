@@ -1,0 +1,19 @@
+# All of NexaOS's native tools build as one workspace: shared dependencies
+# compile once into one target folder, and only changed crates rebuild.
+[workspace]
+members = ["nexa-sys", "nexa-pack", "nexa-mindd", "nexa-tools"]
+resolver = "2"
+
+# Thin LTO keeps most of full LTO's size/speed benefit at a fraction of the
+# link time; tests use the (fast-compiling) dev profile.
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = true
+panic = "abort"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 1

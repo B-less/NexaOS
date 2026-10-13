@@ -72,9 +72,9 @@ echo "UTC" > "$ROOTFS_DIR/etc/timezone"
 printf 'nameserver %s\nnameserver %s\n' "$DNS_PRIMARY" "$DNS_SECONDARY" > "$ROOTFS_DIR/etc/resolv.conf"
 printf 'proc /proc proc defaults 0 0\nsysfs /sys sysfs defaults 0 0\ndevtmpfs /dev devtmpfs defaults 0 0\ntmpfs /tmp tmpfs defaults,nodev,nosuid,noexec,relatime,size=1G 0 0\ntmpfs /run tmpfs defaults,nodev,nosuid,noexec,relatime,size=1G 0 0\n' > "$ROOTFS_DIR/etc/fstab"
 mkdir -p "$ROOTFS_DIR/etc/profile.d" "$ROOTFS_DIR/root" "$ROOTFS_DIR/home/user"
-printf 'root:x:0:0:root:/root:/bin/sh\nmessagebus:x:81:81:messagebus:/var/run/dbus:/sbin/nologin\nseatd:x:86:86:seat daemon:/run/seatd:/sbin/nologin\nsshd:x:22:22:sshd privsep:/var/empty:/sbin/nologin\nuser:x:1000:1000:user:/home/user:/bin/sh\n' > "$ROOTFS_DIR/etc/passwd"
-printf 'root::0:0:99999:7:::\nmessagebus:!:0:0:99999:7:::\nseatd:!:0:0:99999:7:::\nsshd:!:0:0:99999:7:::\nuser::0:0:99999:7:::\n' > "$ROOTFS_DIR/etc/shadow"
-printf 'root:x:0:\nshadow:x:42:\nmessagebus:x:81:\nseat:x:86:user\nseatd:x:86:\nsshd:x:22:\nuser:x:1000:\nwheel:x:10:user\nvideo:x:27:user\naudio:x:18:user\ninput:x:97:user\n' > "$ROOTFS_DIR/etc/group"
+printf 'root:x:0:0:root:/root:/bin/sh\nmessagebus:x:81:81:messagebus:/var/run/dbus:/sbin/nologin\nseatd:x:86:86:seat daemon:/run/seatd:/sbin/nologin\nsshd:x:22:22:sshd privsep:/var/empty:/sbin/nologin\nnexa-mind:x:110:110:Nexa Mind AI service:/var/lib/nexa-mind:/sbin/nologin\nuser:x:1000:1000:user:/home/user:/bin/sh\n' > "$ROOTFS_DIR/etc/passwd"
+printf 'root::0:0:99999:7:::\nmessagebus:!:0:0:99999:7:::\nseatd:!:0:0:99999:7:::\nsshd:!:0:0:99999:7:::\nnexa-mind:!:0:0:99999:7:::\nuser::0:0:99999:7:::\n' > "$ROOTFS_DIR/etc/shadow"
+printf 'root:x:0:\nshadow:x:42:\nmessagebus:x:81:\nseat:x:86:user\nseatd:x:86:\nsshd:x:22:\nnexa-mind:x:110:user\nuser:x:1000:\nwheel:x:10:user\nvideo:x:27:user\naudio:x:18:user\ninput:x:97:user\n' > "$ROOTFS_DIR/etc/group"
 mkdir -p "$ROOTFS_DIR/var/empty"
 # sshd's privilege-separation chroot requires this owned by root and not
 # group/world-writable -- explicit numeric chown because Docker's bind-mount

@@ -243,7 +243,10 @@ native:
 # The native tools' own tests (cargo test) and nexa-pack end to end
 # (templates, signing, tampering), in a clean Alpine container.
 test-native:
+	@sh scripts/build-native.sh test
+	@sh scripts/build-native.sh
 	@sh scripts/test-nexa-pack.sh
+	@sh scripts/test-nexa-mind.sh
 
 gui-apps:
 	@echo "$(COLOR_BLUE)Building Nexa framebuffer desktop and GUI apps...$(COLOR_RESET)"
@@ -355,7 +358,7 @@ ci: check-env setup
 # test_bluetooth.py need a D-Bus session bus for their mock iwd / BlueZ, so
 # they only run where dbus-run-session exists.
 test:
-	@test -x $(BUILD_DIR)/native/nexa-pack || $(MAKE) native --no-print-directory
+	@{ test -x $(BUILD_DIR)/native/nexa-pack && test -x $(BUILD_DIR)/native/nexa-tools; } || $(MAKE) native --no-print-directory
 	@echo "$(COLOR_BLUE)Running tests...$(COLOR_RESET)"
 	@set -e; for t in $(BASE_DIR)/common/tests/test_*.py; do \
 		case "$$t" in \

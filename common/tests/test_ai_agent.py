@@ -63,4 +63,43 @@ script[:] = [{"content": [{"type": "text", "text": "partial"}], "stop_reason": "
 agent.run("k", "m", "q", False, False, lambda *a: True, lambda *a, **k: None, on_event)
 check("cut-off reply is flagged", any("cut off" in p for k, p in events), str(events))
 
+# ---- on-device back-end (nexa-mindd): format translation
+from nexa_ai import local_client
+conv = [{"role": "user", "content": "how much ram?"},
+        {"role": "assistant", "content": [thinking, {"type": "text", "text": "Checking."},
+                                          {"type": "tool_use", "id": "t9", "name": "get_mem_info", "input": {}}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t9", "content": {"total_gb": 8}}]}]
+oa, specs = local_client.to_openai("SYS", conv, [{"name": "get_mem_info", "description": "d", "input_schema": {"type": "object"}}])
+check("local: system prompt first, tool call and result carried over",
+      oa[0] == {"role": "system", "content": "SYS"}
+      and oa[2]["tool_calls"][0]["function"] == {"name": "get_mem_info", "arguments": "{}"}
+      and oa[2]["content"] == "Checking."
+      and oa[3] == {"role": "tool", "tool_call_id": "t9", "content": '{"total_gb": 8}'}, str(oa))
+check("local: tools become functions", specs[0]["type"] == "function" and specs[0]["function"]["parameters"] == {"type": "object"})
+r = local_client.from_openai({"choices": [{"finish_reason": "tool_calls", "message": {"content": None,
+      "tool_calls": [{"id": "c1", "function": {"name": "get_mem_info", "arguments": "{\"x\": 1}"}}]}}]})
+check("local: tool call becomes tool_use", r == {"content": [{"type": "tool_use", "id": "c1", "name": "get_mem_info", "input": {"x": 1}}],
+                                                 "stop_reason": "tool_use"}, str(r))
+r = local_client.from_openai({"choices": [{"finish_reason": "length", "message": {"content": "partial"}}]})
+check("local: cut-off reply flagged", r["stop_reason"] == "max_tokens" and r["content"][0]["text"] == "partial")
+r = local_client.from_openai({"choices": [{"finish_reason": "tool_calls", "message": {"tool_calls": [{"function": {"name": "f", "arguments": "not json"}}]}}]})
+check("local: broken tool arguments don't crash", r["content"][0]["input"] == {} and r["content"][0]["id"].startswith("call_"))
+sent_local = {}
+local_client._request = lambda m, p, b=None, timeout=600: (sent_local.update(body=b), {"choices": [{"finish_reason": "stop", "message": {"content": "hi"}}]})[1]
+agent.client.create_message = lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not go online"))
+events.clear()
+agent.run(None, None, "hello", False, True, lambda *a: True, lambda *a, **k: None, on_event, backend="local")
+names = [t["function"]["name"] for t in sent_local["body"]["tools"]]
+check("local back-end: never online, focused tool set, short prompt", events[-1] == ("text", "hi")
+      and set(names) <= set(tools.LOCAL_TOOLS) and len(names) <= 16
+      and sent_local["body"]["messages"][0]["content"] == agent.LOCAL_SYSTEM_PROMPT, str(names))
+from nexa_ai import cli
+import nexa_common.mind as mindmod
+mindmod.status = lambda: {"default_model": "m", "installed": ["m"]}
+check("auto backend prefers this computer when a model is installed", cli.pick_backend({"backend": "auto", "api_key": "k"}) == "local")
+mindmod.status = lambda: None
+check("...falls back to Claude without it", cli.pick_backend({"backend": "auto", "api_key": "k"}) == "claude")
+check("...and to the offline helper with neither", cli.pick_backend({"backend": "auto", "api_key": ""}) is None)
+check("'local only' never goes online", cli.pick_backend({"backend": "local", "api_key": "k"}) is None)
+
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)

@@ -1,4 +1,3 @@
-import json
 import threading
 
 import gi
@@ -6,7 +5,8 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, Gdk
 
 from . import agent, client, local_fallback, tools
-from .cli import load_config, make_logger
+from .cli import backend_label, load_config, make_logger, pick_backend
+from nexa_common import actionui, design
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -20,6 +20,8 @@ window { background-image: none; background-color: @nexa_bg; }
 #control-toggle { border-radius: 12px; padding: 4px 12px; font-weight: bold; font-size: 9pt; }
 #control-toggle.control-off { background-image: none; background-color: @nexa_hover; color: @nexa_muted; }
 #control-toggle.control-on { background-image: none; background-color: @nexa_crit; color: @nexa_on_accent; }
+#activity-toggle { background-image: none; border-radius: 12px; padding: 4px 12px; font-size: 9pt; background-color: @nexa_hover; color: @nexa_text; }
+#activity-toggle:checked { background-color: @nexa_accent; color: @nexa_on_accent; }
 
 .bubble { border-radius: 14px; padding: 8px 12px; }
 .bubble-user { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
@@ -46,7 +48,7 @@ class NexaAssistantWindow(Gtk.Window):
         self.cfg = load_config()
         self.history = []
         self.log = make_logger()
-        self._pending_tool_labels = []
+        self._pending_tools = []     # cards / chips waiting for their tool_result
         self._thinking_row = None
 
         self._build_ui()
@@ -70,6 +72,11 @@ class NexaAssistantWindow(Gtk.Window):
         self.control_switch.connect("toggled", self._on_control_toggled)
         self._update_control_label()
         header.pack_start(self.control_switch, False, False, 0)
+        self.activity_toggle = Gtk.ToggleButton(label="Activity")
+        self.activity_toggle.set_name("activity-toggle")
+        self.activity_toggle.set_tooltip_text("Everything the assistant changed, with Undo")
+        self.activity_toggle.connect("toggled", self._on_activity_toggled)
+        header.pack_end(self.activity_toggle, False, False, 0)
         root.pack_start(header, False, False, 0)
 
         self.status = Gtk.Label(label=self._status_text())
@@ -85,7 +92,22 @@ class NexaAssistantWindow(Gtk.Window):
         self.message_box.set_border_width(10)
         scroller.add(self.message_box)
         self._adjustment = scroller.get_vadjustment()
-        root.pack_start(scroller, True, True, 0)
+        # Follow new messages: scroll once GTK has sized them (the range
+        # grows after the widget is added, so scrolling right away falls short).
+        self._follow = True
+        self._adjustment.connect("changed", lambda adj: self._follow and adj.set_value(adj.get_upper()))
+        self._adjustment.connect("value-changed", self._on_scrolled)
+
+        self.timeline = None
+        self.activity_scroller = Gtk.ScrolledWindow()
+        self.activity_scroller.set_name("scroller")
+        self.activity_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.set_transition_duration(design.DURATION_MS["panel"])
+        self.stack.add_named(scroller, "chat")
+        self.stack.add_named(self.activity_scroller, "activity")
+        root.pack_start(self.stack, True, True, 0)
 
         entry_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         entry_row.set_border_width(10)
@@ -106,6 +128,20 @@ class NexaAssistantWindow(Gtk.Window):
             Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
 
+    def _on_activity_toggled(self, button):
+        if button.get_active():
+            if self.timeline is None:
+                self.timeline = actionui.ActivityTimeline()
+                self.timeline.set_border_width(14)
+                self.activity_scroller.add(self.timeline)
+                self.activity_scroller.show_all()
+            else:
+                self.timeline.reload()
+            self.stack.set_visible_child_name("activity")
+        else:
+            self.stack.set_visible_child_name("chat")
+            self.entry.grab_focus()
+
     def _on_control_toggled(self, _button):
         self._update_control_label()
 
@@ -118,8 +154,9 @@ class NexaAssistantWindow(Gtk.Window):
         ctx.add_class("control-on" if on else "control-off")
 
     def _status_text(self):
-        mode = "cloud (Claude)" if self.cfg.get("api_key") else "offline — no API key configured"
-        return f"backend: {mode}   ·   model: {self.cfg.get('model')}"
+        backend = pick_backend(self.cfg)
+        model = "on-device model" if backend == "local" else self.cfg.get("model")
+        return f"{backend_label(backend)}   ·   {model}"
 
     def _add_bubble(self, text, role, extra_class=None):
         css_class, halign, max_chars = ROLE_STYLE[role]
@@ -142,8 +179,13 @@ class NexaAssistantWindow(Gtk.Window):
         return label
 
     def _scroll_to_bottom(self):
+        self._follow = True
         self._adjustment.set_value(self._adjustment.get_upper())
         return False
+
+    def _on_scrolled(self, adj):
+        # Reading back up stops the auto-follow until the next message.
+        self._follow = adj.get_value() + adj.get_page_size() >= adj.get_upper() - 4
 
     def _clear_thinking(self):
         if self._thinking_row is not None:
@@ -157,7 +199,7 @@ class NexaAssistantWindow(Gtk.Window):
         self.entry.set_text("")
         self.entry.set_sensitive(False)
         self._add_bubble(query, "user")
-        self._pending_tool_labels = []
+        self._pending_tools = []
         thinking = self._add_bubble("thinking…", "sys", extra_class="bubble-thinking")
         self._thinking_row = thinking.get_parent()
         threading.Thread(target=self._worker, args=(query,), daemon=True).start()
@@ -167,17 +209,34 @@ class NexaAssistantWindow(Gtk.Window):
         if kind == "text":
             self._add_bubble(payload, "ai")
         elif kind == "tool_call":
-            arg_str = ", ".join(f"{k}={v}" for k, v in (payload["args"] or {}).items())
-            label = self._add_bubble(f"→ {payload['name']}({arg_str})", "sys", extra_class="bubble-tool")
-            self._pending_tool_labels.append(label)
+            spec = tools.TOOLS.get(payload["name"])
+            if spec and spec["category"] == tools.READ:
+                widget = actionui.ReadChip(payload["name"], payload["args"])
+                margin = 4
+            else:
+                widget = actionui.ActionCard(payload["name"], payload["args"])
+                widget.set_size_request(420, -1)
+                widget.set_running()
+                margin = 2
+            widget.set_halign(Gtk.Align.START)
+            widget.set_margin_top(margin)
+            widget.set_margin_bottom(margin)
+            self.message_box.pack_start(widget, False, False, 0)
+            GLib.idle_add(self._scroll_to_bottom)
+            self._pending_tools.append(widget)
         elif kind == "tool_result":
-            if self._pending_tool_labels:
-                label = self._pending_tool_labels.pop(0)
-                if payload["error"]:
-                    label.set_text(label.get_text() + f"\n✗ {payload['error']}")
-                    label.get_style_context().add_class("bubble-tool-error")
+            if self._pending_tools:
+                widget = self._pending_tools.pop(0)
+                error = payload["error"]
+                if isinstance(widget, actionui.ReadChip):
+                    widget.set_result(payload["result"], error)
+                elif error == "declined by user":
+                    widget.set_declined()
+                elif error:
+                    widget.set_failed(error)
                 else:
-                    label.set_text(label.get_text() + f"\n✓ {_short_result(payload['result'])}")
+                    widget.set_done(payload["result"])
+                GLib.idle_add(self._scroll_to_bottom)
         return False
 
     def _emit(self, kind, payload):
@@ -186,16 +245,17 @@ class NexaAssistantWindow(Gtk.Window):
     def _worker(self, query):
         allow_control = self.control_switch.get_active()
         try:
-            if not self.cfg.get("api_key"):
+            backend = pick_backend(self.cfg)
+            if backend is None:
                 self._emit("text", local_fallback.answer(query))
             else:
                 self.history = agent.run(
-                    self.cfg["api_key"], self.cfg["model"], query, allow_control,
+                    self.cfg["api_key"], None if backend == "local" else self.cfg["model"], query, allow_control,
                     self.cfg["require_confirmation"], self._confirm_blocking, self.log,
-                    self._emit, history=self.history,
+                    self._emit, history=self.history, backend=backend,
                 )
         except (client.NetworkError, client.ApiError) as e:
-            self._emit("text", f"(cloud AI unavailable: {e})")
+            self._emit("text", f"(assistant unavailable: {e})")
             self._emit("text", local_fallback.answer(query))
         except Exception as e:  # noqa: BLE001 - surface any unexpected failure to the chat window
             self._emit("text", f"internal error: {e}")
@@ -209,33 +269,27 @@ class NexaAssistantWindow(Gtk.Window):
         return False
 
     def _confirm_blocking(self, name, args):
+        """Called on the worker thread: the action's card (already in the
+        chat, from its tool_call event) shows Allow / Not now inline."""
         event = threading.Event()
         answer = {"ok": False}
 
-        def ask():
-            arg_str = ", ".join(f"{k}={v}" for k, v in (args or {}).items())
-            # MessageType.WARNING pulls in a stock icon through the same broken
-            # PNG-loading path as the switch icon above; OTHER renders no icon.
-            dialog = Gtk.MessageDialog(
-                transient_for=self, flags=0, message_type=Gtk.MessageType.OTHER,
-                buttons=Gtk.ButtonsType.YES_NO,
-                text=f"Run '{name}({arg_str})'?",
-            )
-            dialog.format_secondary_text("This changes real system state.")
-            response = dialog.run()
-            dialog.destroy()
-            answer["ok"] = response == Gtk.ResponseType.YES
+        def done(ok):
+            answer["ok"] = ok
             event.set()
+
+        def ask():
+            cards = [w for w in self._pending_tools if isinstance(w, actionui.ActionCard)]
+            if not cards:
+                done(False)
+            else:
+                cards[-1].ask(done)
+                self._scroll_to_bottom()
             return False
 
         GLib.idle_add(ask)
         event.wait()
         return answer["ok"]
-
-
-def _short_result(result, limit=400):
-    text = result if isinstance(result, str) else json.dumps(result, indent=2)
-    return text if len(text) <= limit else text[:limit] + "…"
 
 
 def main():

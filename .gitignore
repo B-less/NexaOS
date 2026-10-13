@@ -101,6 +101,7 @@ modules.order
 attic/
 
 # Rust build output
+/tools/target/
 /tools/*/target/
 /tools/*/dist/
 # Secret signing keys never belong in the repo

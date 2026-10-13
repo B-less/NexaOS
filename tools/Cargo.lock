@@ -271,6 +271,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-mindd"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "nexa-pack"
 version = "0.1.0"
 dependencies = [
@@ -280,6 +291,24 @@ dependencies = [
  "sha2",
  "toml",
  "zip",
+]
+
+[[package]]
+name = "nexa-sys"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "nexa-tools"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

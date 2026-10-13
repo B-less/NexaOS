@@ -1,24 +1,37 @@
 #!/bin/sh
-# Build NexaOS's native (Rust) tools in an Alpine container as static
-# binaries, so they run on NexaOS and on the build host, and a root helper
-# depending on one never depends on a shared library.
-#   sh scripts/build-native.sh      -> build/native/<tool>
+# Build NexaOS's native (Rust) tools as static binaries -> build/native/.
+#   sh scripts/build-native.sh           release build of every tool
+#   sh scripts/build-native.sh test      cargo test for the whole workspace
+#
+# Fast on repeat: a builder image with Rust already installed (nexa-rust),
+# one Cargo workspace (shared dependencies compile once) and a persistent
+# target folder (tools/target), so only what changed recompiles.
 set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
-mkdir -p "$repo/build/native" /var/tmp/nexa-cargo
+mode=${1:-build}
 version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
+image=nexa-rust:${version%.*}
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+    printf 'FROM alpine:%s\nRUN apk add -q cargo rust gcc musl-dev make pkgconf gtk+3.0-dev zip unzip\n' "${version%.*}" \
+        | docker build -t "$image" -
+fi
+mkdir -p "$repo/build/native" /var/tmp/nexa-cargo
 docker run --rm -v "$repo:/src" -v /var/tmp/nexa-cargo:/root/.cargo/registry \
-    -e RUSTFLAGS="-C target-feature=+crt-static" "alpine:${version%.*}" sh -c '
+    -e MODE="$mode" -e OWNER="$(id -u):$(id -g)" -w /src/tools "$image" sh -c '
 set -e
-apk add -q cargo rust >/dev/null 2>&1
-for tool in /src/tools/*/; do
-    [ -f "$tool/Cargo.toml" ] || continue
-    name=$(basename "$tool")
+target=$(rustc -vV | sed -n "s/^host: //p")
+if [ "$MODE" = test ]; then
+    rc=0; cargo test --workspace -q >/tmp/test.log 2>&1 || rc=$?
+    grep -E "^test result|FAILED|panicked|^error" /tmp/test.log || true
+    [ $rc = 0 ] || { tail -40 /tmp/test.log; exit $rc; }
+else
     # An explicit --target keeps the static flag off build-time macro crates.
-    target=$(rustc -vV | sed -n "s/^host: //p")
-    (cd "$tool" && cargo build --release -q --target "$target")
-    install -m 0755 "$tool/target/$target/release/$name" /src/build/native/$name
-    echo "built $name: $(stat -c %s /src/build/native/$name) bytes"
-done
-chown -R '"$(id -u):$(id -g)"' /src/build/native /src/tools/*/target 2>/dev/null || true
+    RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --workspace -q --target "$target"
+    for main in */src/main.rs; do
+        name=${main%%/*}
+        install -m 0755 "target/$target/release/$name" /src/build/native/$name
+        echo "built $name: $(stat -c %s /src/build/native/$name) bytes"
+    done
+fi
+chown -R "$OWNER" /src/tools/target /src/tools/Cargo.lock /src/build/native 2>/dev/null || true
 '

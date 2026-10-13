@@ -28,13 +28,15 @@ def set_hostname(req):
 
 def write_ai_config(req):
     data = req.get("data", {})
-    allowed = {"api_key", "model", "allow_control", "require_confirmation"}
+    allowed = {"api_key", "model", "allow_control", "require_confirmation", "backend"}
     if not set(data.keys()) <= allowed:
         return {"ok": False, "error": "unexpected field in config update"}
     if "api_key" in data and not isinstance(data["api_key"], str):
         return {"ok": False, "error": "api_key must be a string"}
     if "model" in data and not isinstance(data["model"], str):
         return {"ok": False, "error": "model must be a string"}
+    if "backend" in data and data["backend"] not in ("auto", "local", "claude"):
+        return {"ok": False, "error": "backend must be auto, local or claude"}
     for flag in ("allow_control", "require_confirmation"):
         if flag in data and not isinstance(data[flag], bool):
             return {"ok": False, "error": f"{flag} must be a boolean"}

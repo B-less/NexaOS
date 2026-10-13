@@ -535,6 +535,36 @@ BTPROBE_EOF
     # Compressed swap in RAM: the kernel has ZRAM built in (creating zram0 at
     # boot); this sizes it to half of RAM and turns it on. Doubles as a
     # cushion for small VMs without needing a swap partition on the disk.
+    echo "[*] Generating Nexa Mind (on-device AI) service..."
+    # nexa-mindd (Rust, tools/nexa-mindd) runs as its own unprivileged user,
+    # confines itself with Landlock and starts llama-server only when asked.
+    # The desktop user reaches it through /run/nexa-mind/mind.sock (group
+    # nexa-mind). Models live in /var/lib/nexa-mind/models.
+    cat > "$MNT_DIR/etc/init.d/nexa-mind" << 'MIND_EOF'
+#!/sbin/openrc-run
+description="Nexa Mind: on-device AI service"
+command=/usr/local/bin/nexa-mindd
+command_args="serve"
+command_user="nexa-mind:nexa-mind"
+command_background=true
+pidfile=/run/nexa-mind.pid
+output_log=/var/log/nexa-mind.log
+error_log=/var/log/nexa-mind.log
+
+depend() {
+    need localmount
+    after net
+}
+
+start_pre() {
+    checkpath -d -m 0750 -o nexa-mind:nexa-mind /run/nexa-mind
+    checkpath -d -m 0700 -o nexa-mind:nexa-mind /var/lib/nexa-mind /var/lib/nexa-mind/models
+    checkpath -f -m 0640 -o nexa-mind:nexa-mind /var/log/nexa-mind.log
+}
+MIND_EOF
+    chmod +x "$MNT_DIR/etc/init.d/nexa-mind"
+    ln -sf /etc/init.d/nexa-mind "$MNT_DIR/etc/runlevels/default/nexa-mind"
+
     cat > "$MNT_DIR/etc/init.d/zram" << 'ZRAM_EOF'
 #!/sbin/openrc-run
 description="Compressed RAM swap (zram)"

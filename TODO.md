@@ -46,6 +46,14 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [ ] Self-healing desktop parts ("restart the failed module"): bar, Dock, notifications and Wi-Fi restart themselves if they crash
 - Not planned: microkernel, neural scheduler, NPU fabric, ambient cloud compute, phone convergence (research-OS scale, not possible on a Linux base)
 
+## 4c. Nexa Mind (on-device AI, docs/NEXA_MIND.md)
+- [x] M1: nexa-mindd (Rust) — sandboxed service supervising llama.cpp, verified model downloads, local back-end for the assistant with tool calls; Settings download + backend choice. End-to-end test with the real model passes
+- [ ] M2: kernel PSI / uclamp / RAPL / THP + cgroup for the model (needs a kernel rebuild)
+- [x] M3 (files): nexa-tools (Rust) — Landlock per call, write/move/copy with undo, Trash, tidy (plan then apply), duplicates, activity log; Hexa action cards with Undo + Activity timeline in the assistant and Settings
+- [ ] M3 (rest): documents, settings/system tools through nexa-tools, untrusted-content guard
+- [ ] M4-M6: private index, screen OCR, offline voice
+- [ ] Download the model on the HP and time real answers there
+
 ## 5. Hardware
 - [~] Bluetooth: kernel + bluez + Bluetooth audio + bt-probe firmware re-bind + Settings page with pairing agent (tested against a mock BlueZ; needs a real adapter: HP test)
 - [ ] Intel SOF audio, NVIDIA (nouveau), Intel Lunar Lake+ (xe) — evaluated, not enabled yet: built-in GPU drivers load firmware before the root filesystem exists; nouveau (Turing+ GSP) and xe firmware are too big for the initramfs, and a driver that takes the screen over from simpledrm and then fails leaves it black. Needs either firmware-in-initramfs per GPU family or loadable modules. SOF: only needed on newer Intel laptops whose sound doesn't work with HDA (840 G6 sound works).

@@ -1,0 +1,9 @@
+[package]
+name = "nexa-sys"
+version = "0.1.0"
+edition = "2021"
+description = "Low-level NexaOS helpers shared by the native tools (Landlock sandboxing)"
+license = "MIT"
+
+[dependencies]
+libc = "0.2"

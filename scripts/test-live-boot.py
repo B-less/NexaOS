@@ -38,7 +38,12 @@ CHECKS = (
     'echo BLUETOOTHD=$(rc-service bluetooth status 2>&1 | grep -o "started\\|stopped\\|crashed")',
     'echo WIREGUARD=$(ip link add nexatest type wireguard 2>&1 && ip link del nexatest && echo ok)',
     'echo POLICY_ROUTING=$(ip rule show | grep -c .)',
-    'echo APPS=$(for c in nexa-pulse nexadark tor wg-quick; do command -v $c >/dev/null && printf "%s," $c; done)',
+    # The assistant's hands: a sandboxed (Landlock) write as the desktop user.
+    """printf '%s' '{"tool":"write_text","args":{"path":"~/.cache/nexa-tools-check","content":"hi","mode":"overwrite"}}' > /tmp/hreq; """
+    'chmod 644 /tmp/hreq; echo HANDS=$(su user -s /bin/sh -c "nexa-tools < /tmp/hreq" 2>&1 | grep -o "\\"ok\\":[a-z]*")',
+    'echo APPS=$(for c in nexa-pulse nexadark tor wg-quick nexa-pack nexa-mindd nexa-tools llama-server; do command -v $c >/dev/null && printf "%s," $c; done)',
+    # Nexa Mind runs at boot and the desktop user can reach it (group nexa-mind).
+    'echo MIND=$(su user -s /bin/sh -c "nexa-mindd status" 2>&1 | grep -o "\\"state\\": *\\"[a-z]*\\"" | tr -d " \\"")',
 )
 
 
@@ -145,7 +150,7 @@ def main(argv):
         report = [l for l in text.split(marker)[-2].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
-                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS="))] if text.count(marker) >= 2 else []
+                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS="))] if text.count(marker) >= 2 else []
         print("\n".join(report) if report else "no report (serial login failed?)")
         if extra and text.count("EXTRA_END") >= 2:
             print("--- --run output\n" + text.split("EXTRA_BEGIN")[-1].split("EXTRA_END")[0].strip())

@@ -17,6 +17,10 @@ def load_config():
         "model": os.environ.get("NEXA_AI_MODEL", DEFAULT_MODEL),
         "allow_control": False,
         "require_confirmation": True,
+        # "auto": Nexa Mind on this machine when a model is installed, Claude
+        # online if an API key is set, the simple offline helper otherwise.
+        # "local" / "claude" force one.
+        "backend": os.environ.get("NEXA_AI_BACKEND", "auto"),
     }
     if os.path.exists(CONFIG_PATH):
         try:
@@ -25,6 +29,22 @@ def load_config():
         except (OSError, json.JSONDecodeError) as e:
             print(f"warning: could not read {CONFIG_PATH}: {e}", file=sys.stderr)
     return cfg
+
+
+def pick_backend(cfg):
+    """"local", "claude", or None (only the keyword helper is left)."""
+    from . import local_client
+    want = cfg.get("backend", "auto")
+    if want in ("auto", "local") and local_client.available():
+        return "local"
+    if want in ("auto", "claude") and cfg.get("api_key"):
+        return "claude"
+    return None
+
+
+def backend_label(backend):
+    return {"local": "Nexa Mind (on this computer)", "claude": "Claude (online)"}.get(
+        backend, "offline helper (no model installed, no API key)")
 
 
 def make_logger():
@@ -64,16 +84,17 @@ def print_event(kind, payload):
 
 def ask(cfg, query, allow_control_override=None):
     allow_control = cfg["allow_control"] if allow_control_override is None else allow_control_override
-    if not cfg.get("api_key"):
+    backend = pick_backend(cfg)
+    if backend is None:
         print(local_fallback.answer(query))
         return
     try:
         agent.run(
-            cfg["api_key"], cfg["model"], query, allow_control,
-            cfg["require_confirmation"], confirm, make_logger(), print_event,
+            cfg["api_key"], None if backend == "local" else cfg["model"], query, allow_control,
+            cfg["require_confirmation"], confirm, make_logger(), print_event, backend=backend,
         )
     except (client.NetworkError, client.ApiError) as e:
-        print(f"(cloud AI unavailable: {e})")
+        print(f"({backend_label(backend)} unavailable: {e})")
         print(local_fallback.answer(query))
 
 
@@ -90,7 +111,7 @@ def main(argv=None):
         ask(cfg, " ".join(args.query), allow_control)
         return
 
-    mode = "cloud" if cfg.get("api_key") else "offline (no API key configured)"
+    mode = backend_label(pick_backend(cfg))
     control = "on" if (cfg["allow_control"] or args.allow_control) else "off"
     print(f"NexaOS assistant — {mode}, control: {control}. Ctrl-D to exit.")
     while True:

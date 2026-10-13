@@ -11,7 +11,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from . import privileged
 from .connections import BluetoothPage, VpnPage
-from nexa_common import compositor, persist, sysconf, themes
+from nexa_common import actionui, compositor, mind, persist, sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -563,6 +563,38 @@ class SettingsWindow(Gtk.Window):
         page = self._page("Assistant")
         cfg = _load_ai_config()
 
+        # Nexa Mind: the assistant on this computer (nexa-mindd, no internet).
+        page.pack_start(self._field_label("Nexa Mind — the assistant on this computer"), False, False, 0)
+        intro = Gtk.Label(label="Answers and acts without the internet; nothing you ask leaves this computer. "
+                                "Needs a one-time download of the model.", xalign=0)
+        intro.set_line_wrap(True)
+        intro.set_name("value")
+        page.pack_start(intro, False, False, 0)
+        self.mind_status = Gtk.Label(label="", xalign=0)
+        self.mind_status.set_line_wrap(True)
+        page.pack_start(self.mind_status, False, False, 0)
+        self.mind_progress = Gtk.ProgressBar()
+        self.mind_progress.set_no_show_all(True)
+        page.pack_start(self.mind_progress, False, False, 0)
+        self.mind_download = Gtk.Button(label="Download the offline model")
+        self.mind_download.set_name("actionbtn")
+        self.mind_download.set_halign(Gtk.Align.START)
+        self.mind_download.connect("clicked", self._on_mind_download)
+        self.mind_download.set_no_show_all(True)
+        page.pack_start(self.mind_download, False, False, 0)
+
+        page.pack_start(self._field_label("Which assistant answers"), False, False, 0)
+        self.backend_combo = Gtk.ComboBoxText()
+        for key, label in (("auto", "Automatic: this computer if the model is installed, else Claude"),
+                           ("local", "Only this computer (never online)"),
+                           ("claude", "Only Claude (online)")):
+            self.backend_combo.append(key, label)
+        self.backend_combo.set_active_id(cfg.get("backend", "auto"))
+        page.pack_start(self.backend_combo, False, False, 0)
+        page.pack_start(Gtk.Box(), False, False, 6)
+        self._refresh_mind()
+        GLib.timeout_add_seconds(2, self._tick_mind)
+
         page.pack_start(self._field_label("Claude API key"), False, False, 0)
         self.api_key_entry = Gtk.Entry()
         self.api_key_entry.set_name("entry")
@@ -580,7 +612,7 @@ class SettingsWindow(Gtk.Window):
             page, "Allow control actions", cfg.get("allow_control", False),
         )
         self.require_confirmation_toggle = self._toggle_row(
-            page, "Require confirmation for control actions", cfg.get("require_confirmation", True),
+            page, "Ask before the assistant changes anything", cfg.get("require_confirmation", True),
         )
 
         save_btn = Gtk.Button(label="Save")
@@ -591,7 +623,64 @@ class SettingsWindow(Gtk.Window):
         self.assistant_status = Gtk.Label(label="")
         self.assistant_status.set_xalign(0)
         page.pack_start(self.assistant_status, False, False, 0)
+
+        # Activity: every file change the assistant made (nexa-tools' journal), with Undo.
+        page.pack_start(self._field_label("Activity"), False, False, 0)
+        self.activity = actionui.ActivityTimeline(limit=30)
+        page.pack_start(self.activity, False, False, 0)
         return page
+
+    def _tick_mind(self):
+        if self.stack.get_visible_child_name() == "Assistant":
+            self._refresh_mind()
+        return True
+
+    def _refresh_mind(self):
+        st = mind.status()
+        if st is None:
+            self._set_label(self.mind_status, "The Nexa Mind service isn't running.", error=True)
+            self.mind_download.hide()
+            self.mind_progress.hide()
+            return
+        catalogue = {m["name"]: m for m in mind.models()}
+        name = st.get("default_model")
+        model = catalogue.get(name, {})
+        dl = (st.get("downloads") or {}).get(name)
+        if name in (st.get("installed") or []):
+            state = {"idle": "ready (loads when you ask something)", "loading": "loading the model…",
+                     "ready": "ready and loaded"}.get(st.get("state"), st.get("state"))
+            self._set_label(self.mind_status, f"{model.get('title', name)}: {state}. "
+                            f"Uses {st.get('threads')} CPU threads.", error=False)
+            self.mind_download.hide()
+            self.mind_progress.hide()
+        elif dl and dl["phase"] in ("Downloading", "Verifying"):
+            total = max(dl.get("total") or 1, 1)
+            self.mind_progress.set_fraction(min(dl.get("bytes", 0) / total, 1.0))
+            self.mind_progress.show()
+            verb = "Checking the download" if dl["phase"] == "Verifying" else "Downloading"
+            self._set_label(self.mind_status, f"{verb}: {dl.get('bytes', 0) / 1e9:.2f} of {total / 1e9:.2f} GB",
+                            error=False)
+            self.mind_download.hide()
+        else:
+            size = model.get("size", 0) / 1e9
+            failed = dl["phase"].get("Failed") if dl and isinstance(dl.get("phase"), dict) else None
+            msg = f"Last download failed: {failed}. " if failed else ""
+            if persist.status()["live"] and not persist.status()["active"]:
+                msg += ("On the live USB the model would only be kept in memory until you shut down; "
+                        "turn on \"Keep my files on this USB\" (System) or install NexaOS first.")
+            self._set_label(self.mind_status, msg or "Not downloaded yet.", error=bool(failed))
+            self.mind_download.set_label(f"Download the offline model ({size:.1f} GB)")
+            self.mind_download.show()
+            self.mind_progress.hide()
+        return False
+
+    def _on_mind_download(self, _btn):
+        try:
+            mind.download(mind.status()["default_model"])
+        except (mind.MindError, mind.MindUnreachable, TypeError) as e:
+            self._set_label(self.mind_status, f"Couldn't start the download: {e}", error=True)
+            return
+        self._refresh_mind()
 
     def _toggle_row(self, page, label_text, initial):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -624,6 +713,7 @@ class SettingsWindow(Gtk.Window):
             "model": self.model_entry.get_text().strip() or "claude-opus-5-5",
             "allow_control": self.allow_control_toggle.get_active(),
             "require_confirmation": self.require_confirmation_toggle.get_active(),
+            "backend": self.backend_combo.get_active_id() or "auto",
         }
         try:
             privileged.call("write_ai_config", data=data)

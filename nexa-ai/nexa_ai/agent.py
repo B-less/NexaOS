@@ -3,7 +3,8 @@ from . import client, tools
 SYSTEM_PROMPT = """You are the built-in system assistant for NexaOS, running as a local process \
 on the machine you are inspecting. You have tools to read real hardware and kernel state (CPU, \
 memory, temperatures, PCI/USB devices, disks, kernel modules, logs); to browse, search, read, \
-write, move, copy, and delete files under the user's own home directory; to list \
+write, move, copy and trash files in the user's home, tidy folders, find duplicate files, and \
+undo any of those file actions (every one gets an undo_id); to list \
 installed apps and launch them; to list, focus, and close open windows in the current Sway \
 session; to search installed apk packages and see what is installed; to read and change the \
 system volume and mute state; to see, connect to, disconnect from, and forget WiFi networks (never handling passwords - new secured networks are set up in the Network app); to show desktop notifications; and, when control is enabled, to \
@@ -14,27 +15,38 @@ install or remove apk packages).
 Always prefer calling a tool over guessing. Report real numbers and real file/window/package \
 listings from tool results, not estimates. Before calling a tool that changes something (writing, \
 moving, or deleting a file, launching an app, closing a window, or a control action), briefly say \
-what you are about to do and why. Never call reboot_system, poweroff_system, delete_file, or \
-remove_package without the user explicitly asking for it in this conversation."""
+what you are about to do and why. For tidying, call organize_folder, \
+show the plan, and call apply_moves only after the user agrees. Never call reboot_system, \
+poweroff_system, delete_file, or remove_package without the user explicitly asking for it in this conversation."""
+
+LOCAL_SYSTEM_PROMPT = """You are Nexa, the assistant built into NexaOS, running on this computer \
+with no internet needed. Use the tools to get real facts about this machine and the user's files \
+instead of guessing, and to do what the user asks. Say briefly what you are about to do before \
+changing anything; every file change has an Undo button for the user. To tidy a folder, call \
+organize_folder, show the plan, and call apply_moves only after the user agrees. Answer in a few short sentences."""
 
 MAX_TURNS = 8
 
 
 def run(api_key, model, user_query, allow_control, require_confirmation, confirm_fn, log_fn,
-        on_event, history=None):
+        on_event, history=None, backend="claude"):
     """Runs the agent loop, emitting on_event(kind, payload) as it goes instead of
     printing directly, so CLI and GUI callers can render each kind their own way.
 
     Event kinds: "text" (payload: str), "tool_call" (payload: {name, args}),
     "tool_result" (payload: {name, args, result, error}).
     """
+    """backend: "claude" (online) or "local" (Nexa Mind, on this machine)."""
     messages = list(history or [])
     messages.append({"role": "user", "content": user_query})
+    if backend == "local":
+        from . import local_client
+        send, system, specs = local_client.create_message, LOCAL_SYSTEM_PROMPT, tools.anthropic_tool_specs(tools.LOCAL_TOOLS)
+    else:
+        send, system, specs = client.create_message, SYSTEM_PROMPT, tools.anthropic_tool_specs()
 
     for _ in range(MAX_TURNS):
-        resp = client.create_message(
-            api_key, model, SYSTEM_PROMPT, messages, tools.anthropic_tool_specs(),
-        )
+        resp = send(api_key, model, system, messages, specs)
         content = resp.get("content", [])
         stop = resp.get("stop_reason")
         if stop == "refusal":

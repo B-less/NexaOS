@@ -36,6 +36,23 @@ make refresh  # ~5 min: re-provision packages/apps/configs into the existing roo
 make test     # host-side unit tests (no VM); about 15 suites
 ```
 
+### Native tools (Rust)
+
+`tools/` is one Cargo workspace: `nexa-sys` (shared Landlock sandbox code),
+`nexa-pack` (.nexa packages), `nexa-mindd` (on-device AI service) and
+`nexa-tools` (the assistant's file actions). They build as static musl
+binaries into `build/native/`, which provisioning copies to `/usr/local/bin`.
+
+```bash
+make native        # release build of every tool
+make test-native   # cargo tests + nexa-pack and nexa-mindd end-to-end tests
+```
+
+Rebuilds are incremental: a builder image with Rust preinstalled
+(`nexa-rust:3.24`, made once), a shared `tools/target/` folder, the crate
+registry cached in `/var/tmp/nexa-cargo`, and thin LTO, so only the crates
+you changed recompile.
+
 Change `build.conf` to add Alpine packages (`ALPINE_PACKAGES_*`) or bump the
 version. `make refresh` needs a rootfs from one earlier `make iso`.
 
@@ -51,7 +68,8 @@ cd kernel/linux-6.18.33 && make -j"$(nproc)" bzImage && cp arch/x86/boot/bzImage
 
 | Command | What it checks |
 |---|---|
-| `make test` | Unit tests: installer, privilege helpers, Wi-Fi/Bluetooth against mock D-Bus services, VPN file checks, browser history/downloads/Tor helpers, themes, Nexa Pulse |
+| `make test` | Unit tests: installer, privilege helpers, Wi-Fi/Bluetooth against mock D-Bus services, VPN file checks, browser history/downloads/Tor helpers, themes, Nexa Pulse, the assistant (agent loop, local back-end, file tools and their cards) |
+| `make test-native` | Rust workspace tests (sandbox, packages, Nexa Mind, file actions with undo/trash/Landlock), signed-package round trips, and Nexa Mind answering with the real model |
 | `python3 scripts/test-live-boot.py` | Boots the ISO (UEFI, as a USB stick) in QEMU, screenshots the desktop, logs in on serial and reports Alpine version, firewall, kernel hardening, SSH off, firmware errors, running desktop parts, Bluetooth service, WireGuard |
 | `python3 scripts/test-install-cycle.py [--uefi]` | Boots the live ISO, installs to a blank virtual disk with a custom username and password, boots the installed disk alone and logs in |
 | `sh scripts/test-app-headless.sh APP_DIR MODULE out.png` | Runs one app in a headless Sway container and saves a screenshot (see the script for `SETUP`, `WALLPAPER`, `APP_ARGS`) |
@@ -68,6 +86,7 @@ scripts/                  provisioning, image/ISO builders, staging (stage-*.sh)
 common/nexa_common/       shared Python: themes, titlebar, compositor, Wi-Fi, Bluetooth,
                           privilege elevation, installer, VPN file checks
 common/tests/             unit tests (make test)
+tools/                    Rust workspace: nexa-sys, nexa-pack, nexa-mindd, nexa-tools
 shell/                    bar panels: start menu, Control Centre, Dock, Launchpad
 <app>/nexa_<app>/         one directory per app (browser, settings-app, pulse, ...)
 assets/                   icons, wallpapers

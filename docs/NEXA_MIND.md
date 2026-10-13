@@ -172,11 +172,67 @@ The assistant acts through the same tool layer NexaOS already has
 
 ---
 
+## M1 as built
+
+`nexa-mindd` (Rust, ~900 lines, 13 unit tests) runs as the unprivileged
+`nexa-mind` user (OpenRC service `nexa-mind`), confines itself and its
+children with Landlock (ABI 7 on the reference kernel: system read-only,
+own folders read-write, outbound TCP 443 only, no listening ports), checks
+each caller with SO_PEERCRED, picks one thread per physical core from sysfs
+topology, starts llama-server on a private Unix socket on the first
+question (nice 5) and unloads it after 10 idle minutes, and downloads
+models with curl, accepting them only at the catalogue's exact size and
+SHA-256. The assistant uses it through `nexa_ai/local_client.py` (same
+interface as the Claude client; a short prompt and 16 focused tools).
+Settings > Assistant downloads the model and picks Automatic / This
+computer only / Claude only.
+
+End-to-end test (`scripts/test-nexa-mind.sh`, real model, on the HP's CPU):
+"capital of Ghana?" → "Accra" in 45 s including loading the model; the
+agent asked "how much RAM?" called `get_mem_info` itself and answered in
+90 s (first turn: the prompt + tools are read once, then cached); unload
+on request. Tools now return figures ready to read (small models garble
+long raw numbers).
+
+## M3 as built (files)
+
+`nexa-tools` (Rust, static, ~700 KB) is the assistant's hands for files.
+Each request is one run, as the desktop user: it resolves the paths
+(inside home only; never `~/.ssh`, `~/.gnupg`, keyrings, browser profiles,
+cloud credentials or Nexa Mind's own records, and symlinks can't get
+around that), then restricts itself with Landlock to exactly the folders
+that request needs, with no network, and only then touches anything.
+
+| Tool | What it does |
+|---|---|
+| `list_dir`, `read_text`, `search` | look (search skips hidden and secret folders) |
+| `find_duplicates` | same size, then same SHA-256; reports the space to free |
+| `organize_plan` → `apply_moves` | sort a folder by type or month; the plan moves nothing, applying is one undoable action |
+| `write_text` | create (never replaces), overwrite or append, keeping the previous version |
+| `make_dir`, `move`, `copy`, `trash` | trash follows the freedesktop Trash spec, so the Files app can restore too |
+| `undo`, `history` | every change has an id; undo replays it backwards and refuses to overwrite anything that appeared since |
+
+Every change is journaled in `~/.local/share/nexa-mind/undo/<id>/` and
+logged to `activity.jsonl`. The assistant shows each change as a card
+(what, where, a preview; Allow / Not now; afterwards Undo), and the
+Activity view (assistant window and Settings > Assistant) lists them by
+day, each with Undo. Python only draws these; it never touches the files.
+
+Tests: 5 unit + 7 end-to-end tests run the real binary inside Landlock
+(write then undo, overwrite keeps the old version, trash then restore,
+plan then apply then undo, duplicates, and refusals: `~/.ssh` directly and
+through a symlink, `/etc/shadow`, `../` escapes, forging the activity log,
+moving out of home, trashing home itself); the Python side is tested
+against a fake binary and then round-trips through the real one.
+
+Still to do in M3: documents (PDF/Office text), settings and system tools
+through the same runner, and the untrusted-content guard.
+
 ## Milestones
 
 | | Milestone | Done when |
 |---|---|---|
-| M1 | **Runtime**: llama.cpp in the image, model manager with SHA-256 check, `nexa-mind` service on a Unix socket, auto-tune; the assistant's agent talks to it (tool calls included) | offline question answered with a tool call, in QEMU and on the HP |
+| M1 ✅ | **Runtime** (done 2026-10-13, `tools/nexa-mindd`, Rust): llama.cpp in the image, model manager with SHA-256 check, `nexa-mind` service on a Unix socket, auto-tune; the assistant's agent talks to it (tool calls included) | offline question answered with a tool call, in QEMU and on the HP |
 | M2 | **Kernel**: PSI, UCLAMP_TASK, POWERCAP/RAPL, THP (madvise); cgroup for the model | readings visible in Pulse; model throttled under load |
 | M3 | **Rust tool runner** (`nexa-tools`) + **permission broker** + audit log + untrusted-content guard. Tools: files (read, write/edit with **undo** — every write keeps the previous version — create, rename, move, copy, delete to a recoverable Nexa trash, search by name and by meaning), documents (summarise, extract text from PDF/Office/images), organise (sort a folder, batch rename, duplicates; shows the whole plan first), apps and web (open, read a page as untrusted), settings (Wi-Fi, Bluetooth, VPN, theme, brightness, volume, Do Not Disturb via the same services Settings uses), system (status, logs, services, packages, power), screen (copy text, ask about it). Each call runs under Landlock limited to the folders it names. | tests: injected file text can't trigger a silent action; a write is undoable; a sandboxed call can't read `~/.ssh` |
 | M4 | **Context index** (text, PDF) + Nexus file search by meaning | finds a file by describing it |

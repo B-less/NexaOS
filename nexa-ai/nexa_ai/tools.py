@@ -3,11 +3,10 @@ import os
 import pwd
 import re
 import shlex
-import shutil
 import subprocess
 import time
 
-from nexa_common import apkops, audioctl, elevate
+from nexa_common import apkops, audioctl, elevate, hands
 
 READ = "read"
 CONTROL = "control"
@@ -67,13 +66,20 @@ def get_cpu_info(_args):
 
 
 def get_mem_info(_args):
-    text = _read_file("/proc/meminfo")
-    out = {}
-    for line in text.splitlines():
-        if line.startswith(("MemTotal", "MemFree", "MemAvailable", "SwapTotal", "SwapFree")):
-            key, val = line.split(":", 1)
-            out[key.strip()] = val.strip()
-    return out
+    """Memory in GB, ready to read out: small on-device models garble long
+    raw kB figures when they reformat them, so the tool does the maths."""
+    kb = {}
+    for line in _read_file("/proc/meminfo").splitlines():
+        key, _, rest = line.partition(":")
+        if key in ("MemTotal", "MemAvailable", "SwapTotal", "SwapFree") and rest.split():
+            kb[key] = int(rest.split()[0])
+    gb = lambda k: round(kb.get(k, 0) / 1024 / 1024, 1)
+    total, avail = gb("MemTotal"), gb("MemAvailable")
+    return {
+        "total_gb": total, "available_gb": avail, "used_gb": round(total - avail, 1),
+        "swap_total_gb": gb("SwapTotal"), "swap_free_gb": gb("SwapFree"),
+        "summary": f"{total} GB of RAM in total, {round(total - avail, 1)} GB in use, {avail} GB available",
+    }
 
 
 def get_uptime_load(_args):
@@ -259,110 +265,66 @@ def poweroff_system(_args):
     return "poweroff initiated"
 
 
-def _safe_home_path(path, must_exist=False):
-    """Resolves `path` and refuses it unless it lands inside HOME_DIR, using
-    realpath (not string prefix on the raw input) so a symlink under
-    /home/user that points outside it can't be used to escape."""
-    if not path:
-        raise ToolError("path is required")
-    if not path.startswith("/"):
-        path = os.path.join(HOME_DIR, path)
-    real = os.path.realpath(path)
-    real_home = os.path.realpath(HOME_DIR)
-    if real != real_home and not real.startswith(real_home + os.sep):
-        raise ToolError(f"path must be inside {HOME_DIR}")
-    if must_exist and not os.path.exists(real):
-        raise ToolError(f"no such file or directory: {path}")
-    return real
+# Files: done by nexa-tools (Rust, Landlock-sandboxed per call, undoable).
+# These wrappers only translate argument names; see nexa_common/hands.py.
+def _hands(tool, args):
+    try:
+        return hands.call(tool, args)
+    except hands.HandsError as e:
+        raise ToolError(str(e))
 
 
 def list_dir(args):
-    path = _safe_home_path(args.get("path", "."), must_exist=True)
-    if not os.path.isdir(path):
-        raise ToolError(f"not a directory: {path}")
-    entries = []
-    with os.scandir(path) as it:
-        for e in it:
-            try:
-                st = e.stat(follow_symlinks=False)
-                entries.append({
-                    "name": e.name,
-                    "type": "dir" if e.is_dir(follow_symlinks=False) else "file",
-                    "size": st.st_size,
-                })
-            except OSError:
-                continue
-    entries.sort(key=lambda e: e["name"])
-    return entries[:500]
+    return _hands("list_dir", {"path": args.get("path") or "~"})
 
 
 def read_text_file(args):
-    path = _safe_home_path(args.get("path", ""), must_exist=True)
-    if not os.path.isfile(path):
-        raise ToolError(f"not a file: {path}")
-    return _read_file(path)
+    return _hands("read_text", {"path": args.get("path", "")})
 
 
 def write_text_file(args):
-    path = _safe_home_path(args.get("path", ""))
-    content = args.get("content", "")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(content)
-    return {"wrote": path, "bytes": len(content)}
+    return _hands("write_text", {"path": args.get("path", ""), "content": args.get("content", ""),
+                                 "mode": args.get("mode", "create")})
 
 
 def search_files(args):
-    query = args.get("query", "").lower()
-    if not query:
-        raise ToolError("query is required")
-    root = _safe_home_path(args.get("root", "."), must_exist=True)
-    matches = []
-    scanned = 0
-    for dirpath, dirnames, filenames in os.walk(root):
-        for name in filenames:
-            scanned += 1
-            if scanned > 20000:
-                break
-            if query in name.lower():
-                matches.append(os.path.join(dirpath, name))
-                if len(matches) >= 200:
-                    return matches
-        if scanned > 20000:
-            break
-    return matches
+    return _hands("search", {"pattern": args.get("query", ""), "path": args.get("root") or "~"})
 
 
 def move_file(args):
-    src = _safe_home_path(args.get("src", ""), must_exist=True)
-    dest = _safe_home_path(args.get("dest", ""))
-    shutil.move(src, dest)
-    return {"moved": src, "to": dest}
+    return _hands("move", {"from": args.get("src", ""), "to": args.get("dest", "")})
 
 
 def copy_file(args):
-    src = _safe_home_path(args.get("src", ""), must_exist=True)
-    dest = _safe_home_path(args.get("dest", ""))
-    if os.path.isdir(src):
-        shutil.copytree(src, dest)
-    else:
-        shutil.copy2(src, dest)
-    return {"copied": src, "to": dest}
+    return _hands("copy", {"from": args.get("src", ""), "to": args.get("dest", "")})
 
 
 def delete_file(args):
-    path = _safe_home_path(args.get("path", ""), must_exist=True)
-    if os.path.isdir(path):
-        shutil.rmtree(path)
-    else:
-        os.remove(path)
-    return {"deleted": path}
+    return _hands("trash", {"path": args.get("path", "")})
 
 
 def create_dir(args):
-    path = _safe_home_path(args.get("path", ""))
-    os.makedirs(path, exist_ok=True)
-    return {"created": path}
+    return _hands("make_dir", {"path": args.get("path", "")})
+
+
+def find_duplicates(args):
+    return _hands("find_duplicates", {"path": args.get("path") or "~"})
+
+
+def organize_folder(args):
+    return _hands("organize_plan", {"path": args.get("path") or "~/Downloads", "by": args.get("by", "type")})
+
+
+def apply_moves(args):
+    return _hands("apply_moves", {"moves": args.get("moves") or []})
+
+
+def undo_action(args):
+    return _hands("undo", {"id": args.get("id", "")})
+
+
+def recent_actions(args):
+    return _hands("history", {"limit": args.get("limit", 10)})
 
 
 def _parse_desktop_file(path):
@@ -671,25 +633,47 @@ TOOLS = {
     },
     "list_dir": {
         "category": READ, "func": list_dir,
-        "description": "List files and directories under a path inside the user's home directory.",
+        "description": "List files and folders in a folder inside the user's home.",
         "input_schema": {"type": "object", "properties": {
-            "path": {"type": "string", "description": "Path relative to or under the home directory, defaults to the home directory itself"},
+            "path": {"type": "string", "description": "e.g. ~/Documents; defaults to the home folder"},
         }},
     },
     "read_text_file": {
         "category": READ, "func": read_text_file,
-        "description": "Read the contents of a text file under the user's home directory (up to 64KB).",
+        "description": "Read a text file inside the user's home (up to 256 KB).",
         "input_schema": {"type": "object", "properties": {
             "path": {"type": "string"},
         }, "required": ["path"]},
     },
     "search_files": {
         "category": READ, "func": search_files,
-        "description": "Search for files by (case-insensitive substring) name under a directory in the user's home, recursively.",
+        "description": "Find files whose name contains some text, in a folder of the user's home and below.",
         "input_schema": {"type": "object", "properties": {
-            "query": {"type": "string", "description": "Substring to match against file names"},
-            "root": {"type": "string", "description": "Directory to search under, defaults to the home directory"},
+            "query": {"type": "string", "description": "Text to look for in file names"},
+            "root": {"type": "string", "description": "Folder to search, defaults to the home folder"},
         }, "required": ["query"]},
+    },
+    "find_duplicates": {
+        "category": READ, "func": find_duplicates,
+        "description": "Find files with identical content in a folder and below, and how much space removing the extra copies would free.",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Folder to check, defaults to the home folder"},
+        }},
+    },
+    "organize_folder": {
+        "category": READ, "func": organize_folder,
+        "description": "Plan tidying a folder: sort its files into subfolders by type (Pictures, Documents, ...) or by month. Moves nothing; show the plan, then call apply_moves with its moves.",
+        "input_schema": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Folder to tidy, defaults to ~/Downloads"},
+            "by": {"type": "string", "enum": ["type", "month"]},
+        }},
+    },
+    "recent_actions": {
+        "category": READ, "func": recent_actions,
+        "description": "The assistant's recent file actions, newest first, with the id to undo each.",
+        "input_schema": {"type": "object", "properties": {
+            "limit": {"type": "integer"},
+        }},
     },
     "list_installed_apps": {
         "category": READ, "func": list_installed_apps,
@@ -698,38 +682,54 @@ TOOLS = {
     },
     "write_text_file": {
         "category": ACTION, "func": write_text_file,
-        "description": "Create or overwrite a text file under the user's home directory with the given content.",
+        "description": "Write a text file inside the user's home. mode: create (default, never replaces a file), overwrite or append (the old version is kept so it can be undone).",
         "input_schema": {"type": "object", "properties": {
             "path": {"type": "string"}, "content": {"type": "string"},
+            "mode": {"type": "string", "enum": ["create", "overwrite", "append"]},
         }, "required": ["path", "content"]},
     },
     "move_file": {
         "category": ACTION, "func": move_file,
-        "description": "Move or rename a file/directory within the user's home directory.",
+        "description": "Move or rename a file or folder inside the user's home (undoable).",
         "input_schema": {"type": "object", "properties": {
             "src": {"type": "string"}, "dest": {"type": "string"},
         }, "required": ["src", "dest"]},
     },
     "copy_file": {
         "category": ACTION, "func": copy_file,
-        "description": "Copy a file/directory within the user's home directory.",
+        "description": "Copy a file inside the user's home (undoable).",
         "input_schema": {"type": "object", "properties": {
             "src": {"type": "string"}, "dest": {"type": "string"},
         }, "required": ["src", "dest"]},
     },
     "create_dir": {
         "category": ACTION, "func": create_dir,
-        "description": "Create a directory (and parents) under the user's home directory.",
+        "description": "Create a folder (and its parents) inside the user's home.",
         "input_schema": {"type": "object", "properties": {
             "path": {"type": "string"},
         }, "required": ["path"]},
     },
     "delete_file": {
         "category": ACTION, "func": delete_file,
-        "description": "Permanently delete a file or directory under the user's home directory. Always confirm with the user first.",
+        "description": "Move a file or folder inside the user's home to the Trash (it can be restored). Only when the user asks.",
         "input_schema": {"type": "object", "properties": {
             "path": {"type": "string"},
         }, "required": ["path"]},
+    },
+    "apply_moves": {
+        "category": ACTION, "func": apply_moves,
+        "description": "Carry out moves planned by organize_folder, as one action that can be undone.",
+        "input_schema": {"type": "object", "properties": {
+            "moves": {"type": "array", "items": {"type": "object", "properties": {
+                "from": {"type": "string"}, "to": {"type": "string"}}, "required": ["from", "to"]}},
+        }, "required": ["moves"]},
+    },
+    "undo_action": {
+        "category": ACTION, "func": undo_action,
+        "description": "Undo one of the assistant's file actions by its undo_id.",
+        "input_schema": {"type": "object", "properties": {
+            "id": {"type": "string"},
+        }, "required": ["id"]},
     },
     "launch_app": {
         "category": ACTION, "func": launch_app,
@@ -902,10 +902,19 @@ TOOLS = {
 ALWAYS_CONFIRM = {"reboot_system", "poweroff_system", "delete_file"}
 
 
-def anthropic_tool_specs():
+# The on-device model reads its prompt at ~40 tokens/s on a laptop CPU
+# (docs/NEXA_MIND.md), so it gets the tools people use most, not all ~45.
+LOCAL_TOOLS = (
+    "get_cpu_info", "get_mem_info", "get_disk_usage", "list_dir", "read_text_file", "search_files",
+    "write_text_file", "create_dir", "move_file", "delete_file", "organize_folder", "apply_moves",
+    "find_duplicates", "list_installed_apps", "launch_app", "set_volume",
+)
+
+
+def anthropic_tool_specs(names=None):
     return [
         {"name": name, "description": spec["description"], "input_schema": spec["input_schema"]}
-        for name, spec in TOOLS.items()
+        for name, spec in TOOLS.items() if names is None or name in names
     ]
 
 

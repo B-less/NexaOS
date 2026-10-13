@@ -6,12 +6,11 @@
 # Usage: sh scripts/test-nexa-pack.sh
 set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
-mkdir -p /var/tmp/nexa-cargo
-docker run --rm -v "$repo/tools/nexa-pack:/src:ro" -v /var/tmp/nexa-cargo:/root/.cargo/registry alpine:3.24 sh -c '
+sh "$repo/scripts/build-native.sh" >/dev/null   # cached: only changes recompile
+version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
+docker run --rm -v "$repo:/src:ro" -v /var/tmp/nexa-cargo:/root/.cargo/registry "nexa-rust:${version%.*}" sh -c '
 set -e
-apk add -q cargo rust gcc musl-dev make pkgconf gtk+3.0-dev zip unzip >/dev/null 2>&1
-cp -r /src /build && cd /build && cargo build --release -q 2>&1 | tail -3
-P=/build/target/release/nexa-pack
+P=/src/build/native/nexa-pack
 fail() { echo "FAIL: $*"; exit 1; }
 cd /tmp
 $P keygen publisher >/dev/null
