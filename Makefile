@@ -25,7 +25,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps gui-apps stage-gui-rootfs install-deps check-env refresh
+.PHONY: kernel rootfs disk initramfs apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native
 .SECONDARY:
 
 # ============================================================================
@@ -180,7 +180,7 @@ rootfs: alpine-download core-binaries
 # NexaOS identity/config files *after* install so apk can't clobber them, and
 # stages the Nexa GUI apps + OpenRC services. Runs as root in a container so it
 # never needs host sudo/chroot — see scripts/provision-rootfs.sh.
-provision-rootfs: rootfs gui-apps wallpaper icons
+provision-rootfs: rootfs gui-apps native wallpaper icons
 	@echo "$(COLOR_BLUE)Provisioning rootfs: Wayland/Sway packages, identity, GUI apps, configs...$(COLOR_RESET)"
 	@$(DOCKER_RUN) sh -c "apk add --no-cache bash >/dev/null && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
 	@echo "$(COLOR_GREEN)✓ rootfs provisioned$(COLOR_RESET)"
@@ -190,7 +190,7 @@ provision-rootfs: rootfs gui-apps wallpaper icons
 # rootfs (no wipe and no fresh Alpine base), then rebuilds the initramfs,
 # disk image and ISO. Much faster than `make iso` after NexaOS code, config
 # or package-list changes; after changing ALPINE_VERSION use `make iso`.
-refresh: core-binaries gui-apps
+refresh: core-binaries gui-apps native
 	@test -d $(ROOTFS_DIR)/etc || { echo "No rootfs yet: run 'make iso' once first."; exit 1; }
 	@echo "$(COLOR_BLUE)Refreshing rootfs (packages, apps, configs)...$(COLOR_RESET)"
 	@$(DOCKER_RUN) sh -c "apk add --no-cache bash >/dev/null && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
@@ -234,6 +234,16 @@ disk: initramfs
 # ============================================================================
 # APPLICATIONS & WAYLAND DESKTOP STACK
 # ============================================================================
+
+# Native (Rust) tools under tools/: nexa-pack, and the services to come.
+# Static binaries in build/native, staged into the image by stage-native.sh.
+native:
+	@sh scripts/build-native.sh
+
+# The native tools' own tests (cargo test) and nexa-pack end to end
+# (templates, signing, tampering), in a clean Alpine container.
+test-native:
+	@sh scripts/test-nexa-pack.sh
 
 gui-apps:
 	@echo "$(COLOR_BLUE)Building Nexa framebuffer desktop and GUI apps...$(COLOR_RESET)"
@@ -345,6 +355,7 @@ ci: check-env setup
 # test_bluetooth.py need a D-Bus session bus for their mock iwd / BlueZ, so
 # they only run where dbus-run-session exists.
 test:
+	@test -x $(BUILD_DIR)/native/nexa-pack || $(MAKE) native --no-print-directory
 	@echo "$(COLOR_BLUE)Running tests...$(COLOR_RESET)"
 	@set -e; for t in $(BASE_DIR)/common/tests/test_*.py; do \
 		case "$$t" in \

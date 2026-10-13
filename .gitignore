@@ -99,3 +99,9 @@ modules.order
 /gui/build_apps/
 /disk/apps/desktop-gui/fbdesktop
 attic/
+
+# Rust build output
+/tools/*/target/
+/tools/*/dist/
+# Secret signing keys never belong in the repo
+*.key

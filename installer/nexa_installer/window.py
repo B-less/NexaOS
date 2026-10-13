@@ -23,28 +23,56 @@ window { background-image: none; background-color: @nexa_bg; }
 #installbtn:disabled { background-image: none; background-color: @nexa_hover; color: @nexa_disabled; }
 #statuslabel { color: @nexa_ok; font-size: 10pt; }
 #errorlabel { color: @nexa_crit; font-size: 10pt; }
+#trusted { color: @nexa_ok; font-size: 10pt; font-weight: bold; }
+#untrusted { color: @nexa_warn; font-size: 10pt; font-weight: bold; }
+#detail { color: @nexa_muted; font-size: 9.5pt; }
 """
+
+NEXA_PACK = "/usr/local/bin/nexa-pack"
+KEYS_DIR = "/etc/nexa/keys"
+PERMISSION_TEXT = {
+    "network": "the internet", "files.home": "your home folder", "files.documents": "Documents",
+    "files.pictures": "Pictures", "files.music": "Music", "files.videos": "Videos",
+    "camera": "the camera", "microphone": "the microphone", "location": "your location",
+    "notifications": "notifications", "background": "running in the background",
+}
+
+
+def inspect(path):
+    """nexa-pack's report on a package (verification needs no root)."""
+    try:
+        r = subprocess.run([NEXA_PACK, "verify", path, "--keys", KEYS_DIR, "--json"],
+                           capture_output=True, text=True, timeout=60)
+        report = json.loads(r.stdout.strip().splitlines()[-1])
+    except FileNotFoundError:
+        return {"ok": False, "error": "nexa-pack (the package verifier) is not installed"}
+    except (ValueError, IndexError, subprocess.SubprocessError):
+        return {"ok": False, "error": "couldn't read this package"}
+    return report
 
 
 def _call_helper(action, **args):
+    """(ok, message, unverified): unverified means the helper refused only
+    because the publisher isn't trusted, so the user may choose to go on."""
     request = json.dumps({"action": action, "args": args})
     try:
         result = elevate.run_interactive(
-            "/usr/local/bin/nexa-install-helper", request, askpass.ask("Installing a package adds it to the system for every user."), timeout=60,
+            "/usr/local/bin/nexa-install-helper", request,
+            askpass.ask("Installing a package adds it to the system for every user."), timeout=900,
         )
     except elevate.WrongPassword:
-        return False, "Wrong password."
+        return False, "Wrong password.", False
     except (subprocess.SubprocessError, OSError) as e:
-        return False, str(e)
+        return False, str(e), False
     if result is None:
-        return False, "Cancelled."
+        return False, "Cancelled.", False
     try:
         response = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return False, (result.stderr or "").strip() or "helper produced no output"
+        return False, (result.stderr or "").strip() or "helper produced no output", False
     if response.get("ok"):
-        return True, response.get("output", "")
-    return False, response.get("error", "unknown error")
+        return True, response.get("output", ""), False
+    return False, response.get("error", "unknown error"), bool(response.get("unverified"))
 
 
 class InstallerWindow(Gtk.Window):
@@ -85,6 +113,14 @@ class InstallerWindow(Gtk.Window):
         self.desc_label.set_justify(Gtk.Justification.CENTER)
         root.pack_start(self.desc_label, False, False, 0)
 
+        self.trust_label = Gtk.Label(label="")
+        root.pack_start(self.trust_label, False, False, 0)
+        self.detail_label = Gtk.Label(label="")
+        self.detail_label.set_name("detail")
+        self.detail_label.set_line_wrap(True)
+        self.detail_label.set_justify(Gtk.Justification.CENTER)
+        root.pack_start(self.detail_label, False, False, 0)
+
         self.install_btn = Gtk.Button(label="Install")
         self.install_btn.set_name("installbtn")
         self.install_btn.set_sensitive(False)
@@ -101,15 +137,29 @@ class InstallerWindow(Gtk.Window):
         )
 
     def _load(self):
-        try:
-            self.manifest = packaging.read_manifest(self.nexa_path)
-        except packaging.PackageError as e:
-            self._set_status(str(e), error=True)
+        report = inspect(self.nexa_path)
+        if not report.get("ok"):
+            self._set_status(f"This package can't be installed: {report.get('error')}", error=True)
             return
+        self.manifest = report
 
-        self.name_label.set_text(self.manifest["name"])
-        self.meta_label.set_text(f"{self.manifest['id']}  ·  v{self.manifest['version']}")
-        self.desc_label.set_text(self.manifest.get("description", ""))
+        self.name_label.set_text(report["name"])
+        size_mb = report.get("size", 0) / 1024 / 1024
+        self.meta_label.set_text(f"{report['id']}  ·  v{report['version']}  ·  {size_mb:.1f} MB")
+        self.desc_label.set_text(report.get("description", ""))
+        if report["trust"] == "trusted":
+            self.trust_label.set_name("trusted")
+            self.trust_label.set_text(f"Verified publisher ({report['publisher']})")
+        else:
+            self.trust_label.set_name("untrusted")
+            self.trust_label.set_text("Not signed by a publisher you trust" if report["trust"] == "unknown-publisher"
+                                      else "Not signed: the publisher can't be verified")
+        details = []
+        if report.get("permissions"):
+            details.append("Asks for: " + ", ".join(PERMISSION_TEXT.get(p, p) for p in report["permissions"]))
+        if report.get("depends"):
+            details.append("Also installs: " + ", ".join(report["depends"]))
+        self.detail_label.set_text("\n".join(details))
         self.install_btn.set_sensitive(True)
 
         fd, tmp_path = tempfile.mkstemp(prefix="nexa-install-icon-")
@@ -133,13 +183,24 @@ class InstallerWindow(Gtk.Window):
         self.install_btn.set_sensitive(False)
         self._set_status("Installing…")
 
+        self._start_install(allow_unverified=False)
+
+    def _start_install(self, allow_unverified):
         def work():
-            ok, output = _call_helper("install", path=os.path.abspath(self.nexa_path))
-            GLib.idle_add(self._on_install_done, ok, output)
+            ok, output, unverified = _call_helper("install", path=os.path.abspath(self.nexa_path),
+                                                  allow_unverified=allow_unverified)
+            GLib.idle_add(self._on_install_done, ok, output, unverified)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _on_install_done(self, ok, output):
+    def _on_install_done(self, ok, output, unverified=False):
+        if unverified and self._confirm(
+                "Install an unverified app?",
+                output + "\n\nApps from unknown publishers can read your files and use the "
+                "internet. Install anyway?"):
+            self._set_status("Installing…")
+            self._start_install(allow_unverified=True)
+            return False
         if ok:
             self._set_status(output)
         else:

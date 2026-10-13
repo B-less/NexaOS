@@ -24,6 +24,12 @@ ICON_DIR = "/usr/share/icons/hicolor/scalable/apps"
 # One <id>.json per installed package, listing exactly the paths it owns.
 # A package may only overwrite or remove paths recorded under its own id.
 REGISTRY_DIR = "/var/lib/nexa-packages"
+# Native verifier (tools/nexa-pack, Rust): checks every file's SHA-256 and
+# the publisher's Ed25519 signature, then writes the files from the same
+# bytes it checked. Trusted publishers' public keys live in KEYS_DIR.
+NEXA_PACK = "/usr/local/bin/nexa-pack"
+KEYS_DIR = "/etc/nexa/keys"
+APK_NAME_RE = __import__("re").compile(r"^[A-Za-z0-9][A-Za-z0-9+._-]{0,63}$")
 # A package's bin/<id> lands in /usr/local/bin, which comes first on PATH, so
 # an id that matches any existing command would shadow it -- for root too
 # (e.g. a fake `su` that records the password). Checked for unregistered ids.
@@ -100,6 +106,47 @@ def _remove(path):
         os.remove(path)
 
 
+class UnverifiedPackage(packaging.PackageError):
+    """Not signed by a trusted publisher; the installer may retry with
+    allow_unverified after warning the user."""
+
+
+def _native_extract(pkg, dest, allow_unverified):
+    """Verify and unpack with nexa-pack; returns its report (the manifest's
+    fields plus "trust"). Tampered or malformed packages always fail."""
+    try:
+        r = subprocess.run([NEXA_PACK, "extract", pkg, dest, "--keys", KEYS_DIR, "--json"],
+                           capture_output=True, text=True, timeout=300)
+    except FileNotFoundError:
+        raise packaging.PackageError("nexa-pack (the package verifier) is not installed")
+    try:
+        report = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        raise packaging.PackageError((r.stderr or "nexa-pack failed").strip()[-300:])
+    if not report.get("ok"):
+        raise packaging.PackageError(report.get("error", "invalid package"))
+    if report["trust"] != "trusted" and not allow_unverified:
+        shutil.rmtree(dest, ignore_errors=True)
+        who = "isn't signed" if report["trust"] == "unsigned" else "is signed by a publisher this system doesn't trust"
+        raise UnverifiedPackage(f"{report['name']} {who}. Only install it if you trust where it came from.")
+    return report
+
+
+def _install_depends(names):
+    """Alpine packages the app needs (validated again here: root runs apk)."""
+    missing = []
+    for name in names:
+        if not isinstance(name, str) or not APK_NAME_RE.match(name):
+            raise packaging.PackageError(f"invalid dependency name {name!r}")
+        if subprocess.run(["apk", "info", "-e", name], capture_output=True).returncode != 0:
+            missing.append(name)
+    if missing:
+        r = subprocess.run(["apk", "add", "--", *missing], capture_output=True, text=True, timeout=900)
+        if r.returncode != 0:
+            raise packaging.PackageError(f"couldn't install what the app needs ({', '.join(missing)}): "
+                                         + (r.stderr or r.stdout).strip()[-300:])
+
+
 def install(args):
     nexa_path = args["path"]
     if not os.path.isfile(nexa_path):
@@ -107,16 +154,17 @@ def install(args):
 
     with tempfile.TemporaryDirectory(prefix="nexa-install-") as tmp:
         # Work on a private copy: the original is user-writable and could be
-        # swapped between the checks below and the extraction.
+        # swapped while we look at it. nexa-pack then reads that copy once and
+        # writes the files from the very bytes it verified.
         pkg_copy = os.path.join(tmp, "package.nexa")
         shutil.copyfile(nexa_path, pkg_copy)
         payload = os.path.join(tmp, "payload")
-        os.mkdir(payload)
-        manifest = packaging.extract_payload(pkg_copy, payload)
+        manifest = _native_extract(pkg_copy, payload, args.get("allow_unverified") is True)
         pkg_id = manifest["id"]
         owned = _owned_paths(pkg_id)
         _check_no_collision(pkg_id, owned)
 
+        _install_depends(manifest.get("depends", []))
         # Upgrading: clear out what the previous version installed.
         for path in _registered_paths(pkg_id) or []:
             _remove(path)
@@ -152,14 +200,16 @@ def install(args):
                     f"Comment={_desktop_value(manifest.get('description', ''))}\n"
                     f"Exec={owned['bin']}\n"
                     f"Icon={icon_name}\n"
-                    "Terminal=false\n"
+                    f"Terminal={'true' if manifest.get('terminal') is True else 'false'}\n"
                     f"Categories={_desktop_value(manifest.get('categories', 'Utility;'))}\n"
                 )
             installed.append(owned["desktop"])
 
             os.makedirs(REGISTRY_DIR, exist_ok=True)
             with open(_registry_path(pkg_id), "w") as f:
-                json.dump({"id": pkg_id, "version": str(manifest["version"]), "paths": installed}, f)
+                json.dump({"id": pkg_id, "version": str(manifest["version"]), "paths": installed,
+                           "trust": manifest["trust"], "publisher": manifest.get("publisher"),
+                           "permissions": manifest.get("permissions", [])}, f)
         except BaseException:
             # Never leave unregistered files behind: they would block this id
             # from installing again. Every owned path is safe to remove here:
@@ -214,6 +264,9 @@ def main():
     try:
         output = handler(args)
         print(json.dumps({"ok": True, "output": output}))
+    except UnverifiedPackage as e:
+        print(json.dumps({"ok": False, "error": str(e), "unverified": True}))
+        sys.exit(1)
     except (packaging.PackageError, KeyError, OSError) as e:
         print(json.dumps({"ok": False, "error": str(e)}))
         sys.exit(1)
