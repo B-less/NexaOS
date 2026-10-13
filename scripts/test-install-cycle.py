@@ -314,6 +314,10 @@ def main():
     checks = {
         "HOME": f"test -d /home/{TEST_USER} && echo yes",
         "SOFTWARE_NEEDS_PW": f"grep -cx 'permit {TEST_USER} cmd /usr/local/bin/nexa-software-helper' /etc/doas.conf 2>/dev/null || ls -l /etc/doas.conf",
+        # The lock screen checks passwords as the desktop user through PAM's
+        # unix_chkpwd; it once couldn't read /etc/shadow, so nothing unlocked.
+        "UNLOCK_RIGHT": f"printf %s '{TEST_PASSWORD}' | /usr/sbin/unix_chkpwd {TEST_USER} nonull; echo $?",
+        "UNLOCK_WRONG": f"printf %s 'not-the-password' | /usr/sbin/unix_chkpwd {TEST_USER} nonull; echo $?",
         "LOGIN_LOCK": "test -f /etc/nexa/login-required && echo yes",
     }
     for key, cmd in checks.items():
@@ -330,6 +334,10 @@ def main():
     if found["LOGIN_LOCK"] != "yes":
         fail(f"/etc/nexa/login-required missing: the desktop would start unlocked ({found})")
     print(f"[ok] account renamed, starts locked; doas.conf check: {found['SOFTWARE_NEEDS_PW']}")
+    if found["UNLOCK_RIGHT"] != "0" or found["UNLOCK_WRONG"] in ("0", ""):
+        fail("the lock screen can't check passwords: unix_chkpwd as the desktop user returned "
+             f"{found['UNLOCK_RIGHT']!r} for the right password and {found['UNLOCK_WRONG']!r} for a wrong one")
+    print("[ok] lock screen password check: right password accepted, wrong one refused")
 
     print(f"\nPASS: the installed disk booted on its own via GRUB ({'UEFI' if UEFI else 'BIOS'} mode), "
           "no -kernel/-initrd needed, and the installer-set password works.")

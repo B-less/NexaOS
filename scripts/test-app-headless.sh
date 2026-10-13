@@ -23,7 +23,7 @@ version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
 image=nexa-apptest:${version%.*}
 # Built once and reused: installing GTK + WebKit takes minutes.
 if ! docker image inspect "$image" >/dev/null 2>&1; then
-    printf 'FROM alpine:%s\nRUN apk add -q sway grim py3-gobject3 py3-cairo gtk+3.0 gtk-layer-shell webkit2gtk-4.1 swaybg tor curl font-dejavu adwaita-icon-theme hicolor-icon-theme\n' \
+    printf 'FROM alpine:%s\nRUN apk add -q sway grim py3-gobject3 py3-cairo gtk+3.0 gtk-layer-shell webkit2gtk-4.1 swaybg tor curl gcc musl-dev wayland-dev wlr-protocols linux-headers font-dejavu adwaita-icon-theme hicolor-icon-theme\n' \
         "${version%.*}" | docker build -q -t "$image" - >/dev/null
 fi
 mkdir -p "$(dirname "$out")"
@@ -33,13 +33,13 @@ docker run --rm --cap-add SYS_NICE \
     -v "$repo:/src:ro" -v "$outdir:/out" \
     -e APP="$app" -e MODULE="$module" -e SHOT="$(basename "$out")" -e SWAY_CMD="$sway_cmd" \
     -e APP_ARGS="${APP_ARGS:-}" -e WAIT="${WAIT:-5}" -e SETUP="${SETUP:-}" -e HOME=/root \
-    -e WALLPAPER="${WALLPAPER:-}" -e WEBKIT_DISABLE_SANDBOX=1 -e WEBKIT_DISABLE_DMABUF_RENDERER=1 -e WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+    -e WALLPAPER="${WALLPAPER:-}" -e SWAY_DEBUG="${SWAY_DEBUG:-}" -e WEBKIT_DISABLE_SANDBOX=1 -e WEBKIT_DISABLE_DMABUF_RENDERER=1 -e WEBKIT_DISABLE_COMPOSITING_MODE=1 \
     "$image" sh -c '
 set -e
 export XDG_RUNTIME_DIR=/tmp/xdg WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
 mkdir -p $XDG_RUNTIME_DIR && chmod 700 $XDG_RUNTIME_DIR
 printf "output * resolution 1280x800 bg ${WALLPAPER:-#1a1f2e solid_color}\ndefault_border none\n" > /tmp/sway.conf
-sway -c /tmp/sway.conf >/tmp/sway.log 2>&1 &
+sway ${SWAY_DEBUG:+-d} -c /tmp/sway.conf >/tmp/sway.log 2>&1 &
 for i in $(seq 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
 export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
 export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)

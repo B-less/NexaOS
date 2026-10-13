@@ -1,6 +1,6 @@
 #!/bin/sh
 # Lid closed (sway's bindswitch lid:on): lock the screen first, so the
-# machine never wakes up unlocked, then suspend.
-nexa-lock &
-sleep 1
+# machine never wakes up unlocked, then suspend. nexa-lock returns once the
+# lock is in place (swaylock --daemonize).
+nexa-lock
 echo '{"action": "suspend"}' | doas /usr/local/bin/nexa-power-helper >/dev/null 2>&1

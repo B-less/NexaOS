@@ -36,6 +36,15 @@ chown -R 1000:1000 "$ROOTFS_DIR/home/user"
 [ -d "$ROOTFS_DIR/usr/share/backgrounds/nexaos" ] && chown -R 1000:1000 "$ROOTFS_DIR/usr/share/backgrounds/nexaos"
 # nexa-ai-gui (running as "user") needs to read the api_key; see stage-nexa-ai.sh.
 [ -f "$ROOTFS_DIR/etc/nexa-ai/config.json" ] && chown 0:1000 "$ROOTFS_DIR/etc/nexa-ai/config.json"
+# Password checks from the desktop account (the lock screen, doas) go through
+# PAM's unix_chkpwd, which reads /etc/shadow via the "shadow" group (gid 42).
+# Set last: the chown pass above resets groups and a chown clears setgid.
+chown 0:42 "$ROOTFS_DIR/etc/shadow"
+chmod 640 "$ROOTFS_DIR/etc/shadow"
+if [ -f "$ROOTFS_DIR/usr/sbin/unix_chkpwd" ]; then
+    chown 0:42 "$ROOTFS_DIR/usr/sbin/unix_chkpwd"
+    chmod 2755 "$ROOTFS_DIR/usr/sbin/unix_chkpwd"
+fi
 
 rm -f "$IMG"
 # mke2fs creates the backing file itself when it doesn't exist yet, sized from

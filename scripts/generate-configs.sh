@@ -764,7 +764,10 @@ smart_gaps on
 gaps inner 5
 gaps outer 5
 default_border pixel 2
-default_floating_border pixel 2
+# Apps that leave the title bar to the compositor get sway's (themed) bar,
+# so every window has something to drag; apps that draw their own (all Nexa
+# apps, foot) are unaffected.
+default_floating_border normal 2
 
 # Drag any window (not just its titlebar) by holding mod and clicking.
 floating_modifier $mod

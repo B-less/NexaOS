@@ -19,7 +19,7 @@ check("defaults with no saved settings", themes.load_settings(home) == {"theme":
 applied = themes.apply("nebula", 0.5, home=home, reload=False)
 check("apply returns what it applied", applied == {"theme": "nebula", "opacity": 0.5, "glass": True}, str(applied))
 for rel in ("waybar/style.css", "mako/config", "foot/foot.ini", "sway/config.d/20-nexa-theme.conf",
-            "gtk-3.0/settings.ini", "hypr/nexa-theme.conf", "nexa/theme.json"):
+            "gtk-3.0/settings.ini", "hypr/nexa-theme.conf", "swaylock/config", "nexa/theme.json"):
     check(f"apply writes ~/.config/{rel}", os.path.isfile(os.path.join(home, ".config", rel)))
 css = open(os.path.join(home, ".config/waybar/style.css")).read()
 check("bar uses the theme accent and transparency",

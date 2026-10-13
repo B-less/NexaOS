@@ -1,23 +1,27 @@
 #!/bin/sh
-# Lock the screen with swaylock, themed to match NexaOS's dark palette and
-# branded wallpaper. On the live image the "user" account has no password
-# (see /etc/shadow) and Alpine's default PAM config includes `nullok`, so
-# dismissing the lock just needs Enter. An installed system has the password
-# chosen in the installer, which unlocks it instead.
+# Lock the screen: swaylock-effects over a blurred picture of the desktop,
+# with a clock, in the current theme's colours (~/.config/swaylock/config,
+# written by nexa-theme). Works on both Sway and Hyprland (ext-session-lock).
+#
+# The password is checked through PAM (pam_unix + the setgid unix_chkpwd
+# helper, which reads /etc/shadow via the "shadow" group). On the live USB
+# the account has no password: pressing Enter unlocks, so an empty password
+# must not be ignored there. Installed systems ignore a stray Enter.
+#
+# --daemonize: returns once the screen is locked, so the lid handler can
+# suspend right after and swayidle keeps running (screen-off still works).
 set -eu
 
-WALLPAPER=/usr/share/backgrounds/nexaos/wallpaper.png
-ARGS="--ignore-empty-password \
-  --color=1e1e1e \
-  --ring-color=7aa2f7 --ring-ver-color=a6e3a1 --ring-wrong-color=f7768e \
-  --inside-color=1e1e1e --inside-ver-color=1e1e1e --inside-wrong-color=1e1e1e \
-  --line-uses-inside \
-  --key-hl-color=a6e3a1 --bs-hl-color=f7768e \
-  --text-color=e0e0e0 --text-ver-color=e0e0e0 --text-wrong-color=e0e0e0 \
-  --font=monospace --show-failed-attempts"
+# Already locked (the idle timer and the lid can both fire): nothing to do.
+pgrep -x swaylock >/dev/null 2>&1 && exit 0
 
-if [ -f "$WALLPAPER" ]; then
-    exec swaylock $ARGS --scaling fill --image "$WALLPAPER"
-else
-    exec swaylock $ARGS
+set -- --daemonize --screenshots --effect-blur 9x4 --effect-vignette 0.4:0.6 \
+    --clock --timestr "%H:%M" --datestr "%A, %d %B" \
+    --indicator --indicator-radius 120 --indicator-thickness 8 \
+    --font sans --fade-in 0.25 --show-failed-attempts
+
+if [ -f /etc/nexa/login-required ]; then
+    set -- "$@" --ignore-empty-password
 fi
+
+exec swaylock "$@"
