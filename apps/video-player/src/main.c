@@ -168,19 +168,24 @@ static gboolean on_draw_video(GtkWidget *w, cairo_t *cr, gpointer data)
     }
     g_mutex_unlock(&app.frame_lock);
     if (!app.playing) {
-        /* Big hexagon play button while paused. */
+        /* Big hexagon play button while paused, in the theme's colours. */
+        GtkStyleContext *ctx = gtk_widget_get_style_context(w);
+        GdkRGBA accent = {0.30, 0.64, 1.0, 1}, bg = {0.03, 0.05, 0.12, 1}, fg = {0.9, 0.93, 1.0, 1};
+        gtk_style_context_lookup_color(ctx, "nexa_accent", &accent);
+        gtk_style_context_lookup_color(ctx, "nexa_bg_deep", &bg);
+        gtk_style_context_lookup_color(ctx, "nexa_text_strong", &fg);
         double cx = aw / 2.0, cy = ah / 2.0, r = 46;
         hex_path(cr, cx, cy, r);
-        cairo_set_source_rgba(cr, 0.04, 0.06, 0.11, 0.62);
+        cairo_set_source_rgba(cr, bg.red, bg.green, bg.blue, 0.62);
         cairo_fill_preserve(cr);
-        cairo_set_source_rgba(cr, 0.36, 0.64, 1.0, 0.95);
+        cairo_set_source_rgba(cr, accent.red, accent.green, accent.blue, 0.95);
         cairo_set_line_width(cr, 2.5);
         cairo_stroke(cr);
         cairo_move_to(cr, cx - 12, cy - 18);
         cairo_line_to(cr, cx + 20, cy);
         cairo_line_to(cr, cx - 12, cy + 18);
         cairo_close_path(cr);
-        cairo_set_source_rgb(cr, 0.9, 0.93, 1.0);
+        gdk_cairo_set_source_rgba(cr, &fg);
         cairo_fill(cr);
     }
     return TRUE;
@@ -647,30 +652,40 @@ static gboolean on_motion(GtkWidget *w, GdkEventMotion *e, gpointer d)
 /* ---- look ----------------------------------------------------------- */
 
 static const char *CSS =
+    /* Fallback: NexaOS "Horizon". The person's theme (~/.config/gtk-3.0/gtk.css)
+     * overrides these, so the app follows the theme they picked. */
+    "@define-color nexa_bg #0c1228; @define-color nexa_bg_deep #080c1e;"
+    "@define-color nexa_surface #101732; @define-color nexa_surface_hi #222a46;"
+    "@define-color nexa_hover #333a54; @define-color nexa_border #363d5a;"
+    "@define-color nexa_text #d9e0f6; @define-color nexa_text_strong #e6ecff;"
+    "@define-color nexa_muted #8f9bc4; @define-color nexa_accent #4da3ff;"
+    "@define-color nexa_accent_hover #6db4ff; @define-color nexa_on_accent #080c1e;"
+    "@define-color nexa_selected #264779;"
     "* { font-family: Inter, sans-serif; }"
-    "window { background-color: #0b0f1a; color: #e6ecff; }"
-    ".name { color: #e6ecff; font-size: 11pt; }"
-    ".library { background-color: #0b0f1a; }"
+    "window { background-color: @nexa_bg_deep; color: @nexa_text; }"
+    ".name { color: @nexa_text_strong; font-size: 11pt; }"
+    ".library { background-color: @nexa_bg_deep; }"
     ".library list { background-color: transparent; }"
     ".library row { border-radius: 10px; margin: 2px 12px; }"
-    ".library row:hover { background-color: rgba(255,255,255,0.06); }"
-    ".library row:selected { background-color: rgba(90,169,255,0.22); }"
-    ".heading { font-size: 20pt; font-weight: 700; color: #f2f5ff; }"
-    ".sub { color: #8a94b3; }"
-    ".glyph { color: #5aa9ff; font-size: 14pt; }"
-    ".dim { color: #7c86a6; font-size: 9pt; }"
-    ".pill { color: #5aa9ff; border: 1px solid rgba(90,169,255,0.5); border-radius: 10px; padding: 0 8px; font-size: 8.5pt; }"
-    ".controls { background-color: rgba(11,15,26,0.86); border-top: 1px solid rgba(255,255,255,0.06); padding: 6px 12px; }"
-    ".controls button, .primary { background-image: none; background-color: rgba(255,255,255,0.06); color: #e6ecff;"
-    "  border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 4px 12px; box-shadow: none; text-shadow: none; }"
-    ".controls button:hover { background-color: rgba(255,255,255,0.12); }"
-    ".primary { background-color: #5aa9ff; color: #0b0f1a; font-weight: 700; border-color: #5aa9ff; }"
+    ".library row:hover { background-color: @nexa_hover; }"
+    ".library row:selected { background-color: @nexa_selected; }"
+    ".heading { font-size: 15pt; font-weight: 700; color: @nexa_text_strong; }"
+    ".sub { color: @nexa_muted; }"
+    ".glyph { color: @nexa_accent; font-size: 12pt; }"
+    ".dim { color: @nexa_muted; font-size: 8.5pt; }"
+    ".pill { color: @nexa_accent; border: 1px solid alpha(@nexa_accent, 0.5); border-radius: 10px; padding: 0 8px; font-size: 8.5pt; }"
+    ".controls { background-color: alpha(@nexa_bg_deep, 0.86); border-top: 1px solid @nexa_border; padding: 4px 12px; }"
+    ".controls button, .primary { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text_strong;"
+    "  border: 1px solid @nexa_border; border-radius: 10px; padding: 4px 12px; box-shadow: none; text-shadow: none; }"
+    ".controls button:hover { background-color: @nexa_hover; }"
+    ".primary { background-color: @nexa_accent; color: @nexa_on_accent; font-weight: 700; border-color: @nexa_accent; }"
+    ".primary:hover { background-color: @nexa_accent_hover; }"
     ".play { min-width: 44px; font-size: 12pt; }"
-    ".title { font-weight: 600; color: #f2f5ff; }"
-    ".time { font-family: monospace; color: #b8c2e0; }"
-    "scale trough { background-color: rgba(255,255,255,0.14); border-radius: 3px; min-height: 5px; }"
-    "scale highlight { background-color: #5aa9ff; border-radius: 3px; }"
-    "scale slider { background-color: #e6ecff; border-radius: 50%; min-width: 14px; min-height: 14px; border: none; box-shadow: none; }";
+    ".title { font-weight: 600; color: @nexa_text_strong; }"
+    ".time { font-family: \"JetBrains Mono\", monospace; color: @nexa_text; }"
+    "scale trough { background-color: alpha(@nexa_text, 0.14); border-radius: 3px; min-height: 5px; }"
+    "scale highlight { background-color: @nexa_accent; border-radius: 3px; }"
+    "scale slider { background-color: @nexa_text_strong; border-radius: 50%; min-width: 14px; min-height: 14px; border: none; box-shadow: none; }";
 
 /* ---- build the window ----------------------------------------------- */
 

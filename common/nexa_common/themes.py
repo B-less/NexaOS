@@ -481,6 +481,26 @@ def _quiet(argv):
         pass
 
 
+GTK_CSS_BEGIN = "/* nexa-theme: colour names for every GTK app (begin) */"
+GTK_CSS_END = "/* nexa-theme (end) */"
+
+
+def gtk_css_block(t):
+    """@nexa_* colour names for every GTK 3 app, including .nexa apps in C
+    or Rust (see docs/WRITING_NEXA_APPS.md). Only names: no styles."""
+    return f"{GTK_CSS_BEGIN}\n{app_palette_css(t)}{GTK_CSS_END}\n"
+
+
+def merge_gtk_css(existing, block):
+    """Replace our marked block in ~/.config/gtk-3.0/gtk.css, keeping
+    anything the user wrote there themselves."""
+    existing = existing or ""
+    start, end = existing.find(GTK_CSS_BEGIN), existing.find(GTK_CSS_END)
+    if start != -1 and end > start:
+        return existing[:start] + block + existing[end + len(GTK_CSS_END):].lstrip("\n")
+    return block + ("\n" + existing if existing.strip() else "")
+
+
 def apply(name=None, opacity=None, home=None, reload=True, glass=None):
     """Render and install the theme; returns the settings that were applied."""
     current = load_settings(home)
@@ -494,6 +514,13 @@ def apply(name=None, opacity=None, home=None, reload=True, glass=None):
     _write(os.path.join(cfg, "foot", "foot.ini"), foot_ini(t, opacity))
     _write(os.path.join(cfg, "sway", "config.d", "20-nexa-theme.conf"), sway_conf(t))
     _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t))
+    css_path = os.path.join(cfg, "gtk-3.0", "gtk.css")
+    try:
+        with open(css_path) as f:
+            existing = f.read()
+    except OSError:
+        existing = ""
+    _write(css_path, merge_gtk_css(existing, gtk_css_block(t)))
     _write(os.path.join(cfg, "hypr", "nexa-theme.conf"), hypr_conf(t))
     _write(os.path.join(cfg, "swaylock", "config"), swaylock_conf(t))
     _write(os.path.join(_data_dir(home), "gtksourceview-4", "styles", "nexa.xml"), sourceview_scheme(t))

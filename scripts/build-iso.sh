@@ -26,7 +26,14 @@ set -eu
 DIST_DIR=$1
 ISO_OUTPUT=$2
 
-apk add --no-cache xorriso syslinux grub grub-efi mtools dosfstools >/dev/null
+# Retried: a DNS hiccup in the container makes apk report the packages as
+# missing ("no such package"), which used to fail the whole build.
+for try in 1 2 3 4 5; do
+    apk add --no-cache xorriso syslinux grub grub-efi mtools dosfstools >/dev/null 2>&1 && break
+    [ "$try" = 5 ] && { echo "ERROR: couldn't download the ISO tools (no internet in the build container?)"; exit 1; }
+    echo "[*] package download failed (network?), retrying in 5 s ($try/5)"
+    sleep 5
+done
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
