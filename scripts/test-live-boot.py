@@ -10,6 +10,7 @@ Defaults: dist/NexaOS-<PROJECT_VERSION>.iso, screenshot to dist/live-desktop.png
 Needs qemu-system-x86_64 with KVM and OVMF (/usr/share/qemu/OVMF.fd).
 A VM has no real GPU, so this exercises the Sway session.
 """
+import base64
 import os
 import socket
 import struct
@@ -78,7 +79,7 @@ def main(argv):
     extra = argv[argv.index("--run") + 1] if "--run" in argv else None
     disk = argv[argv.index("--disk") + 1] if "--disk" in argv else None
     argv = [a for i, a in enumerate(argv)
-            if not (a in ("--run", "--disk") or (i and argv[i - 1] in ("--run", "--disk")))]
+            if not (a in ("--run", "--disk") or (i and argv[i - 1] in ("--run", "--disk", "--shot")))]
     args = [a for a in argv if not a.startswith("--")]
     iso = args[0] if args else os.path.join(REPO, "dist", f"NexaOS-{project_version()}.iso")
     shot = argv[argv.index("--shot") + 1] if "--shot" in argv else os.path.join(REPO, "dist", "live-desktop.png")
@@ -103,7 +104,7 @@ def main(argv):
                 try:
                     sock.connect(path)
                     return sock
-                except ConnectionRefusedError:
+                except (ConnectionRefusedError, FileNotFoundError):
                     sock.close()
                     if qemu.poll() is not None:
                         raise SystemExit(f"QEMU exited with code {qemu.returncode}: "
@@ -132,12 +133,6 @@ def main(argv):
             print("FAIL: no login prompt within 3 minutes")
             return 1
         print(f"login prompt after {time.time() - started:.0f}s")
-        pump(20)  # let the desktop settle
-        ppm = os.path.join(work, "desktop.ppm")
-        m.sendall(f"screendump {ppm}\n".encode())
-        time.sleep(1)
-        ppm_to_png(ppm, shot)
-        print(f"screenshot: {shot}")
         s.sendall(b"root\n")
         pump(3)
         marker = "NEXA_CHECKS_DONE"
@@ -154,6 +149,30 @@ def main(argv):
         print("\n".join(report) if report else "no report (serial login failed?)")
         if extra and text.count("EXTRA_END") >= 2:
             print("--- --run output\n" + text.split("EXTRA_BEGIN")[-1].split("EXTRA_END")[0].strip())
+
+        # Screenshot from inside the session with grim: QEMU's own screendump
+        # comes out black under Sway here. Without a GPU the bar and Dock
+        # appear ~45 s after the login prompt, so wait for 80 s of uptime.
+        buf = b""
+        s.sendall(b'while [ $(cut -d. -f1 /proc/uptime) -lt 80 ]; do sleep 1; done; R=/run/user/1000; '
+                  b'W=$(basename $(ls $R/wayland-? | head -1)); su user -s /bin/sh -c '
+                  b'"XDG_RUNTIME_DIR=$R WAYLAND_DISPLAY=$W grim -t png /tmp/shot.png"; '
+                  b'echo SHOT_BEGIN; base64 /tmp/shot.png | tr -d "\\n"; echo; echo SHOT_END\n')
+        end = time.time() + 120
+        while time.time() < end and buf.count(b"SHOT_END") < 2:
+            pump(1)
+        text = buf.decode(errors="replace").replace("\r", "")
+        if text.count("SHOT_END") >= 2:
+            data = "".join(text.split("SHOT_BEGIN")[-1].split("SHOT_END")[0].split())
+            with open(shot, "wb") as f:
+                f.write(base64.b64decode(data + "=" * (-len(data) % 4)))
+            print(f"screenshot: {shot}")
+        else:
+            ppm = os.path.join(work, "desktop.ppm")
+            m.sendall(f"screendump {ppm}\n".encode())
+            time.sleep(1)
+            ppm_to_png(ppm, shot)
+            print(f"screenshot (QEMU screendump; grim failed): {shot}")
         return 0
     finally:
         qemu.terminate()
