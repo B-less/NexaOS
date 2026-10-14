@@ -44,7 +44,7 @@ CHECKS = (
     'chmod 644 /tmp/hreq; echo HANDS=$(su user -s /bin/sh -c "nexa-tools < /tmp/hreq" 2>&1 | grep -o "\\"ok\\":[a-z]*")',
     # A signed .nexa from ~/Downloads installs through the real root helper.
     """P=$(ls /home/user/Downloads/*.nexa 2>/dev/null | head -1); [ -n "$P" ] && printf '{"action":"install","args":{"path":"%s"}}' "$P" > /tmp/ireq && """
-    """echo NEXA_INSTALL=$(nexa-install-helper < /tmp/ireq | grep -o '"ok": *[a-z]*' | tr -d ' "')$(command -v $(basename ${P%%-[0-9]*}) >/dev/null && echo ',command')$(ls /usr/local/share/applications/$(basename ${P%%-[0-9]*}).desktop /usr/share/applications/$(basename ${P%%-[0-9]*}).desktop 2>/dev/null | grep -q . && echo ',menu')""",
+    """echo NEXA_INSTALL=$(nexa-install-helper < /tmp/ireq | grep -o '"ok": *[a-z]*' | tr -d ' "')$(command -v $(basename ${P%%-[0-9]*}) >/dev/null && echo ',command')$(test -f /usr/share/applications/nexa-$(basename ${P%%-[0-9]*}).desktop && echo ',menu')""",
     'echo APPS=$(for c in nexa-pulse nexadark tor wg-quick nexa-pack nexa-mindd nexa-tools llama-server; do command -v $c >/dev/null && printf "%s," $c; done)',
     # Nexa Mind runs at boot and the desktop user can reach it (group nexa-mind).
     'echo MIND=$(su user -s /bin/sh -c "nexa-mindd status" 2>&1 | grep -o "\\"state\\": *\\"[a-z]*\\"" | tr -d " \\"")',
@@ -140,16 +140,17 @@ def main(argv):
         pump(3)
         marker = "NEXA_CHECKS_DONE"
         checks = list(CHECKS) + ([f"echo EXTRA_BEGIN; {extra}; echo EXTRA_END"] if extra else [])
-        s.sendall(("; ".join(checks) + f"; echo {marker}\n").encode())
+        # One command per line: BusyBox's line editor stops at ~2 KB.
+        s.sendall(("\n".join(checks) + f"\necho {marker}\n").encode())
         end = time.time() + (120 if extra else 20)
         while time.time() < end and buf.count(marker.encode()) < 2:
             pump(1)
         text = buf.decode(errors="replace").replace("\r", "")
-        report = [l for l in text.split(marker)[-2].splitlines()
+        report = [l for l in text.rsplit(marker, 1)[0].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
                                    "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL="))] if text.count(marker) >= 2 else []
-        print("\n".join(report) if report else "no report (serial login failed?)")
+        print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
         if extra and text.count("EXTRA_END") >= 2:
             print("--- --run output\n" + text.split("EXTRA_BEGIN")[-1].split("EXTRA_END")[0].strip())
 
