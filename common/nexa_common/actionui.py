@@ -29,6 +29,7 @@ CSS = f"""
 .nx-card-status {{ color: @nexa_muted; font-size: {design.TYPE_SCALE["caption"]}pt; }}
 .nx-card-status.ok {{ color: @nexa_ok; }}
 .nx-card-status.bad {{ color: @nexa_crit; }}
+.nx-card-status.warn {{ color: @nexa_warn; }}
 .nx-card-line {{ color: @nexa_text; }}
 .nx-preview {{ background-image: none; background-color: @nexa_field; color: @nexa_text;
               border-radius: {design.RADIUS["small"]}px; padding: 8px 10px;
@@ -209,6 +210,19 @@ class ActionCard(Gtk.Box):
         self._set_buttons(allow, deny)
         allow.grab_focus()
 
+    def note(self, text):
+        """An extra line under the title, e.g. why this needs an OK."""
+        self._note = getattr(self, "_note", None)
+        if self._note is None:
+            self._note = _label(text, "nx-card-status")
+            self._note.get_style_context().add_class("warn")
+            body = self.status.get_parent()
+            body.pack_start(self._note, False, False, 0)
+            body.reorder_child(self._note, 2)
+            self._note.show()
+        else:
+            self._note.set_text(text)
+
     def set_running(self):
         self._set_status("Working…")
 
@@ -255,7 +269,7 @@ class ReadChip(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         ensure_css()
         self.tool_name, self.args = tool_name, args
-        self.badge = HexBadge("look", "muted", size=18)
+        self.badge = HexBadge("web" if tool_name in actiontext.WEB_TOOLS else "look", "muted", size=18)
         self.pack_start(self.badge, False, False, 0)
         self.label = _label(actiontext.read_summary(tool_name, args, None) + "…", "nx-chip")
         self.pack_start(self.label, False, False, 0)

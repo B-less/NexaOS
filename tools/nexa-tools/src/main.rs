@@ -4,19 +4,24 @@
 //!
 //! Each run checks the request (paths must be inside home, never keys or
 //! Nexa Mind's own records), confines itself with Landlock to exactly the
-//! folders the request needs (no network at all), performs it, records it
+//! folders the request needs (no network unless it is a web tool), performs it, records it
 //! for undo and in the activity log, and prints one JSON object:
 //!   {"ok": true, "result": {...}}  or  {"ok": false, "error": "..."}
 //!
 //! Tools: list_dir, read_text, search, find_duplicates, organize_plan
 //! (read only); write_text (create / overwrite / append), make_dir, move,
 //! copy, trash, apply_moves (journaled, undoable); undo, history;
-//! net_info (read-only network facts from sysfs/procfs).
+//! net_info (read-only network facts from sysfs/procfs); web_search,
+//! web_read, weather, wikipedia, download (network for that call only);
+//! now, battery, top_processes, stop_process, calculate, convert;
+//! folder_sizes, recent_files.
 //! See docs/NEXA_MIND.md (M3).
 
 mod journal;
 mod net;
 mod ops;
+mod sys;
+mod web;
 mod paths;
 
 use nexa_sys::sandbox;
@@ -46,13 +51,15 @@ fn handle(input: &[u8]) -> Result<Value, String> {
     std::fs::create_dir_all(j.trash_dir()).map_err(|e| e.to_string())?;
     let mut fs_rules: Vec<(String, u64)> = ["/usr", "/lib"].iter().map(|p| (p.to_string(), sandbox::READ_EXEC)).collect();
     fs_rules.push(("/etc/localtime".into(), sandbox::READ));
+    // Child programs (curl) get /dev/null as stdin.
+    fs_rules.push(("/dev/null".into(), sandbox::READ_WRITE));
     for p in &access.read {
         fs_rules.push((p.to_string_lossy().into(), sandbox::READ));
     }
     for p in &access.write {
         fs_rules.push((p.to_string_lossy().into(), sandbox::READ_WRITE));
     }
-    let abi = sandbox::restrict(&sandbox::Rules { fs: fs_rules, connect_ports: vec![] })
+    let abi = sandbox::restrict(&sandbox::Rules { fs: fs_rules, connect_ports: access.net.clone() })
         .map_err(|e| format!("couldn't enable the sandbox: {e}"))?;
     if abi == 0 && std::env::var_os("NEXA_TOOLS_ALLOW_UNSANDBOXED").is_none() {
         return Err("this kernel has no Landlock, so the assistant's file actions are disabled".into());

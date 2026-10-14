@@ -224,6 +224,10 @@ class NexaAssistantWindow(Gtk.Window):
             self.message_box.pack_start(widget, False, False, 0)
             GLib.idle_add(self._scroll_to_bottom)
             self._pending_tools.append(widget)
+        elif kind == "guard":
+            cards = [w for w in self._pending_tools if isinstance(w, actionui.ActionCard)]
+            if cards:
+                cards[-1].note("Asking because a web page was read in this chat: pages can't trigger actions on their own.")
         elif kind == "tool_result":
             if self._pending_tools:
                 widget = self._pending_tools.pop(0)

@@ -80,6 +80,8 @@ def print_event(kind, payload):
         print(f"  → {payload['name']}({arg_str})")
     elif kind == "tool_result" and payload["error"]:
         print(f"    ! {payload['error']}")
+    elif kind == "guard":
+        print(f"    (asking first: {payload['reason']})")
 
 
 def ask(cfg, query, allow_control_override=None):

@@ -20,6 +20,8 @@ const MAX_WALK: usize = 20_000;
 pub struct Access {
     pub read: Vec<PathBuf>,
     pub write: Vec<PathBuf>,
+    /// Outbound TCP ports; empty means no network at all.
+    pub net: Vec<u16>,
 }
 
 pub struct Request {
@@ -134,6 +136,34 @@ pub fn prepare(home: &Path, j: &Journal, tool: &str, args: Value) -> Result<(Req
         }
         "history" => acc.read.push(records.clone()),
         "net_info" => acc.read.extend(crate::net::READ_PATHS.iter().map(PathBuf::from)),
+        "web_search" | "web_read" | "weather" | "wikipedia" => {
+            acc.read.extend(crate::web::READ_PATHS.iter().map(PathBuf::from));
+            acc.net = crate::web::PORTS.to_vec();
+        }
+        "download" => {
+            crate::web::parse_url(arg(&args, "url")?)?;
+            let dir = match args.get("folder").and_then(Value::as_str) {
+                Some(f) => path("folder").map_err(|_| format!("can't save into {f}"))?,
+                None => home.join("Downloads"),
+            };
+            fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            acc.read.extend(crate::web::READ_PATHS.iter().map(PathBuf::from));
+            acc.write.push(dir.clone());
+            acc.write.push(records.clone());
+            acc.net = crate::web::PORTS.to_vec();
+            req.paths.insert("folder", dir);
+        }
+        "now" | "calculate" | "convert" => {}
+        "battery" => acc.read.push(crate::sys::POWER.into()),
+        "top_processes" | "stop_process" => acc.read.push(crate::sys::PROC.into()),
+        "folder_sizes" | "recent_files" => {
+            let p = if args.get("path").is_none() { home.to_path_buf() } else { path("path")? };
+            if !p.is_dir() {
+                return Err(if p.exists() { "that's a file, not a folder".into() } else { not_found(home, &p) });
+            }
+            acc.read.push(p.clone());
+            req.paths.insert("path", p);
+        }
         other => return Err(format!("unknown tool '{other}'")),
     }
     Ok((req, acc))
@@ -141,6 +171,39 @@ pub fn prepare(home: &Path, j: &Journal, tool: &str, args: Value) -> Result<(Req
 
 fn kind(md: &fs::Metadata) -> &'static str {
     if md.is_dir() { "folder" } else if md.file_type().is_symlink() { "link" } else { "file" }
+}
+
+pub fn human(n: u64) -> String {
+    let units = ["B", "KB", "MB", "GB", "TB"];
+    let (mut v, mut i) = (n as f64, 0);
+    while v >= 1024.0 && i < units.len() - 1 {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 { format!("{n} B") } else { format!("{v:.1} {}", units[i]) }
+}
+
+/// Every file under `root`, hidden ones included (for sizes), skipping
+/// sensitive folders and symlinks.
+fn walk_all(home: &Path, root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            let Ok(ft) = e.file_type() else { continue };
+            if ft.is_dir() && !is_sensitive(home, &p) {
+                stack.push(p);
+            } else if ft.is_file() {
+                out.push(p);
+                if out.len() >= MAX_WALK * 10 {
+                    return out;
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Every regular file under `root`, skipping hidden and sensitive folders.
@@ -413,6 +476,63 @@ pub fn run(home: &Path, j: &Journal, req: Request) -> Result<Value, String> {
             Ok(json!({"actions": j.recent(limit).iter().map(|e| json!({"id": e.id, "time": e.time, "summary": e.summary, "undone": e.undone})).collect::<Vec<_>>()}))
         }
         "net_info" => Ok(crate::net::info()),
+        "web_search" => crate::web::search(&req.args),
+        "web_read" => crate::web::read_page(&req.args),
+        "weather" => crate::web::weather(&req.args),
+        "wikipedia" => crate::web::wikipedia(&req.args),
+        "download" => {
+            let url = arg(&req.args, "url")?;
+            let (file, size) = crate::web::download(url, &p("folder"))?;
+            let (id, _) = new_entry(j)?;
+            let summary = format!("Downloaded {}", rel(&file));
+            j.save(&Journal::entry(id.clone(), summary.clone(), vec![Step::Created { path: file.clone() }])).map_err(|e| e.to_string())?;
+            Ok(json!({"done": format!("{summary} ({})", human(size)), "path": rel(&file), "undo_id": id}))
+        }
+        "now" => Ok(crate::sys::now()),
+        "battery" => Ok(crate::sys::battery()),
+        "top_processes" => Ok(crate::sys::top_processes(&req.args)),
+        "stop_process" => crate::sys::stop_process(&req.args),
+        "calculate" => crate::sys::calculate(&req.args),
+        "convert" => crate::sys::convert(&req.args),
+        "folder_sizes" => {
+            let root = p("path");
+            let mut rows: Vec<(u64, String, bool)> = Vec::new();
+            let mut loose = 0u64;
+            for e in fs::read_dir(&root).map_err(|e| e.to_string())?.flatten() {
+                let path = e.path();
+                if is_sensitive(home, &path) {
+                    continue;
+                }
+                let Ok(md) = fs::symlink_metadata(&path) else { continue };
+                if md.is_dir() {
+                    let size: u64 = walk_all(home, &path).iter().filter_map(|f| fs::symlink_metadata(f).ok()).map(|m| m.len()).sum();
+                    rows.push((size, rel(&path), true));
+                } else if md.is_file() {
+                    loose += md.len();
+                    rows.push((md.len(), rel(&path), false));
+                }
+            }
+            rows.sort_by(|a, b| b.0.cmp(&a.0));
+            let total: u64 = rows.iter().map(|r| r.0).sum();
+            let biggest: Vec<Value> = rows.iter().take(15)
+                .map(|(size, name, dir)| json!({"name": name, "size": human(*size), "folder": dir})).collect();
+            Ok(json!({"path": rel(&root), "total": human(total), "files_directly_here": human(loose), "biggest": biggest}))
+        }
+        "recent_files" => {
+            let days = req.args.get("days").and_then(Value::as_u64).unwrap_or(7).clamp(1, 365);
+            let limit = req.args.get("limit").and_then(Value::as_u64).unwrap_or(20).clamp(1, 100) as usize;
+            let since = std::time::SystemTime::now() - std::time::Duration::from_secs(days * 86400);
+            let mut files: Vec<(std::time::SystemTime, PathBuf)> = walk(home, &p("path"), 12).into_iter()
+                .filter_map(|f| fs::metadata(&f).and_then(|m| m.modified()).ok().filter(|t| *t >= since).map(|t| (t, f)))
+                .collect();
+            files.sort_by(|a, b| b.0.cmp(&a.0));
+            let now = std::time::SystemTime::now();
+            Ok(json!({"days": days, "files": files.iter().take(limit).map(|(t, f)| {
+                let ago = now.duration_since(*t).map(|d| d.as_secs()).unwrap_or(0);
+                json!({"path": rel(f), "changed": if ago < 3600 { format!("{} min ago", ago / 60) }
+                       else if ago < 86400 { format!("{} h ago", ago / 3600) } else { format!("{} days ago", ago / 86400) }})
+            }).collect::<Vec<_>>()}))
+        }
         other => Err(format!("unknown tool '{other}'")),
     }
 }

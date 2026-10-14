@@ -133,3 +133,45 @@ fn history_lists_actions() {
     let log = fs::read_to_string(h.join(".local/share/nexa-mind/activity.jsonl")).unwrap();
     assert_eq!(log.lines().count(), 2);
 }
+
+#[test]
+fn helpers_and_system_facts() {
+    let h = home("helpers");
+    assert_eq!(ok(&run(&h, "calculate", json!({"expression": "15% of 80 + 2^3"})))["result"], "20");
+    assert_eq!(ok(&run(&h, "convert", json!({"value": 5, "from": "miles", "to": "km"})))["result"], "5 mi = 8.0467 km");
+    assert!(ok(&run(&h, "now", json!({})))["time"].as_str().unwrap().contains(':'));
+    assert!(ok(&run(&h, "battery", json!({})))["summary"].is_string());
+    assert!(ok(&run(&h, "top_processes", json!({"limit": 3})))["by_memory"].as_array().unwrap().len() <= 3);
+}
+
+#[test]
+fn space_and_recent_files() {
+    let h = home("space");
+    fs::create_dir_all(h.join("Videos")).unwrap();
+    fs::write(h.join("Videos/film.mkv"), vec![0u8; 300_000]).unwrap();
+    fs::write(h.join("Documents/note.txt"), "hi").unwrap();
+    let r = ok(&run(&h, "folder_sizes", json!({}))).clone();
+    assert_eq!(r["biggest"][0]["name"], "~/Videos", "{r}");
+    assert!(!r.to_string().contains(".ssh"), "secret folders aren't measured or shown");
+    let r = ok(&run(&h, "recent_files", json!({"days": 1}))).clone();
+    let paths: Vec<&str> = r["files"].as_array().unwrap().iter().map(|f| f["path"].as_str().unwrap()).collect();
+    assert!(paths.contains(&"~/Videos/film.mkv") && paths.contains(&"~/Documents/note.txt") && !paths.iter().any(|p| p.contains(".ssh")), "{paths:?}");
+}
+
+#[test]
+fn the_web_tools_refuse_local_and_odd_addresses() {
+    let h = home("web");
+    for (tool, args) in [
+        ("web_read", json!({"url": "http://127.0.0.1/"})),
+        ("web_read", json!({"url": "http://localhost:80/admin"})),
+        ("web_read", json!({"url": "file:///etc/passwd"})),
+        ("web_read", json!({"url": "http://169.254.169.254/latest/meta-data"})),
+        ("web_read", json!({"url": "https://example.com:8443/"})),
+        ("download", json!({"url": "http://192.168.1.1/config.bin"})),
+        ("download", json!({"url": "https://example.com/x", "folder": "~/.ssh"})),
+    ] {
+        let r = run(&h, tool, args.clone());
+        assert_eq!(r["ok"], false, "{tool} {args} should be refused: {r}");
+    }
+    assert!(!h.join("Downloads/config.bin").exists());
+}

@@ -50,7 +50,8 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [x] M1: nexa-mindd (Rust) — sandboxed service supervising llama.cpp, verified model downloads, local back-end for the assistant with tool calls; Settings download + backend choice. End-to-end test with the real model passes
 - [ ] M2: kernel PSI / uclamp / RAPL / THP + cgroup for the model (needs a kernel rebuild)
 - [x] M3 (files): nexa-tools (Rust) — Landlock per call, write/move/copy with undo, Trash, tidy (plan then apply), duplicates, activity log; Hexa action cards with Undo + Activity timeline in the assistant and Settings
-- [ ] M3 (rest): documents, settings/system tools through nexa-tools, untrusted-content guard
+- [x] M3 (web + system): web search/read/weather/Wikipedia/download (private addresses refused, network per call), date/time, battery, busiest programs, close own programs, exact maths + units, space, recent files; untrusted-content guard
+- [ ] M3 (rest): documents (PDF/Office), settings/system control through a Rust permission broker
 - [ ] M4-M6: private index, screen OCR, offline voice
 - [ ] Download the model on the HP and time real answers there
 

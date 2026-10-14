@@ -46,21 +46,30 @@ echo "$answer" | grep -qi accra || { echo "FAIL: unexpected answer"; tail -20 $N
 $M status | grep -q "\"ready\"" && echo "ok  model loaded and ready"
 
 echo "--- the assistant on the local back-end, with tools"
+export NEXA_TOOLS_BIN=/src/build/native/nexa-tools HOME=/root
 cd /src/nexa-ai && PYTHONPATH=/src/nexa-ai:/src/common python3 - <<PY
 import time
 from nexa_ai import agent
-events = []
-t = time.time()
-agent.run(None, None, "How much RAM does this computer have in total? Check with a tool.", False, True,
-          lambda *a: True, lambda *a, **k: None, lambda kind, p: events.append((kind, p)), backend="local")
-calls = [p["name"] for k, p in events if k == "tool_call"]
-texts = [p for k, p in events if k == "text"]
-print("tool calls:", calls)
-print("answer:", " ".join(texts)[:300])
-print("took %.0f s" % (time.time() - t))
-assert "get_mem_info" in calls, "the model did not use the memory tool"
-assert texts, "no answer text"
-print("ok  the on-device model called a real tool and answered")
+cases = [
+    ("How much RAM does this computer have in total? Check with a tool.", "get_mem_info", None),
+    ("What is 15% of 80?", "calculate", "12"),
+    ("What is the weather in Accra right now?", "get_weather", None),
+]
+for question, tool, must_say in cases:
+    events = []
+    t = time.time()
+    agent.run(None, None, question, False, True, lambda *a: True, lambda *a, **k: None,
+              lambda kind, p: events.append((kind, p)), backend="local")
+    calls = [p["name"] for k, p in events if k == "tool_call"]
+    errors = [p["error"] for k, p in events if k == "tool_result" and p["error"]]
+    answer = " ".join(p for k, p in events if k == "text")
+    print("Q:", question)
+    print("   tools:", calls, ("errors: %s" % errors) if errors else "")
+    print("   answer: %s  (%.0f s)" % (answer[:240], time.time() - t))
+    assert tool in calls, "the model did not use " + tool
+    assert answer, "no answer text"
+    assert must_say is None or must_say in answer, "expected " + must_say + " in the answer"
+    print("ok  used", tool)
 PY
 echo "--- unload"
 $M status >/dev/null && echo "{}" > /dev/null

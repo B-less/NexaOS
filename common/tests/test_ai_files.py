@@ -126,6 +126,23 @@ groups = actiontext.group_by_day([{"time": now - 60}, {"time": now - 3600}, {"ti
 check("timeline groups: Today, Yesterday, then dates", [g[0] for g in groups] == ["Today", "Yesterday", "Saturday 10 October"]
       and len(groups[0][1]) == 2, str(groups))
 
+# ---- web, system and helper tools
+check("new tools are registered with the right kind",
+      all(tools.TOOLS[n]["category"] == tools.READ for n in ("web_search", "read_webpage", "get_weather", "wikipedia_summary",
+          "get_datetime", "get_battery", "top_processes", "calculate", "convert_units", "folder_sizes", "recent_files"))
+      and tools.TOOLS["download_file"]["category"] == tools.ACTION and "stop_app" in tools.ALWAYS_CONFIRM)
+check("routing: weather, maths, time, slowness, web; 'downloads' isn't 'download '",
+      route("weather in Kumasi?") == {"get_weather"} and route("what is 15% of 80") == {"calculate"}
+      and "get_datetime" in route("what time is it") and "top_processes" in route("why is my laptop so slow")
+      and "web_search" in route("search the web for rust news") and "web_search" not in route("tidy my downloads"))
+d = actiontext.describe("download_file", {"url": "https://dl.example.org/files/alpine.iso?x=1"})
+check("download card: file, site, where, undo", d["title"] == "Download alpine.iso" and d["lines"][0] == "From dl.example.org  →  ~/Downloads", str(d))
+check("closing a program is a danger card that says it can't be undone",
+      actiontext.describe("stop_app", {"name": "firefox"})["tone"] == "danger")
+check("read chips say the useful part", actiontext.read_summary("calculate", {"expression": "15% of 80"}, {"result": "12"}) == "15% of 80 = 12"
+      and actiontext.read_summary("read_webpage", {"url": "https://www.bbc.com/news"}, {"title": "Home", "url": "https://www.bbc.com/news"}) == "Read “Home” (bbc.com)"
+      and actiontext.read_summary("web_search", {"query": "x"}, {"results": [1, 2]}) == "Searched the web for “x” · 2 results")
+
 # ---- the real binary, when it has been built
 real = os.path.join(REPO, "build/native/nexa-tools")
 if os.access(real, os.X_OK):
@@ -148,6 +165,10 @@ if os.access(real, os.X_OK):
     r = real_call("organize_plan", {"path": "~/Dowloads"})
     check("real nexa-tools: a wrong folder name says what is there",
           not r["ok"] and "doesn't exist" in r["error"] and "Downloads/" in r["error"], str(r))
+    c = real_call("calculate", {"expression": "(2+3)*4 - 15% of 80"})
+    check("real nexa-tools: exact maths", c["ok"] and c["result"]["result"] == "8", str(c))
+    w = real_call("web_read", {"url": "http://127.0.0.1:80/"})
+    check("real nexa-tools: the web tools refuse this computer's own addresses", not w["ok"] and "private or local" in w["error"], str(w))
     n = real_call("net_info", {})
     check("real nexa-tools: network facts (sandboxed, read-only)", n["ok"] and "summary" in n["result"], str(n))
     hist = real_call("history", {})

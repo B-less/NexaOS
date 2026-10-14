@@ -7,13 +7,27 @@ import time
 
 # kind -> the glyph drawn inside the card's hexagon
 GLYPHS = {"create": "+", "write": "✎", "move": "→", "copy": "⧉", "trash": "✕", "tidy": "≡",
-          "undo": "↶", "look": "◇", "system": "⚙", "app": "▸"}
+          "undo": "↶", "look": "◇", "system": "⚙", "app": "▸", "web": "◎", "download": "↓", "stop": "■"}
 
 READ_VERBS = {
     "list_dir": "Looked in {path}", "read_text_file": "Read {path}", "search_files": "Searched for “{query}”",
     "find_duplicates": "Checked {path} for duplicates", "organize_folder": "Planned tidying {path}",
     "recent_actions": "Checked recent actions",
+    "web_search": "Searched the web for “{query}”", "read_webpage": "Read {site}",
+    "get_weather": "Checked the weather{place}", "wikipedia_summary": "Looked up “{topic}” on Wikipedia",
+    "get_datetime": "Checked the date and time", "get_battery": "Checked the battery",
+    "top_processes": "Checked what's running", "calculate": "Calculated {expression}",
+    "convert_units": "Converted units", "folder_sizes": "Measured {path}", "recent_files": "Listed recent files in {path}",
+    "get_network_info": "Checked the network",
 }
+
+WEB_TOOLS = {"web_search", "read_webpage", "get_weather", "wikipedia_summary"}
+
+
+def _site(url):
+    u = str(url or "")
+    host = u.split("://", 1)[-1].split("/", 1)[0]
+    return host[4:] if host.startswith("www.") else (host or "a page")
 
 
 def _home_rel(path):
@@ -74,6 +88,16 @@ def describe(name, args):
             lines.append(f"{folder}  ·  {len(names)}  ·  {shown}")
         return {"kind": "tidy", "title": f"Tidy {len(moves)} file{'s' if len(moves) != 1 else ''} into {len(groups)} folder{'s' if len(groups) != 1 else ''}",
                 "lines": lines, "preview": "", "tone": "change"}
+    if name == "download_file":
+        url = str(a.get("url", ""))
+        file = url.split("?")[0].rstrip("/").rsplit("/", 1)[-1] or "a file"
+        return {"kind": "download", "title": f"Download {file}",
+                "lines": [f"From {_site(url)}  →  {_home_rel(a.get('folder') or '~/Downloads')}",
+                          "Undo moves it to the Trash."], "preview": "", "tone": "change"}
+    if name == "stop_app":
+        what = a.get("name") or (f"process {a['pid']}" if a.get("pid") else "a program")
+        return {"kind": "stop", "title": f"Close {what}",
+                "lines": ["Unsaved work in it may be lost. This can't be undone."], "preview": "", "tone": "danger"}
     if name == "undo_action":
         return {"kind": "undo", "title": "Undo an earlier action", "lines": [], "preview": "", "tone": "change"}
     if name == "launch_app":
@@ -89,8 +113,24 @@ def read_summary(name, args, result):
     verb = READ_VERBS.get(name)
     if verb is None:
         return name.replace("_", " ").capitalize()
-    text = verb.format(path=_home_rel(a.get("path") or a.get("root")), query=a.get("query", ""))
+    text = verb.format(path=_home_rel(a.get("path") or a.get("root")), query=a.get("query", ""),
+                       site=_site(a.get("url")), topic=a.get("topic", ""),
+                       place=f" in {a['place']}" if a.get("place") else "", expression=a.get("expression", ""))
     r = result if isinstance(result, dict) else {}
+    if name == "calculate" and "result" in r:
+        return f"{a.get('expression', '')} = {r['result']}"
+    if name in ("convert_units", "get_weather", "get_battery", "top_processes", "get_network_info") and r.get("summary" if name != "convert_units" else "result"):
+        return r["summary" if name != "convert_units" else "result"]
+    if name == "get_datetime" and r.get("date"):
+        return f"{r['date']}, {r.get('time', '')}"
+    if name == "web_search" and "results" in r:
+        return text + f" · {len(r['results'])} results"
+    if name == "read_webpage" and r.get("title"):
+        return f"Read “{r['title']}” ({_site(r.get('url') or a.get('url'))})"
+    if name == "folder_sizes" and r.get("total"):
+        return text + f" · {r['total']}"
+    if name == "recent_files" and "files" in r:
+        return text + f" · {len(r['files'])} files"
     if "entries" in r:
         text += f" · {len(r['entries'])} items"
     elif "matches" in r:
@@ -116,7 +156,7 @@ def done_text(result):
 
 def kind_of_summary(summary):
     s = summary or ""
-    for prefix, kind in (("Undid", "undo"), ("Created folder", "create"), ("Created", "create"),
+    for prefix, kind in (("Undid", "undo"), ("Downloaded", "download"), ("Created folder", "create"), ("Created", "create"),
                          ("Replaced", "write"), ("Added to", "write"), ("Moved ", "move"), ("Copied", "copy")):
         if s.startswith(prefix):
             return "trash" if "to the Trash" in s else ("tidy" if kind == "move" and s.endswith(" files") else kind)
