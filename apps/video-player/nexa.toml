@@ -1,0 +1,16 @@
+[package]
+id = "video-player"
+name = "Video Player"
+version = "1.0.0"
+description = "Plays your videos: library of ~/Videos, resume, subtitles, speed, fullscreen"
+categories = "AudioVideo;Video;Player;"
+icon = "icon.svg"
+
+[build]
+command = "make"
+binary = "build/video-player"
+
+[requires]
+# All already part of NexaOS, so installing needs no internet.
+depends = ["gtk+3.0", "gstreamer", "gst-plugins-base", "gst-plugins-good", "gst-libav"]
+permissions = ["files.videos"]

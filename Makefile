@@ -25,7 +25,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native
 .SECONDARY:
 
 # ============================================================================
@@ -190,7 +190,7 @@ provision-rootfs: rootfs gui-apps native wallpaper icons
 # rootfs (no wipe and no fresh Alpine base), then rebuilds the initramfs,
 # disk image and ISO. Much faster than `make iso` after NexaOS code, config
 # or package-list changes; after changing ALPINE_VERSION use `make iso`.
-refresh: core-binaries gui-apps native
+refresh: core-binaries gui-apps native nexa-apps
 	@test -d $(ROOTFS_DIR)/etc || { echo "No rootfs yet: run 'make iso' once first."; exit 1; }
 	@echo "$(COLOR_BLUE)Refreshing rootfs (packages, apps, configs)...$(COLOR_RESET)"
 	@$(DOCKER_RUN) sh -c "apk add --no-cache bash >/dev/null && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
@@ -237,6 +237,10 @@ disk: initramfs
 
 # Native (Rust) tools under tools/: nexa-pack, and the services to come.
 # Static binaries in build/native, staged into the image by stage-native.sh.
+# NexaOS's own .nexa apps (apps/*), signed when the release key is here.
+nexa-apps:
+	@sh scripts/build-apps.sh
+
 native:
 	@sh scripts/build-native.sh
 
