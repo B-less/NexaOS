@@ -350,15 +350,11 @@ exec /bin/sh -l
 SESSION_EOF
     chmod +x "$MNT_DIR/usr/local/bin/nexa-session"
 
-    cat > "$MNT_DIR/usr/local/bin/nexa-console" << 'CONSOLE_EOF'
-#!/bin/sh
-clear 2>/dev/null || true
-echo "NexaOS console"
-echo "Commands: nexa-wayland-check, nexa-session"
-echo
-exec /bin/sh -l
-CONSOLE_EOF
-    chmod +x "$MNT_DIR/usr/local/bin/nexa-console"
+    # No console on tty1: it used to open a root shell there with no login
+    # (anyone pressing Ctrl+Alt+F1 got root), and its text flashed up during
+    # boot before the desktop. tty1 belongs to the desktop; a normal login
+    # prompt for recovery is on tty2 (Ctrl+Alt+F2, password required).
+    rm -f "$MNT_DIR/usr/local/bin/nexa-console"
 
     echo "[*] Generating Sway init service..."
     mkdir -p "$MNT_DIR/etc/init.d"
@@ -795,7 +791,7 @@ BOOTSPLASH_EOF
 ::wait:/usr/local/bin/bootsplash --quit
 ::ctrlaltdel:/sbin/openrc reboot
 ::shutdown:/sbin/openrc shutdown
-tty1::respawn:/usr/local/bin/nexa-console
+tty2::respawn:/sbin/getty 38400 tty2
 ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100
 INITTAB_EOF
 

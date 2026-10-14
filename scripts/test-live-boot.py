@@ -50,6 +50,8 @@ CHECKS = (
     """printf '%s' '{"zone":"Africa/Accra"}' > /tmp/breq; chmod 644 /tmp/breq; """
     r'echo BROKER=$(su user -s /bin/sh -c "nexa-brokerd call set_timezone \"\$(cat /tmp/breq)\"" | grep -o "\"ok\":[a-z]*")$(grep -q Africa/Accra /etc/timezone && echo ,applied)',
     'echo BROKER_DENY=$(su nexa-mind -s /bin/sh -c "nexa-brokerd call set_brightness {}" | grep -o "only administrators")',
+    # No root shell on the screen: tty1 belongs to the desktop, tty2 asks for a login.
+    'echo CONSOLE=tty1_root:$(ps -o tty,user,comm | grep -c "^tty1 *root")$(pgrep -f "getty 38400 tty2" >/dev/null && echo ,tty2_login)',
     'echo APPS=$(for c in nexa-pulse nexadark tor wg-quick nexa-pack nexa-mindd nexa-tools nexa-brokerd llama-server; do command -v $c >/dev/null && printf "%s," $c; done)',
     # Nexa Mind runs at boot and the desktop user can reach it (group nexa-mind).
     'echo MIND=$(su user -s /bin/sh -c "nexa-mindd status" 2>&1 | grep -o "\\"state\\": *\\"[a-z]*\\"" | tr -d " \\"")',
@@ -154,7 +156,7 @@ def main(argv):
         report = [l for l in text.rsplit(marker, 1)[0].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
-                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY="))] if text.count(marker) >= 2 else []
+                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "CONSOLE="))] if text.count(marker) >= 2 else []
         print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
         if extra and text.count("EXTRA_END") >= 2:
             print("--- --run output\n" + text.split("EXTRA_BEGIN")[-1].split("EXTRA_END")[0].strip())
