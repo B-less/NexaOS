@@ -211,6 +211,20 @@ that request needs, with no network, and only then touches anything.
 | `write_text` | create (never replaces), overwrite or append, keeping the previous version |
 | `make_dir`, `move`, `copy`, `trash` | trash follows the freedesktop Trash spec, so the Files app can restore too |
 | `undo`, `history` | every change has an id; undo replays it backwards and refuses to overwrite anything that appeared since |
+| `net_info` | read-only network facts from sysfs, procfs and getifaddrs: interfaces, addresses, gateway, DNS, Wi-Fi signal, data used |
+
+Folder names match regardless of case when exactly one folder fits
+(`~/downloads` → `~/Downloads`; never for files). A missing path answers
+with what *is* there ("~/Dowloads doesn't exist. ~ has: Desktop/,
+Documents/, Downloads/ …"), so the model corrects itself instead of asking
+the user. Both came from the first test on the HP, where "tidy my
+Downloads" failed on a live system without a Downloads folder (every home
+now starts with Desktop, Documents, Downloads, Music, Pictures, Videos).
+
+The on-device model gets a core set of 10 tools plus topic groups chosen
+from what the user has said in the conversation (network, tidying,
+sound, apps, temperatures, undo, windows), at most 18, so every tool is
+reachable without making each prompt long.
 
 Every change is journaled in `~/.local/share/nexa-mind/undo/<id>/` and
 logged to `activity.jsonl`. The assistant shows each change as a card

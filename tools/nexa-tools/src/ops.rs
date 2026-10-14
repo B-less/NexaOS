@@ -3,7 +3,7 @@
 //! those with Landlock; `run` performs it. Changes are journaled (undo).
 
 use crate::journal::{Journal, Step};
-use crate::paths::{allowed, is_sensitive};
+use crate::paths::{allowed, is_sensitive, not_found};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -57,6 +57,15 @@ pub fn prepare(home: &Path, j: &Journal, tool: &str, args: Value) -> Result<(Req
     match tool {
         "list_dir" | "read_text" | "search" | "find_duplicates" | "organize_plan" => {
             let p = if tool == "search" && args.get("path").is_none() { home.to_path_buf() } else { path("path")? };
+            if !p.exists() {
+                return Err(not_found(home, &p));
+            }
+            if tool != "read_text" && !p.is_dir() {
+                return Err(format!("{} is a file, not a folder", p.strip_prefix(home).map(|r| format!("~/{}", r.display())).unwrap_or_default()));
+            }
+            if tool == "read_text" && p.is_dir() {
+                return Err("that's a folder; use list_dir to see what's in it".into());
+            }
             acc.read.push(if p.is_dir() { p.clone() } else { parent(&p) });
             req.paths.insert("path", p);
         }
@@ -71,6 +80,9 @@ pub fn prepare(home: &Path, j: &Journal, tool: &str, args: Value) -> Result<(Req
             if p == home {
                 return Err("the home folder itself can't be deleted".into());
             }
+            if !p.exists() {
+                return Err(not_found(home, &p));
+            }
             acc.write.push(parent(&p));
             acc.write.push(j.trash_dir().parent().unwrap().to_path_buf());
             acc.write.push(records.clone());
@@ -78,6 +90,9 @@ pub fn prepare(home: &Path, j: &Journal, tool: &str, args: Value) -> Result<(Req
         }
         "move" | "copy" => {
             let (from, to) = (path("from")?, path("to")?);
+            if !from.exists() {
+                return Err(not_found(home, &from));
+            }
             acc.write.push(parent(&from));
             acc.write.push(parent(&to));
             if from.is_dir() {
@@ -118,6 +133,7 @@ pub fn prepare(home: &Path, j: &Journal, tool: &str, args: Value) -> Result<(Req
             acc.write.push(records.clone());
         }
         "history" => acc.read.push(records.clone()),
+        "net_info" => acc.read.extend(crate::net::READ_PATHS.iter().map(PathBuf::from)),
         other => return Err(format!("unknown tool '{other}'")),
     }
     Ok((req, acc))
@@ -396,6 +412,7 @@ pub fn run(home: &Path, j: &Journal, req: Request) -> Result<Value, String> {
             let limit = req.args.get("limit").and_then(Value::as_u64).unwrap_or(20).min(200) as usize;
             Ok(json!({"actions": j.recent(limit).iter().map(|e| json!({"id": e.id, "time": e.time, "summary": e.summary, "undone": e.undone})).collect::<Vec<_>>()}))
         }
+        "net_info" => Ok(crate::net::info()),
         other => Err(format!("unknown tool '{other}'")),
     }
 }

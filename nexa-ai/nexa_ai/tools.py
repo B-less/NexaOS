@@ -547,6 +547,20 @@ def get_wifi_status(_args):
     return _wifi_call(lambda w: w.status())
 
 
+def get_network_info(_args):
+    """Interfaces, addresses, route, DNS and traffic from nexa-tools (Rust,
+    read-only, sandboxed), plus the Wi-Fi network name from iwd."""
+    info = _hands("net_info", {})
+    try:
+        ssid = _wifi().status().get("connected_to")
+        if ssid:
+            info["wifi_network"] = ssid
+            info["summary"] += f", Wi-Fi network “{ssid}”"
+    except Exception:  # noqa: BLE001 - iwd absent or not running: the kernel facts still stand
+        pass
+    return info
+
+
 def list_wifi_networks(_args):
     nets = _wifi_call(lambda w: w.list_networks(do_scan=True))
     return [{k: n[k] for k in ("ssid", "security", "signal", "connected", "known")} for n in nets]
@@ -809,6 +823,11 @@ TOOLS = {
             "muted": {"type": "boolean"},
         }, "required": ["muted"]},
     },
+    "get_network_info": {
+        "category": READ, "func": get_network_info,
+        "description": "Network status: online or not, which connection (Wi-Fi network name, wired, VPN), IP addresses, gateway, DNS, signal strength and data used.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
     "get_wifi_status": {
         "category": READ, "func": get_wifi_status,
         "description": "Show WiFi adapters and which network (if any) is connected.",
@@ -903,12 +922,48 @@ ALWAYS_CONFIRM = {"reboot_system", "poweroff_system", "delete_file"}
 
 
 # The on-device model reads its prompt at ~40 tokens/s on a laptop CPU
-# (docs/NEXA_MIND.md), so it gets the tools people use most, not all ~45.
-LOCAL_TOOLS = (
+# (docs/NEXA_MIND.md), so it gets a small core set plus the topic groups the
+# conversation is about, never all ~50 tools at once.
+LOCAL_CORE = (
     "get_cpu_info", "get_mem_info", "get_disk_usage", "list_dir", "read_text_file", "search_files",
-    "write_text_file", "create_dir", "move_file", "delete_file", "organize_folder", "apply_moves",
-    "find_duplicates", "list_installed_apps", "launch_app", "set_volume",
+    "write_text_file", "create_dir", "move_file", "delete_file",
 )
+LOCAL_TOPICS = (
+    (("tidy", "organi", "sort", "clean", "mess", "declutter", "duplicate", "copies", "space"),
+     ("organize_folder", "apply_moves", "find_duplicates")),
+    (("network", "internet", "wifi", "wi-fi", "online", "offline", "connect", "ip", "signal", "router", "dns", "vpn"),
+     ("get_network_info", "list_wifi_networks")),
+    (("volume", "sound", "mute", "loud", "quiet", "audio", "speaker"),
+     ("get_volume", "set_volume", "set_mute")),
+    (("open", "launch", "start", "app", "program", "run"),
+     ("list_installed_apps", "launch_app")),
+    (("temperature", "hot", "heat", "fan", "uptime", "load", "busy", "slow", "battery", "cpu"),
+     ("get_temperatures", "get_uptime_load")),
+    (("undo", "revert", "put back", "restore", "history", "what did you", "earlier"),
+     ("undo_action", "recent_actions")),
+    (("window", "close", "focus", "switch to"),
+     ("list_open_windows", "focus_window", "close_window")),
+    (("copy", "backup", "duplicate"),
+     ("copy_file",)),
+    (("notif", "remind"),
+     ("send_notification",)),
+)
+LOCAL_MAX = 18
+# Every tool the on-device model can ever get (tests check they all exist).
+LOCAL_TOOLS = LOCAL_CORE + tuple(t for _, names in LOCAL_TOPICS for t in names)
+
+
+def local_tools_for(texts):
+    """The tools for the on-device model, from what the user has said in this
+    conversation. Union over the whole conversation, so the set (and the
+    model's cached prompt) stays stable from one turn to the next."""
+    said = " ".join(texts).lower()
+    chosen = list(LOCAL_CORE)
+    for words, names in LOCAL_TOPICS:
+        # At the start of a word: "load" must not match "downloads".
+        if any(re.search(r"\b" + re.escape(w), said) for w in words):
+            chosen += [n for n in names if n not in chosen]
+    return tuple(chosen[:LOCAL_MAX])
 
 
 def anthropic_tool_specs(names=None):

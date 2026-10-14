@@ -73,7 +73,26 @@ check("every file tool is registered", file_tools <= set(tools.TOOLS))
 check("planning is read-only, applying is a confirmable action",
       tools.TOOLS["organize_folder"]["category"] == tools.READ and tools.TOOLS["apply_moves"]["category"] == tools.ACTION)
 check("trash still always asks first", "delete_file" in tools.ALWAYS_CONFIRM)
-check("local model keeps a short tool list", len(tools.LOCAL_TOOLS) <= 16 and set(tools.LOCAL_TOOLS) <= set(tools.TOOLS))
+check("every tool the on-device model can get exists", set(tools.LOCAL_TOOLS) <= set(tools.TOOLS))
+route = lambda *said: set(tools.local_tools_for(list(said))) - set(tools.LOCAL_CORE)
+check("a greeting gets only the small core set", tools.local_tools_for(["hello"]) == tools.LOCAL_CORE)
+check("network questions get the network tool (seen on the HP: 'I don't have access to your network')",
+      "get_network_info" in route("tell me about my network") and "get_network_info" in route("what's my IP?"))
+check("tidying gets the plan/apply tools, and 'downloads' doesn't look like 'load'",
+      route("tidy my downloads") == {"organize_folder", "apply_moves", "find_duplicates"}, str(route("tidy my downloads")))
+check("topics add up over the conversation, capped",
+      {"get_network_info", "set_volume"} <= route("check my wifi", "now turn the volume up")
+      and all(len(tools.local_tools_for([q])) <= tools.LOCAL_MAX for q in ["open the app, tidy, wifi, volume, hot, undo, window, copy"]))
+
+import nexa_ai.tools as T
+T._wifi = lambda: type("W", (), {"status": staticmethod(lambda: {"connected_to": "HomeNet"})})
+hands.call = lambda tool, args=None, timeout=120: {"summary": "Online through wlan0 (wifi), gateway 192.168.1.1", "online": True} if tool == "net_info" else {}
+r = tools.run_tool("get_network_info", {}, False)
+check("network info: kernel facts from nexa-tools plus the Wi-Fi name from iwd",
+      r["wifi_network"] == "HomeNet" and r["summary"].endswith("Wi-Fi network “HomeNet”"), str(r))
+T._wifi = lambda: (_ for _ in ()).throw(RuntimeError("no iwd"))
+check("network info still works without iwd", "wifi_network" not in tools.run_tool("get_network_info", {}, False))
+import importlib; importlib.reload(hands); T.hands = hands; hands.BIN = fake
 
 # ---- card words
 home = os.path.expanduser("~")
@@ -123,6 +142,14 @@ if os.access(real, os.X_OK):
     check("real nexa-tools: write", r["ok"] and open(os.path.join(h, "Notes/hi.txt")).read() == "hello", str(r))
     u = real_call("undo", {"id": r["result"]["undo_id"]})
     check("real nexa-tools: undo removes it (into the Trash)", u["ok"] and not os.path.exists(os.path.join(h, "Notes/hi.txt")), str(u))
+    os.makedirs(os.path.join(h, "Downloads"))
+    r = real_call("list_dir", {"path": "~/downloads"})
+    check("real nexa-tools: '~/downloads' finds ~/Downloads", r["ok"] and r["result"]["path"] == "~/Downloads", str(r))
+    r = real_call("organize_plan", {"path": "~/Dowloads"})
+    check("real nexa-tools: a wrong folder name says what is there",
+          not r["ok"] and "doesn't exist" in r["error"] and "Downloads/" in r["error"], str(r))
+    n = real_call("net_info", {})
+    check("real nexa-tools: network facts (sandboxed, read-only)", n["ok"] and "summary" in n["result"], str(n))
     hist = real_call("history", {})
     check("real nexa-tools: history says it was undone", hist["ok"] and hist["result"]["actions"][0]["undone"] is True, str(hist))
 else:

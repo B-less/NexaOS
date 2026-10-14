@@ -20,10 +20,14 @@ show the plan, and call apply_moves only after the user agrees. Never call reboo
 poweroff_system, delete_file, or remove_package without the user explicitly asking for it in this conversation."""
 
 LOCAL_SYSTEM_PROMPT = """You are Nexa, the assistant built into NexaOS, running on this computer \
-with no internet needed. Use the tools to get real facts about this machine and the user's files \
-instead of guessing, and to do what the user asks. Say briefly what you are about to do before \
-changing anything; every file change has an Undo button for the user. To tidy a folder, call \
-organize_folder, show the plan, and call apply_moves only after the user agrees. Answer in a few short sentences."""
+with no internet needed. You can look at and change the user's files (home folders: ~/Desktop, \
+~/Documents, ~/Downloads, ~/Music, ~/Pictures, ~/Videos), tidy folders and find duplicates, check \
+the network, CPU, memory, disk and temperatures, change the volume, open apps, and undo your file \
+changes. Use the tools to get real facts instead of guessing. If a tool says a path doesn't exist, \
+read the list of what is there and try the right name yourself before asking the user. Say briefly \
+what you are about to do before changing anything; every file change has an Undo button for the \
+user. To tidy a folder, call organize_folder, show the plan, and call apply_moves only after the \
+user agrees. Answer in a few short sentences."""
 
 MAX_TURNS = 8
 
@@ -41,7 +45,9 @@ def run(api_key, model, user_query, allow_control, require_confirmation, confirm
     messages.append({"role": "user", "content": user_query})
     if backend == "local":
         from . import local_client
-        send, system, specs = local_client.create_message, LOCAL_SYSTEM_PROMPT, tools.anthropic_tool_specs(tools.LOCAL_TOOLS)
+        said = [m["content"] for m in messages if m["role"] == "user" and isinstance(m["content"], str)]
+        send, system, specs = (local_client.create_message, LOCAL_SYSTEM_PROMPT,
+                               tools.anthropic_tool_specs(tools.local_tools_for(said)))
     else:
         send, system, specs = client.create_message, SYSTEM_PROMPT, tools.anthropic_tool_specs()
 

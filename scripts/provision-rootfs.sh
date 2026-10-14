@@ -94,6 +94,14 @@ chmod 644 "$ROOTFS_DIR/etc/passwd" "$ROOTFS_DIR/etc/group"
 chmod 600 "$ROOTFS_DIR/etc/shadow"
 printf 'export XDG_RUNTIME_DIR=/run/user/1000\nexport WAYLAND_DISPLAY=wayland-0\nexport QT_QPA_PLATFORM=wayland\nexport EGL_PLATFORM=wayland\nexport GDK_BACKEND=wayland\n' > "$ROOTFS_DIR/etc/profile.d/wayland.sh"
 chmod 644 "$ROOTFS_DIR/etc/profile.d/wayland.sh"
+# The usual home folders (the assistant, Files and the browser expect them;
+# the installer renames this home, so installed systems get them too).
+for d in Desktop Documents Downloads Music Pictures Videos; do
+    mkdir -p "$ROOTFS_DIR/home/user/$d"
+done
+mkdir -p "$ROOTFS_DIR/home/user/.config"
+printf 'XDG_DESKTOP_DIR="$HOME/Desktop"\nXDG_DOCUMENTS_DIR="$HOME/Documents"\nXDG_DOWNLOAD_DIR="$HOME/Downloads"\nXDG_MUSIC_DIR="$HOME/Music"\nXDG_PICTURES_DIR="$HOME/Pictures"\nXDG_VIDEOS_DIR="$HOME/Videos"\n' \
+    > "$ROOTFS_DIR/home/user/.config/user-dirs.dirs"
 chown -R 1000:1000 "$ROOTFS_DIR/home/user" 2>/dev/null || true
 
 echo "[*] staging boot splash binary"

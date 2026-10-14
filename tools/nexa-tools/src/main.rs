@@ -10,10 +10,12 @@
 //!
 //! Tools: list_dir, read_text, search, find_duplicates, organize_plan
 //! (read only); write_text (create / overwrite / append), make_dir, move,
-//! copy, trash, apply_moves (journaled, undoable); undo, history.
+//! copy, trash, apply_moves (journaled, undoable); undo, history;
+//! net_info (read-only network facts from sysfs/procfs).
 //! See docs/NEXA_MIND.md (M3).
 
 mod journal;
+mod net;
 mod ops;
 mod paths;
 
