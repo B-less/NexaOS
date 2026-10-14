@@ -1,4 +1,3 @@
-import json
 import subprocess
 
 import gi
@@ -22,18 +21,16 @@ CONFIRM_SECONDS = 4
 
 
 def _call_helper(action):
+    """Sleep, restart or shut down through the system broker (nexa-brokerd)."""
+    from nexa_common import broker
     try:
-        result = subprocess.run(
-            ["doas", "/usr/local/bin/nexa-power-helper"],
-            input=json.dumps({"action": action}), capture_output=True, text=True, timeout=15,
-        )
-    except (subprocess.SubprocessError, OSError) as e:
+        # Sleeping answers only after waking up; don't wait for that here.
+        broker.request(action, timeout=3 if action == "suspend" else 15)
+    except broker.BrokerError as e:
+        if action == "suspend" and "in time" in str(e):
+            return True, ""
         return False, str(e)
-    try:
-        response = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return False, (result.stderr or "").strip() or "helper produced no output"
-    return bool(response.get("ok")), response.get("error", "")
+    return True, ""
 
 
 class PowerWindow(Gtk.Window):

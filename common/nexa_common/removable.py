@@ -1,7 +1,7 @@
-"""Client for nexa-mount-helper (removable drives). Runs unprivileged and asks
-the narrow root helper through doas, the same pattern as the other helpers."""
-import json
-import subprocess
+"""Removable drives (USB sticks, SD cards) through the system broker
+(nexa-brokerd, Rust): it re-checks every device against the kernel's view,
+only touches removable drives, and mounts them under /media."""
+from nexa_common import broker
 
 
 class RemovableError(Exception):
@@ -9,41 +9,26 @@ class RemovableError(Exception):
 
 
 def _call(action, name=None):
-    request = {"action": action}
-    if name is not None:
-        request["name"] = name
     try:
-        p = subprocess.run(
-            ["doas", "/usr/local/bin/nexa-mount-helper"],
-            input=json.dumps(request), capture_output=True, text=True, timeout=60,
-        )
-    except FileNotFoundError:
-        raise RemovableError("doas is not installed")
-    except subprocess.TimeoutExpired:
-        raise RemovableError("The drive took too long to respond.")
-    try:
-        response = json.loads(p.stdout)
-    except json.JSONDecodeError:
-        raise RemovableError(p.stderr.strip() or "The drive helper produced no output.")
-    if not response.get("ok"):
-        raise RemovableError(response.get("error", "That didn't work."))
-    return response["result"]
+        return broker.request(action, {"name": name} if name is not None else {}, timeout=60)
+    except broker.BrokerError as e:
+        raise RemovableError(str(e))
 
 
 def list_volumes():
-    return _call("list")
+    return _call("list_drives")["drives"]
 
 
 def mount(name):
-    return _call("mount", name)
+    return _call("mount_drive", name)
 
 
 def unmount(name):
-    return _call("unmount", name)
+    return _call("unmount_drive", name)
 
 
 def eject(name):
-    return _call("eject", name)
+    return _call("eject_drive", name)
 
 
 def human_size(n):

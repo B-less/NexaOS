@@ -419,7 +419,7 @@ description="DHCP every detected network interface (udhcpc)"
 depend() {
     need localmount
     after modules
-    before sshd sway
+    before sshd
     provide net
 }
 
@@ -438,7 +438,10 @@ start() {
             continue
         fi
         ip link set "$iface" up 2>/dev/null
-        udhcpc -i "$iface" -b -p "/run/udhcpc.$iface.pid" -x "hostname:$(cat /etc/hostname 2>/dev/null || echo nexa)" >/dev/null 2>&1
+        # In the background from the first moment: waiting here for a lease
+        # (or for a cable that isn't plugged in) held up the whole boot by
+        # ~16 s, desktop included. The address arrives a moment later.
+        udhcpc -i "$iface" -b -p "/run/udhcpc.$iface.pid" -x "hostname:$(cat /etc/hostname 2>/dev/null || echo nexa)" >/dev/null 2>&1 &
     done
     eend 0
 }
@@ -564,6 +567,31 @@ start_pre() {
 MIND_EOF
     chmod +x "$MNT_DIR/etc/init.d/nexa-mind"
     ln -sf /etc/init.d/nexa-mind "$MNT_DIR/etc/runlevels/default/nexa-mind"
+
+    echo "[*] Generating the system broker service (nexa-brokerd)..."
+    cat > "$MNT_DIR/etc/init.d/nexa-broker" << 'BROKER_EOF'
+#!/sbin/openrc-run
+# nexa-brokerd: the one checked, sandboxed, audited way apps change the
+# system as root (tools/nexa-brokerd). Socket: /run/nexa-broker.sock.
+description="NexaOS system broker"
+command=/usr/local/bin/nexa-brokerd
+command_args="serve"
+command_background=true
+pidfile=/run/nexa-broker.pid
+output_log=/var/log/nexa-broker.service.log
+error_log=/var/log/nexa-broker.service.log
+
+depend() {
+    need localmount
+    before sway
+}
+
+start_pre() {
+    checkpath -f -m 0600 -o root:root /var/log/nexa-broker.log
+}
+BROKER_EOF
+    chmod +x "$MNT_DIR/etc/init.d/nexa-broker"
+    ln -sf /etc/init.d/nexa-broker "$MNT_DIR/etc/runlevels/default/nexa-broker"
 
     cat > "$MNT_DIR/etc/init.d/zram" << 'ZRAM_EOF'
 #!/sbin/openrc-run

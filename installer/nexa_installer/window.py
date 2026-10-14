@@ -11,7 +11,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from nexa_common.titlebar import attach_titlebar
 from . import packaging
-from nexa_common import askpass, elevate
+from nexa_common import askpass
 
 CSS = b"""
 window { background-image: none; background-color: @nexa_bg; }
@@ -51,28 +51,28 @@ def inspect(path):
     return report
 
 
+# Installing and uninstalling go through the system broker (nexa-brokerd,
+# Rust): it reads the package with your permissions, has nexa-pack verify
+# it, places only the app's own files, asks your password on an installed
+# system, and logs it.
+BROKER_ACTIONS = {"install": "install_app", "uninstall": "uninstall_app"}
+
+
 def _call_helper(action, **args):
-    """(ok, message, unverified): unverified means the helper refused only
+    """(ok, message, unverified): unverified means the broker refused only
     because the publisher isn't trusted, so the user may choose to go on."""
-    request = json.dumps({"action": action, "args": args})
+    from nexa_common import broker
+
+    def ask_password(what, error):
+        return askpass.ask(f"{what or 'Installing an app'} needs your password.")(error is not None)
+
     try:
-        result = elevate.run_interactive(
-            "/usr/local/bin/nexa-install-helper", request,
-            askpass.ask("Installing a package adds it to the system for every user."), timeout=900,
-        )
-    except elevate.WrongPassword:
-        return False, "Wrong password.", False
-    except (subprocess.SubprocessError, OSError) as e:
-        return False, str(e), False
-    if result is None:
-        return False, "Cancelled.", False
-    try:
-        response = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return False, (result.stderr or "").strip() or "helper produced no output", False
-    if response.get("ok"):
-        return True, response.get("output", ""), False
-    return False, response.get("error", "unknown error"), bool(response.get("unverified"))
+        result = broker.run(BROKER_ACTIONS[action], args, ask_password)
+    except broker.Unverified as e:
+        return False, str(e), True
+    except broker.BrokerError as e:
+        return False, "Cancelled." if str(e) == "cancelled" else str(e), False
+    return True, (result or {}).get("done", "") if isinstance(result, dict) else "", False
 
 
 class InstallerWindow(Gtk.Window):

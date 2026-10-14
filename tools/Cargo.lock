@@ -271,6 +271,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-brokerd"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "nexa-mindd"
 version = "0.1.0"
 dependencies = [

@@ -19,25 +19,19 @@ printf '%s\n' \
     > "$rootfs/usr/local/bin/nexa-power"
 chmod +x "$rootfs/usr/local/bin/nexa-power"
 
-printf '%s\n' \
-    '#!/bin/sh' \
-    'exec env PYTHONPATH="/usr/local/lib/nexa-power:${PYTHONPATH:-}" python3 -m nexa_power.helper' \
-    > "$rootfs/usr/local/bin/nexa-power-helper"
-chmod +x "$rootfs/usr/local/bin/nexa-power-helper"
+# Sleep, restart and shut down go through nexa-brokerd (no root helper).
+rm -f "$rootfs/usr/local/bin/nexa-power-helper"
 
 for script in nexa-idle nexa-lid nexa-battery-watch nexa-login-lock; do
     cp "$base/power/$script" "$rootfs/usr/local/bin/$script"
     chmod +x "$rootfs/usr/local/bin/$script"
 done
 
-if [ ! -f "$rootfs/etc/doas.conf" ]; then
-    : > "$rootfs/etc/doas.conf"
+if [ -f "$rootfs/etc/doas.conf" ]; then
+    sed -i '/nexa-power-helper/d' "$rootfs/etc/doas.conf"
+    chown 0:0 "$rootfs/etc/doas.conf"
+    chmod 400 "$rootfs/etc/doas.conf"
 fi
-if ! grep -q nexa-power-helper "$rootfs/etc/doas.conf" 2>/dev/null; then
-    echo 'permit nopass user cmd /usr/local/bin/nexa-power-helper' >> "$rootfs/etc/doas.conf"
-fi
-chown 0:0 "$rootfs/etc/doas.conf"
-chmod 400 "$rootfs/etc/doas.conf"
 
 cat > "$rootfs/usr/share/applications/nexa-power.desktop" << 'DESKTOP_EOF'
 [Desktop Entry]

@@ -36,6 +36,9 @@ pub const READ: u64 = READ_FILE | READ_DIR;
 pub const READ_EXEC: u64 = READ | EXECUTE;
 pub const READ_WRITE: u64 = READ | WRITE_FILE | REMOVE_DIR | REMOVE_FILE | MAKE_DIR | MAKE_REG | MAKE_SOCK
     | REFER | TRUNCATE;
+/// Everything, for workers that legitimately change the whole system (a
+/// package manager): still confined in network and the rest.
+pub const ALL: u64 = READ_WRITE | EXECUTE | MAKE_CHAR | MAKE_FIFO | MAKE_BLOCK | MAKE_SYM;
 
 #[repr(C)]
 struct RulesetAttr {

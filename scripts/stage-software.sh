@@ -22,20 +22,13 @@ printf '%s\n' \
     > "$rootfs/usr/local/bin/nexa-software"
 chmod +x "$rootfs/usr/local/bin/nexa-software"
 
-printf '%s\n' \
-    '#!/bin/sh' \
-    'exec env PYTHONPATH="/usr/local/lib/nexa-software:/usr/local/lib/nexa-common:${PYTHONPATH:-}" python3 -m nexa_software.control_helper' \
-    > "$rootfs/usr/local/bin/nexa-software-helper"
-chmod +x "$rootfs/usr/local/bin/nexa-software-helper"
-
-if [ ! -f "$rootfs/etc/doas.conf" ]; then
-    : > "$rootfs/etc/doas.conf"
+# Installing and removing software goes through nexa-brokerd (no root helper).
+rm -f "$rootfs/usr/local/bin/nexa-software-helper"
+if [ -f "$rootfs/etc/doas.conf" ]; then
+    sed -i '/nexa-software-helper/d' "$rootfs/etc/doas.conf"
+    chown 0:0 "$rootfs/etc/doas.conf"
+    chmod 400 "$rootfs/etc/doas.conf"
 fi
-if ! grep -q nexa-software-helper "$rootfs/etc/doas.conf" 2>/dev/null; then
-    echo 'permit nopass user cmd /usr/local/bin/nexa-software-helper' >> "$rootfs/etc/doas.conf"
-fi
-chown 0:0 "$rootfs/etc/doas.conf"
-chmod 400 "$rootfs/etc/doas.conf"
 
 cat > "$rootfs/usr/share/applications/nexa-software.desktop" << 'DESKTOP_EOF'
 [Desktop Entry]

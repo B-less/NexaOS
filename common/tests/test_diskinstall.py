@@ -183,16 +183,14 @@ open(os.path.join(conf_root, "etc", "doas.conf"), "w").write(
     "permit nopass user cmd /usr/local/bin/nexa-power-helper\n"
     "permit nopass user cmd /usr/local/bin/nexa-software-helper\n"
     "permit nopass user cmd /usr/local/bin/nexa-install-helper\n"
-    "permit nopass user cmd /usr/local/bin/nexa-ai-control-helper\n"
     "permit nopass user cmd /usr/local/bin/nexa-setup-helper\n")
 real_chown = os.chown; os.chown = lambda *a: None
 di.harden_privileges(conf_root)
 os.chown = real_chown
 rules = open(os.path.join(conf_root, "etc", "doas.conf")).read().splitlines()
-check("installed system: software/package/assistant helpers need the password",
+check("installed system: software/package helpers need the password",
       "permit user cmd /usr/local/bin/nexa-software-helper" in rules
-      and "permit user cmd /usr/local/bin/nexa-install-helper" in rules
-      and "permit user cmd /usr/local/bin/nexa-ai-control-helper" in rules, str(rules))
+      and "permit user cmd /usr/local/bin/nexa-install-helper" in rules, str(rules))
 check("installed system: power stays passwordless", "permit nopass user cmd /usr/local/bin/nexa-power-helper" in rules)
 check("installed system: the disk-wiping installer helper is gone", not any("nexa-setup-helper" in r for r in rules))
 check("doas.conf stays root-only (0400)", oct(os.stat(os.path.join(conf_root, "etc", "doas.conf")).st_mode & 0o777) == "0o400")

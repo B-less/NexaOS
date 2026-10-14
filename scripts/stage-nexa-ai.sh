@@ -25,23 +25,13 @@ printf '%s\n' \
     > "$rootfs/usr/local/bin/nexa-ai-gui"
 chmod +x "$rootfs/usr/local/bin/nexa-ai-gui"
 
-# Privileged control-action helper. nexa-ai-gui/-cli run unprivileged as
-# "user" (the normal Sway session account); control tools that need root
-# (cpufreq governor, rc-service, modprobe, ...) reach it via
-# `doas nexa-ai-control-helper`, which /etc/doas.conf permits "user" to run,
-# and nothing else, without a password. See control_helper.py: it reads one
-# {"tool", "args"} request from stdin and refuses anything not already an
-# allowlisted control tool, so the doas grant can't be leveraged into a
-# generic root shell even by something that reuses it.
-printf '%s\n' \
-    '#!/bin/sh' \
-    'exec env PYTHONPATH="/usr/local/lib/nexa-ai:/usr/local/lib/nexa-common:${PYTHONPATH:-}" python3 -m nexa_ai.control_helper' \
-    > "$rootfs/usr/local/bin/nexa-ai-control-helper"
-chmod +x "$rootfs/usr/local/bin/nexa-ai-control-helper"
-
-printf '%s\n' \
-    'permit nopass user cmd /usr/local/bin/nexa-ai-control-helper' \
-    > "$rootfs/etc/doas.conf"
+# The assistant's system changes (CPU mode, services, hostname, packages,
+# power, brightness, time zone) go through nexa-brokerd (tools/nexa-brokerd,
+# Rust): checked, password where needed, sandboxed per action, audited.
+# The old Python root helper is gone.
+rm -f "$rootfs/usr/local/bin/nexa-ai-control-helper"
+# Each stage-*.sh appends its own helper's line to this file.
+printf '%s\n' '# NexaOS root helpers (scripts/stage-*.sh add one line each)' > "$rootfs/etc/doas.conf"
 # doas refuses to run at all unless this file is owned by root and 0400.
 chown 0:0 "$rootfs/etc/doas.conf"
 chmod 400 "$rootfs/etc/doas.conf"

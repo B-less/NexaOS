@@ -6,7 +6,6 @@ Escape, closes it. Running the same command again while it is open closes
 it too (Gtk.Application's single instance), so one key or bar button
 toggles it.
 """
-import json
 import subprocess
 import time
 
@@ -35,12 +34,12 @@ def spawn(argv):
 
 
 def power(action):
-    """Lock, sleep, restart or shut down through the existing helpers."""
+    """Lock, or sleep / restart / shut down through the system broker."""
     if action == "lock":
         spawn(["nexa-lock"])
         return
-    payload = json.dumps({"action": action})
-    spawn(["sh", "-c", f"echo '{payload}' | doas /usr/local/bin/nexa-power-helper"])
+    if action in ("suspend", "reboot", "poweroff"):
+        spawn(["nexa-brokerd", "call", action])
 
 
 # Open/close animation: fade plus a short slide down into place, eased out

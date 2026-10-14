@@ -25,20 +25,13 @@ printf '%s\n' \
     > "$rootfs/usr/local/bin/nexa-install"
 chmod +x "$rootfs/usr/local/bin/nexa-install"
 
-printf '%s\n' \
-    '#!/bin/sh' \
-    'exec env PYTHONPATH="/usr/local/lib/nexa-installer:${PYTHONPATH:-}" python3 -m nexa_installer.control_helper' \
-    > "$rootfs/usr/local/bin/nexa-install-helper"
-chmod +x "$rootfs/usr/local/bin/nexa-install-helper"
-
-if [ ! -f "$rootfs/etc/doas.conf" ]; then
-    : > "$rootfs/etc/doas.conf"
+# .nexa apps are installed by nexa-brokerd (tools/nexa-brokerd/src/apps.rs).
+rm -f "$rootfs/usr/local/bin/nexa-install-helper"
+if [ -f "$rootfs/etc/doas.conf" ]; then
+    sed -i '/nexa-install-helper/d' "$rootfs/etc/doas.conf"
+    chown 0:0 "$rootfs/etc/doas.conf"
+    chmod 400 "$rootfs/etc/doas.conf"
 fi
-if ! grep -q nexa-install-helper "$rootfs/etc/doas.conf" 2>/dev/null; then
-    echo 'permit nopass user cmd /usr/local/bin/nexa-install-helper' >> "$rootfs/etc/doas.conf"
-fi
-chown 0:0 "$rootfs/etc/doas.conf"
-chmod 400 "$rootfs/etc/doas.conf"
 
 cat > "$rootfs/usr/share/mime/packages/nexa-package.xml" << 'MIME_EOF'
 <?xml version="1.0" encoding="UTF-8"?>

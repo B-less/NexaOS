@@ -3,4 +3,4 @@
 # machine never wakes up unlocked, then suspend. nexa-lock returns once the
 # lock is in place (swaylock --daemonize).
 nexa-lock
-echo '{"action": "suspend"}' | doas /usr/local/bin/nexa-power-helper >/dev/null 2>&1
+nexa-brokerd call suspend >/dev/null 2>&1

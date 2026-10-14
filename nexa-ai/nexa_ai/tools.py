@@ -6,7 +6,7 @@ import shlex
 import subprocess
 import time
 
-from nexa_common import apkops, audioctl, elevate, hands
+from nexa_common import apkops, audioctl, hands
 
 READ = "read"
 CONTROL = "control"
@@ -186,83 +186,68 @@ def tail_log(args):
     return _run(["dmesg"]).strip().splitlines()[-lines:]
 
 
+# System changes: done by nexa-brokerd (Rust, root, per-action Landlock,
+# audited); Python only asks it. See nexa_common/broker.py.
+def _broker(action, args):
+    from nexa_common import askpass, broker
+    def ask_password(what, error):
+        return askpass.ask(f"{what or 'This change'}: the assistant needs your password.")(error is not None)
+    try:
+        return broker.run(action, args, ask_password)
+    except broker.BrokerError as e:
+        raise ToolError(str(e))
+
+
 def set_cpu_governor(args):
-    gov = args.get("governor", "")
-    if gov not in _ALLOWED_GOVERNORS:
-        raise ToolError(f"governor must be one of {sorted(_ALLOWED_GOVERNORS)}")
-    written = 0
-    for entry in sorted(os.listdir("/sys/devices/system/cpu")):
-        path = f"/sys/devices/system/cpu/{entry}/cpufreq/scaling_governor"
-        if re.match(r"^cpu\d+$", entry) and os.path.exists(path):
-            with open(path, "w") as f:
-                f.write(gov)
-            written += 1
-    if written == 0:
-        raise ToolError("no cpufreq scaling_governor files found (cpufreq not available in this VM/kernel)")
-    return {"governor": gov, "cpus_updated": written}
+    return _broker("set_governor", {"governor": args.get("governor", "")})
+
+
+def set_brightness(args):
+    return _broker("set_brightness", {"percent": args.get("percent")})
+
+
+def set_timezone(args):
+    return _broker("set_timezone", {"zone": args.get("zone", "")})
 
 
 def list_services(_args):
     return _run(["rc-status", "--all"]).strip().splitlines()
 
 
-def _validate_service(name):
-    if not _NAME_RE.match(name):
-        raise ToolError("invalid service name")
-    if not os.path.exists(f"/etc/init.d/{name}"):
-        raise ToolError(f"no such service: {name}")
-
-
 def restart_service(args):
-    name = args.get("name", "")
-    _validate_service(name)
-    return _run(["rc-service", name, "restart"], timeout=30).strip()
+    return _broker("restart_service", {"name": args.get("name", "")})
 
 
 def start_service(args):
-    name = args.get("name", "")
-    _validate_service(name)
-    return _run(["rc-service", name, "start"], timeout=30).strip()
+    return _broker("start_service", {"name": args.get("name", "")})
 
 
 def stop_service(args):
-    name = args.get("name", "")
-    _validate_service(name)
-    return _run(["rc-service", name, "stop"], timeout=30).strip()
-
-
-def load_module(args):
-    name = args.get("name", "")
-    if not _NAME_RE.match(name):
-        raise ToolError("invalid module name")
-    return _run(["modprobe", name], timeout=20).strip() or f"loaded {name}"
-
-
-def unload_module(args):
-    name = args.get("name", "")
-    if not _NAME_RE.match(name):
-        raise ToolError("invalid module name")
-    return _run(["modprobe", "-r", name], timeout=20).strip() or f"unloaded {name}"
+    return _broker("stop_service", {"name": args.get("name", "")})
 
 
 def set_hostname(args):
-    name = args.get("name", "")
-    if not _NAME_RE.match(name):
-        raise ToolError("invalid hostname")
-    with open("/etc/hostname", "w") as f:
-        f.write(name + "\n")
-    _run(["hostname", name])
-    return {"hostname": name}
+    return _broker("set_hostname", {"name": args.get("name", "")})
 
 
 def reboot_system(_args):
-    subprocess.Popen(["reboot"])
-    return "reboot initiated"
+    return _broker("reboot", {})
 
 
 def poweroff_system(_args):
-    subprocess.Popen(["poweroff"])
-    return "poweroff initiated"
+    return _broker("poweroff", {})
+
+
+def suspend_system(_args):
+    return _broker("suspend", {})
+
+
+def check_updates(_args):
+    return _broker("update_index", {})
+
+
+def update_system(_args):
+    return _broker("system_update", {})
 
 
 # Files: done by nexa-tools (Rust, Landlock-sandboxed per call, undoable).
@@ -424,21 +409,11 @@ def list_installed_packages(_args):
 
 
 def install_package(args):
-    name = args.get("name", "")
-    try:
-        output = apkops.install_package(name)
-    except apkops.ApkError as e:
-        raise ToolError(str(e))
-    return output.strip() or f"installed {name}"
+    return _broker("install_packages", {"names": [args.get("name", "")]})
 
 
 def remove_package(args):
-    name = args.get("name", "")
-    try:
-        output = apkops.remove_package(name)
-    except apkops.ApkError as e:
-        raise ToolError(str(e))
-    return output.strip() or f"removed {name}"
+    return _broker("remove_packages", {"names": [args.get("name", "")]})
 
 
 # Window tools talk to the caller's own Sway session over its IPC socket
@@ -1024,19 +999,32 @@ TOOLS = {
             "name": {"type": "string"},
         }, "required": ["name"]},
     },
-    "load_module": {
-        "category": CONTROL, "func": load_module,
-        "description": "Load a kernel module by name (modprobe).",
-        "input_schema": {"type": "object", "properties": {
-            "name": {"type": "string"},
-        }, "required": ["name"]},
+
+
+    "set_brightness": {
+        "category": CONTROL, "func": set_brightness,
+        "description": "Set the screen brightness, in percent (1-100).",
+        "input_schema": {"type": "object", "properties": {"percent": {"type": "number"}}, "required": ["percent"]},
     },
-    "unload_module": {
-        "category": CONTROL, "func": unload_module,
-        "description": "Unload a kernel module by name (modprobe -r).",
-        "input_schema": {"type": "object", "properties": {
-            "name": {"type": "string"},
-        }, "required": ["name"]},
+    "set_timezone": {
+        "category": CONTROL, "func": set_timezone,
+        "description": "Set the computer's time zone, e.g. Africa/Accra or Europe/London.",
+        "input_schema": {"type": "object", "properties": {"zone": {"type": "string"}}, "required": ["zone"]},
+    },
+    "check_updates": {
+        "category": CONTROL, "func": check_updates,
+        "description": "Check whether software updates are available for this computer.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "update_system": {
+        "category": CONTROL, "func": update_system,
+        "description": "Install all available software updates. Only when the user asks.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "suspend_system": {
+        "category": CONTROL, "func": suspend_system,
+        "description": "Put the computer to sleep. Only when the user asks.",
+        "input_schema": {"type": "object", "properties": {}},
     },
     "set_hostname": {
         "category": CONTROL, "func": set_hostname,
@@ -1057,7 +1045,7 @@ TOOLS = {
     },
 }
 
-ALWAYS_CONFIRM = {"reboot_system", "poweroff_system", "delete_file", "stop_app"}
+ALWAYS_CONFIRM = {"reboot_system", "poweroff_system", "suspend_system", "update_system", "delete_file", "stop_app"}
 
 
 # The on-device model reads its prompt at ~40 tokens/s on a laptop CPU
@@ -1095,6 +1083,14 @@ LOCAL_TOPICS = (
      ("get_datetime",)),
     (("battery", "charge", "charging", "plugged", "power"),
      ("get_battery",)),
+    (("bright", "dim", "screen", "display"),
+     ("set_brightness",)),
+    (("time zone", "timezone", "wrong time"),
+     ("set_timezone", "get_datetime")),
+    (("sleep", "suspend", "restart", "reboot", "shut down", "shutdown", "power off", "turn off"),
+     ("suspend_system", "reboot_system", "poweroff_system")),
+    (("update", "upgrade", "latest version", "new version"),
+     ("check_updates", "update_system")),
     (("slow", "lag", "frozen", "freez", "process", "memory", "ram", "cpu", "kill", "stop", "quit", "hung", "not responding"),
      ("top_processes", "stop_app")),
     (("calculat", "how much is", "plus", "minus", "times", "divided", "percent", "%", "sum", "average", "tip", "math"),
@@ -1133,30 +1129,6 @@ def anthropic_tool_specs(names=None):
     ]
 
 
-def _run_control_via_doas(name, args):
-    from nexa_common import askpass  # GUI only when a password is actually needed
-    try:
-        p = elevate.run_interactive(
-            "/usr/local/bin/nexa-ai-control-helper", json.dumps({"tool": name, "args": args}),
-            askpass.ask("The assistant wants to change a system setting."), timeout=30,
-        )
-    except elevate.WrongPassword:
-        raise ToolError("wrong password")
-    except FileNotFoundError:
-        raise ToolError("doas is not installed; control actions need root and no escalation path is configured")
-    except subprocess.TimeoutExpired:
-        raise ToolError("control helper timed out")
-    if p is None:
-        raise ToolError("the user cancelled the password prompt")
-    try:
-        resp = json.loads(p.stdout)
-    except json.JSONDecodeError:
-        raise ToolError(p.stderr.strip() or f"control helper produced no output (exit {p.returncode})")
-    if not resp.get("ok"):
-        raise ToolError(resp.get("error", "control helper failed"))
-    return resp.get("result")
-
-
 def run_tool(name, args, allow_control):
     if name not in TOOLS:
         raise ToolError(f"unknown tool: {name}")
@@ -1164,6 +1136,4 @@ def run_tool(name, args, allow_control):
     if spec["category"] == CONTROL:
         if not allow_control:
             raise ToolError(f"'{name}' is a control action and control is disabled (see /etc/nexa-ai/config.json)")
-        if os.geteuid() != 0:
-            return _run_control_via_doas(name, args or {})
     return spec["func"](args or {})

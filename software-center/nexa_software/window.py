@@ -1,5 +1,3 @@
-import json
-import subprocess
 import threading
 
 import gi
@@ -7,7 +5,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
 
 from nexa_common.titlebar import attach_titlebar
-from nexa_common import apkops, askpass, elevate
+from nexa_common import apkops, askpass
 
 CSS = b"""
 window { background-image: none; background-color: @nexa_bg; }
@@ -33,25 +31,26 @@ notebook tab:checked { background-image: none; background-color: @nexa_selected;
 COL_NAME, COL_VERSION, COL_DESC = range(3)
 
 
+# Installing and removing go through the system broker (nexa-brokerd):
+# names checked, the system's own packages protected, your password asked
+# on an installed system, every change logged.
+BROKER_ACTIONS = {"install": ("install_packages", "package"), "remove": ("remove_packages", "package"),
+                  "update_index": ("update_index", None)}
+
+
 def _call_helper(action, **args):
-    request = json.dumps({"action": action, "args": args})
+    from nexa_common import broker
+    name, field = BROKER_ACTIONS[action]
+    params = {"names": [args[field]]} if field else {}
+
+    def ask_password(what, error):
+        return askpass.ask(f"{what or 'Changing software'} needs your password.")(error is not None)
+
     try:
-        result = elevate.run_interactive(
-            "/usr/local/bin/nexa-software-helper", request, askpass.ask("Installing or removing apps changes the system."), timeout=150,
-        )
-    except elevate.WrongPassword:
-        return False, "Wrong password."
-    except (subprocess.SubprocessError, OSError) as e:
-        return False, str(e)
-    if result is None:
-        return False, "Cancelled."
-    try:
-        response = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return False, (result.stderr or "").strip() or "helper produced no output"
-    if response.get("ok"):
-        return True, response.get("output", "")
-    return False, response.get("error", "unknown error")
+        result = broker.run(name, params, ask_password)
+    except broker.BrokerError as e:
+        return False, "Cancelled." if str(e) == "cancelled" else str(e)
+    return True, (result or {}).get("done", "") if isinstance(result, dict) else ""
 
 
 class SoftwareWindow(Gtk.Window):
