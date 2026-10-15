@@ -11,6 +11,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from . import privileged
 from .connections import BluetoothPage, VpnPage
+from .privacy_page import PrivacyPage
 from nexa_common import actionui, compositor, mind, persist, sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
@@ -47,7 +48,7 @@ WALLPAPER_GALLERY = "/usr/share/backgrounds/nexaos/gallery"
 LOGIN_REQUIRED = "/etc/nexa/login-required"  # written by the OS installer
 SKIP_LOGIN_LOCK = os.path.expanduser("~/.config/nexa/skip-login-lock")
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
-PAGES = ("Personalization", "Bluetooth", "VPN", "System", "Time & Keyboard", "Power", "Assistant", "About")
+PAGES = ("Personalization", "Bluetooth", "VPN", "System", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
 
 
 class SettingsWindow(Gtk.Window):
@@ -91,6 +92,8 @@ class SettingsWindow(Gtk.Window):
         self.stack.add_named(self._scrolled(self._build_system_page()), "System")
         self.stack.add_named(self._scrolled(self._build_time_page()), "Time & Keyboard")
         self.stack.add_named(self._scrolled(self._build_power_page()), "Power")
+        self.privacy_page = PrivacyPage(self)
+        self.stack.add_named(self._scrolled(self.privacy_page.page), "Privacy")
         self.stack.add_named(self._scrolled(self._build_assistant_page()), "Assistant")
         self.stack.add_named(self._scrolled(self._build_about_page()), "About")
 
@@ -102,6 +105,8 @@ class SettingsWindow(Gtk.Window):
         self._on_nav(None, "Personalization")
 
     def _on_nav(self, _btn, name):
+        if name == "Privacy":
+            self.privacy_page.reload()  # apps may have been installed meanwhile
         self.stack.set_visible_child_name(name)
         for n, b in self.nav_buttons.items():
             ctx = b.get_style_context()

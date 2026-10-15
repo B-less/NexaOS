@@ -47,7 +47,7 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [ ] Reopen your windows after a reboot or power cut ("orthogonal persistence", practical form): session save/restore + app autosave
 - [ ] Safe updates with rollback ("zero-downtime patching", practical form): update into a new system layer, keep the previous one, one-click undo
 - [x] Per-app permissions ("capability sandboxing"): installed .nexa apps start through nexa-run (Rust), which confines them with Landlock to what they declared: their own folders, the files.* folders they asked for, a file opened with them, TCP only with "network", the camera only with "camera"; the person can switch permissions off (~/.config/nexa/app-permissions.json); `nexa-run --explain <id>`. Not enforceable with Landlock yet: microphone, notifications, location, background, UDP
-- [ ] Privacy Center page in Settings: each app, what it may use, switches to take permissions away (writes app-permissions.json)
+- [x] Privacy Center (Settings > Privacy): each installed app with who signed it and what it may use, a switch per permission (takes effect at the app's next start, enforced by nexa-run; permissions Landlock can't enforce yet are marked and their switch is disabled)
 - [~] Smart search ("semantic file system", practical form): the assistant finds files by name, recent changes and what takes up space (nexa-tools); still missing: contents, tags and dates ("last Friday"), a local index, search from Launchpad
 - [ ] Self-healing desktop parts ("restart the failed module"): bar, Dock, notifications and Wi-Fi restart themselves if they crash
 - Not planned: microkernel, neural scheduler, NPU fabric, ambient cloud compute, phone convergence (research-OS scale, not possible on a Linux base)
