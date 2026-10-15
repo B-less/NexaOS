@@ -243,7 +243,7 @@ fn exec() -> Value {
             fs.push((dir.to_string_lossy().into(), sandbox::READ));
         }
     }
-    if let Err(e) = sandbox::restrict(&sandbox::Rules { fs, connect_ports: acc.net.clone() }) {
+    if let Err(e) = sandbox::restrict(&sandbox::Rules { fs, connect_ports: acc.net.clone(), any_network: false }) {
         return json!({"ok": false, "error": format!("couldn't enable the sandbox: {e}")});
     }
     finish(worker::perform(&a, &root, &caller))

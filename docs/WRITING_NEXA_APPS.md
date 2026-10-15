@@ -60,7 +60,23 @@ permissions = []         # see below
   `network`, `files.home`, `files.documents`, `files.pictures`,
   `files.music`, `files.videos`, `camera`, `microphone`, `location`,
   `notifications`, `background`. Anything else makes the package invalid.
-  Declare what you use; never use what you didn't declare.
+- **Permissions are enforced.** An installed app is started by `nexa-run`,
+  which confines it with Landlock to what it declared (and the person
+  hasn't switched off). Without a permission the app simply can't:
+  | Always | the system read-only; screen, sound and GPU; `/tmp`; its own `~/.local/share/<id>`, `~/.config/<id>`, `~/.cache/<id>`; the theme and fonts |
+  |---|---|
+  | `files.videos` (etc.) | that one folder, read and write |
+  | `files.home` | the whole home folder (ask for this only if you must) |
+  | `network` | TCP connections; without it every TCP connect is refused |
+  | `camera` | `/dev/video*` |
+  | a file opened with the app | that file, read-only (`app FILE` on the command line) |
+
+  Not enforced yet (Landlock can't see them): `microphone` and
+  `notifications` (PipeWire and D-Bus sockets), `location`, `background`,
+  and UDP. Declare them honestly anyway. `nexa-run --explain <id>` prints
+  exactly what an app may use. **Test your app installed**, not only from
+  `build/`: an app that reads `~/Downloads` without `files.home` will find
+  it empty.
 
 ## 3. How an app behaves
 
@@ -179,6 +195,7 @@ actually looked at.
 
 - [ ] C or Rust; hardened flags; no shell with untrusted text
 - [ ] `nexa.toml`: valid id/version, fewest permissions, offline-friendly depends
+- [ ] Works when installed (confined by nexa-run): checked with `nexa-run --explain <id>` and a real run
 - [ ] Runs as the user; system changes only via the broker; data in XDG folders
 - [ ] Never touches secrets or files outside what it declared
 - [ ] Hexa: `@nexa_*` colours with the fallback block, Inter, 6/10/16 radii, hexagon mark, one primary action

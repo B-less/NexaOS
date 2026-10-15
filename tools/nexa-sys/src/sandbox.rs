@@ -67,7 +67,10 @@ pub fn abi() -> i64 {
 
 pub struct Rules {
     pub fs: Vec<(String, u64)>,
+    /// Outbound TCP ports allowed (all other TCP connects and binds denied).
     pub connect_ports: Vec<u16>,
+    /// Leave TCP alone entirely (an app with the "network" permission).
+    pub any_network: bool,
 }
 
 /// What this ABI can control (older kernels know fewer rights).
@@ -89,9 +92,9 @@ pub fn restrict(rules: &Rules) -> io::Result<i64> {
     let fs_mask = handled_fs(abi);
     let attr = RulesetAttr {
         handled_access_fs: fs_mask,
-        handled_access_net: if abi >= 4 { NET_BIND_TCP | NET_CONNECT_TCP } else { 0 },
+        handled_access_net: if abi >= 4 && !rules.any_network { NET_BIND_TCP | NET_CONNECT_TCP } else { 0 },
     };
-    let attr_size = if abi >= 4 { std::mem::size_of::<RulesetAttr>() } else { 8 };
+    let attr_size = if abi >= 4 && !rules.any_network { std::mem::size_of::<RulesetAttr>() } else { 8 };
     // SAFETY: attr is a valid landlock_ruleset_attr of attr_size bytes.
     let ruleset = unsafe { libc::syscall(SYS_LANDLOCK_CREATE_RULESET, &attr as *const RulesetAttr, attr_size, 0u32) };
     if ruleset < 0 {
@@ -124,7 +127,7 @@ pub fn restrict(rules: &Rules) -> io::Result<i64> {
                 return Err(io::Error::last_os_error());
             }
         }
-        if abi >= 4 {
+        if abi >= 4 && !rules.any_network {
             for port in &rules.connect_ports {
                 let rule = NetPortAttr { allowed_access: NET_CONNECT_TCP, port: *port as u64 };
                 // SAFETY: rule is a valid landlock_net_port_attr.
@@ -159,7 +162,7 @@ pub fn service_rules(state_dir: &str, run_dir: &str) -> Rules {
     fs.push(("/dev/null".into(), READ | WRITE_FILE));
     fs.push((state_dir.into(), READ_WRITE));
     fs.push((run_dir.into(), READ_WRITE));
-    Rules { fs, connect_ports: vec![443] }
+    Rules { fs, connect_ports: vec![443], any_network: false }
 }
 
 #[cfg(test)]
@@ -182,7 +185,7 @@ mod tests {
         // SAFETY: fork in a test; the child only does simple syscalls then exits.
         let pid = unsafe { libc::fork() };
         if pid == 0 {
-            let rules = Rules { fs: vec![(allowed.to_string_lossy().into(), READ_WRITE)], connect_ports: vec![] };
+            let rules = Rules { fs: vec![(allowed.to_string_lossy().into(), READ_WRITE)], connect_ports: vec![], any_network: false };
             let ok = restrict(&rules).is_ok()
                 && std::fs::write(allowed.join("f"), b"x").is_ok()
                 && std::fs::write(denied.join("f"), b"x").is_err()

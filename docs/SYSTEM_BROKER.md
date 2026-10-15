@@ -67,7 +67,9 @@ The package is read **with the asker's own file permissions** (setfsuid),
 so nobody can make root read a file they couldn't, then copied to a private
 folder and checked by `nexa-pack` (every file's SHA-256 and the publisher's
 signature). An app only ever places files under its own names
-(`/usr/local/bin/<id>`, `/usr/local/lib/nexa-<id>`,
+(its program in `/usr/local/libexec/nexa-apps/<id>`, its command
+`/usr/local/bin/<id>` as a link to `nexa-run`, which starts it confined to
+its declared permissions; `/usr/local/lib/nexa-<id>`,
 `nexa-<id>.desktop`, `nexa-<id>` icons), never over a system command or
 anything the system or another app installed, and records what it placed,
 so removing it is exact. A failed install removes everything it started to

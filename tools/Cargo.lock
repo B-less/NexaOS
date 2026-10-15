@@ -303,6 +303,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-run"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "nexa-sys"
 version = "0.1.0"
 dependencies = [

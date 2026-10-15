@@ -46,7 +46,8 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [ ] Per-app internet control ("network-level sandboxing"): choose per app: normal, VPN only, Tor only, or no internet (network namespaces + nftables per app)
 - [ ] Reopen your windows after a reboot or power cut ("orthogonal persistence", practical form): session save/restore + app autosave
 - [ ] Safe updates with rollback ("zero-downtime patching", practical form): update into a new system layer, keep the previous one, one-click undo
-- [~] Per-app permissions ("capability sandboxing"): .nexa apps declare permissions, nexa-pack checks the names and the installer shows and records them, but nothing enforces them yet when an app runs. Next: a Rust launcher applying Landlock from the permissions, then a Privacy Center page
+- [x] Per-app permissions ("capability sandboxing"): installed .nexa apps start through nexa-run (Rust), which confines them with Landlock to what they declared: their own folders, the files.* folders they asked for, a file opened with them, TCP only with "network", the camera only with "camera"; the person can switch permissions off (~/.config/nexa/app-permissions.json); `nexa-run --explain <id>`. Not enforceable with Landlock yet: microphone, notifications, location, background, UDP
+- [ ] Privacy Center page in Settings: each app, what it may use, switches to take permissions away (writes app-permissions.json)
 - [~] Smart search ("semantic file system", practical form): the assistant finds files by name, recent changes and what takes up space (nexa-tools); still missing: contents, tags and dates ("last Friday"), a local index, search from Launchpad
 - [ ] Self-healing desktop parts ("restart the failed module"): bar, Dock, notifications and Wi-Fi restart themselves if they crash
 - Not planned: microkernel, neural scheduler, NPU fabric, ambient cloud compute, phone convergence (research-OS scale, not possible on a Linux base)

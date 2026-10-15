@@ -1,0 +1,10 @@
+[package]
+name = "nexa-run"
+version = "0.1.0"
+edition = "2021"
+description = "Starts an installed .nexa app confined to the permissions it declared (Landlock)"
+
+[dependencies]
+libc = "0.2"
+nexa-sys = { path = "../nexa-sys" }
+serde_json = "1"

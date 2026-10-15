@@ -59,7 +59,7 @@ fn handle(input: &[u8]) -> Result<Value, String> {
     for p in &access.write {
         fs_rules.push((p.to_string_lossy().into(), sandbox::READ_WRITE));
     }
-    let abi = sandbox::restrict(&sandbox::Rules { fs: fs_rules, connect_ports: access.net.clone() })
+    let abi = sandbox::restrict(&sandbox::Rules { fs: fs_rules, connect_ports: access.net.clone(), any_network: false })
         .map_err(|e| format!("couldn't enable the sandbox: {e}"))?;
     if abi == 0 && std::env::var_os("NEXA_TOOLS_ALLOW_UNSANDBOXED").is_none() {
         return Err("this kernel has no Landlock, so the assistant's file actions are disabled".into());

@@ -24,6 +24,9 @@ const COMMAND_DIRS: &[&str] = &["/usr/local/sbin", "/usr/local/bin", "/usr/sbin"
 
 pub struct Places {
     pub bin: PathBuf,
+    /// The app's real program; bin/<id> is a link to nexa-run, which starts
+    /// it confined to its permissions (tools/nexa-run).
+    pub libexec: PathBuf,
     pub lib: PathBuf,
     pub apps: PathBuf,
     pub icons: PathBuf,
@@ -41,7 +44,7 @@ impl Places {
     pub fn under(root: &Path) -> Places {
         let r = |p: &str| root.join(p);
         Places {
-            bin: r("usr/local/bin"), lib: r("usr/local/lib"), apps: r("usr/share/applications"),
+            bin: r("usr/local/bin"), libexec: r("usr/local/libexec/nexa-apps"), lib: r("usr/local/lib"), apps: r("usr/share/applications"),
             icons: r("usr/share/icons/hicolor/scalable/apps"), registry: r("var/lib/nexa-packages"),
             keys: r("etc/nexa/keys"), work: r("var/lib/nexa-broker/work"), nexa_pack: r("usr/local/bin/nexa-pack"),
             command_dirs: COMMAND_DIRS.iter().map(|d| root.join(d.trim_start_matches('/'))).collect(),
@@ -49,9 +52,10 @@ impl Places {
         }
     }
 
+    /// Every path an app may place: [bin link, lib dir, .desktop, svg, png, program].
     fn owned(&self, id: &str) -> Vec<PathBuf> {
         vec![self.bin.join(id), self.lib.join(format!("nexa-{id}")), self.apps.join(format!("nexa-{id}.desktop")),
-             self.icons.join(format!("nexa-{id}.svg")), self.icons.join(format!("nexa-{id}.png"))]
+             self.icons.join(format!("nexa-{id}.svg")), self.icons.join(format!("nexa-{id}.png")), self.libexec.join(id)]
     }
 
     fn registry_file(&self, id: &str) -> PathBuf {
@@ -194,9 +198,14 @@ fn install_from(p: &Places, work: &Path, bytes: &[u8], allow_unverified: bool, w
     let attempt = (|| -> Result<Vec<PathBuf>, String> {
         let mut placed = Vec::new();
         let bin_src = inside(&payload, &format!("bin/{id}")).ok_or(format!("the package is missing its program (bin/{id})"))?;
+        // The program itself, out of PATH...
+        fs::create_dir_all(&p.libexec).map_err(|e| e.to_string())?;
+        fs::copy(&bin_src, &owned[5]).map_err(|e| e.to_string())?;
+        fs::set_permissions(&owned[5], std::os::unix::fs::PermissionsExt::from_mode(0o755)).map_err(|e| e.to_string())?;
+        placed.push(owned[5].clone());
+        // ...and its command: a link to the launcher that applies its permissions.
         fs::create_dir_all(&p.bin).map_err(|e| e.to_string())?;
-        fs::copy(&bin_src, &owned[0]).map_err(|e| e.to_string())?;
-        fs::set_permissions(&owned[0], std::os::unix::fs::PermissionsExt::from_mode(0o755)).map_err(|e| e.to_string())?;
+        std::os::unix::fs::symlink("nexa-run", &owned[0]).map_err(|e| e.to_string())?;
         placed.push(owned[0].clone());
         let lib = payload.join("lib");
         if lib.is_dir() && !lib.is_symlink() {
@@ -211,7 +220,7 @@ fn install_from(p: &Places, work: &Path, bytes: &[u8], allow_unverified: bool, w
             placed.push(dest);
         }
         let desktop = format!(
-            "[Desktop Entry]\nType=Application\nName={}\nComment={}\nExec={}\nIcon=nexa-{id}\nTerminal={}\nCategories={}\n",
+            "[Desktop Entry]\nType=Application\nName={}\nComment={}\nExec={} %F\nIcon=nexa-{id}\nTerminal={}\nCategories={}\n",
             one_line(&report["name"]), one_line(&report["description"]), owned[0].display(),
             if report["terminal"] == true { "true" } else { "false" },
             Some(one_line(&report["categories"])).filter(|c| !c.is_empty()).unwrap_or_else(|| "Utility;".into()));

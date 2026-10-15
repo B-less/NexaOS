@@ -38,6 +38,9 @@ REGISTRY_DIR = os.path.join(root, "var/lib/nexa-packages")
 KEYS_DIR = d("etc/nexa/keys")
 d("usr/bin"); d("bin")
 shutil.copy(NEXA_PACK, os.path.join(BIN_DIR, "nexa-pack"))  # a copy: Landlock follows links
+LIBEXEC = os.path.join(root, "usr/local/libexec/nexa-apps")
+# The launcher apps' commands link to (tools/nexa-run); a stand-in here.
+open(os.path.join(BIN_DIR, "nexa-run"), "w").write("#!/bin/sh\n"); os.chmod(os.path.join(BIN_DIR, "nexa-run"), 0o755)
 
 def broker(action, args):
     """One request to the real broker worker, as the system broker would send it."""
@@ -81,9 +84,11 @@ def make_pkg(pkg_id, name="App", icon=True, lib=True, extra=None, manifest_extra
 # Normal (unsigned, user agreed) install
 out = install(make_pkg("hello"))
 reg = json.load(open(os.path.join(REGISTRY_DIR, "hello.json")))
-check("package installs once the user agrees", out.startswith("Installed") and os.access(os.path.join(BIN_DIR, "hello"), os.X_OK))
+check("package installs once the user agrees", out.startswith("Installed") and os.access(os.path.join(LIBEXEC, "hello"), os.X_OK))
+check("its command is a link to the permissions launcher (nexa-run), the program is out of PATH",
+      os.readlink(os.path.join(BIN_DIR, "hello")) == "nexa-run" and not os.access(os.path.join(BIN_DIR, "nexa-hello"), os.F_OK))
 check("install records exactly what it wrote, and how it was verified", set(reg["paths"]) == {
-    os.path.join(BIN_DIR, "hello"), os.path.join(LIB_ROOT, "nexa-hello"),
+    os.path.join(BIN_DIR, "hello"), os.path.join(LIBEXEC, "hello"), os.path.join(LIB_ROOT, "nexa-hello"),
     os.path.join(ICON_DIR, "nexa-hello.svg"), os.path.join(APPS_DIR, "nexa-hello.desktop")} and reg["trust"] == "unsigned", str(reg))
 
 # Trust
@@ -92,7 +97,7 @@ try:
 except Unverified as e:
     unv = str(e)
 check("unsigned package is held back until the user agrees", unv is not None and "isn't signed" in unv, str(unv))
-check("...and nothing was written", not os.path.exists(os.path.join(BIN_DIR, "nosig")))
+check("...and nothing was written", not os.path.lexists(os.path.join(BIN_DIR, "nosig")))
 proj = tempfile.mkdtemp()
 subprocess.run([NEXA_PACK, "keygen", os.path.join(proj, "pub")], check=True, capture_output=True)
 key_id = open(os.path.join(proj, "pub.pub")).readline().split()[2]
@@ -113,7 +118,7 @@ check("...its trust, publisher and permissions are recorded",
       reg["trust"] == "trusted" and reg["publisher"] == key_id and reg["permissions"] == ["network"], str(reg))
 check("tampered package is refused even when the user agrees",
       "changed after" in (error_of(install, make_pkg("tamp", tamper={"bin/tamp": b"#!/bin/sh\nrm -rf ~\n"})) or ""))
-check("...and nothing was written", not os.path.exists(os.path.join(BIN_DIR, "tamp")))
+check("...and nothing was written", not os.path.lexists(os.path.join(BIN_DIR, "tamp")))
 check("file not listed in the manifest is refused", "not in the manifest" in (error_of(install, make_pkg("sneak", extra={"lib/evil.so": b"x"})) or ""))
 
 # Overwriting system files
@@ -123,7 +128,7 @@ check("id matching a system component's code dir is refused", error_of(install, 
 check("...and its code is untouched", open(os.path.join(LIB_ROOT, "nexa-setup", "x.py")).read() == "REAL")
 check("id shadowing a system command is refused", "system command" in (error_of(install, make_pkg("su")) or ""))
 check("refused installs leave nothing behind",
-      not os.path.exists(os.path.join(BIN_DIR, "su")) and not os.path.exists(os.path.join(REGISTRY_DIR, "su.json")))
+      not os.path.lexists(os.path.join(BIN_DIR, "su")) and not os.path.exists(os.path.join(REGISTRY_DIR, "su.json")))
 
 # Hostile manifests are refused outright by the verifier
 for label, kw in (("icon outside the package", {"manifest_extra": {"icon": "../../../shadow"}}),
@@ -136,7 +141,7 @@ for label, kw in (("icon outside the package", {"manifest_extra": {"icon": "../.
                   ("dependency name with shell characters", {"manifest_extra": {"depends": ["gtk; reboot"]}})):
     check(f"refused: {label}", error_of(install, make_pkg("bad", **kw)) is not None)
 check("...none of them left files behind",
-      not [f for f in os.listdir(ICON_DIR) if f.startswith("nexa-bad")] and not os.path.exists(os.path.join(BIN_DIR, "bad")))
+      not [f for f in os.listdir(ICON_DIR) if f.startswith("nexa-bad")] and not os.path.lexists(os.path.join(BIN_DIR, "bad")))
 
 # Upgrade
 install(make_pkg("hello", lib=False, icon=False))
@@ -151,7 +156,7 @@ check("uninstalling a root helper's name is refused", error_of(uninstall, "nexa-
       and os.path.exists(helper))
 uninstall("hello")
 check("uninstall removes the package and its record",
-      not os.path.exists(os.path.join(BIN_DIR, "hello")) and not os.path.exists(os.path.join(APPS_DIR, "nexa-hello.desktop"))
+      not os.path.lexists(os.path.join(BIN_DIR, "hello")) and not os.path.lexists(os.path.join(LIBEXEC, "hello")) and not os.path.exists(os.path.join(APPS_DIR, "nexa-hello.desktop"))
       and not os.path.exists(os.path.join(REGISTRY_DIR, "hello.json")))
 json.dump({"paths": [helper]}, open(os.path.join(REGISTRY_DIR, "odd.json"), "w"))
 uninstall("odd")
@@ -164,7 +169,7 @@ os.rename(ICON_DIR, aside); open(ICON_DIR, "w").close()
 raised = error_of(install, make_pkg("half")) is not None
 check("a failing install raises", raised)
 check("a failed install leaves no files and no record",
-      not os.path.exists(os.path.join(BIN_DIR, "half")) and not os.path.exists(os.path.join(LIB_ROOT, "nexa-half"))
+      not os.path.lexists(os.path.join(BIN_DIR, "half")) and not os.path.lexists(os.path.join(LIBEXEC, "half")) and not os.path.exists(os.path.join(LIB_ROOT, "nexa-half"))
       and not os.path.exists(os.path.join(REGISTRY_DIR, "half.json")))
 os.remove(ICON_DIR); os.rename(aside, ICON_DIR)
 check("...so the same package can be installed afterwards", install(make_pkg("half")).startswith("Installed"))

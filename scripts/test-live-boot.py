@@ -44,7 +44,7 @@ CHECKS = (
     'chmod 644 /tmp/hreq; echo HANDS=$(su user -s /bin/sh -c "nexa-tools < /tmp/hreq" 2>&1 | grep -o "\\"ok\\":[a-z]*")',
     # A signed .nexa from ~/Downloads installs through the system broker.
     """P=$(ls /home/user/Downloads/*.nexa 2>/dev/null | head -1); [ -n "$P" ] && printf '{"path":"%s"}' "$P" > /tmp/ireq && """
-    """echo NEXA_INSTALL=$(nexa-brokerd call install_app "$(cat /tmp/ireq)" | grep -o '"ok":[a-z]*' | tr -d '"')$(command -v $(basename ${P%%-[0-9]*}) >/dev/null && echo ',command')$(test -f /usr/share/applications/nexa-$(basename ${P%%-[0-9]*}).desktop && echo ',menu')""",
+    """echo NEXA_INSTALL=$(nexa-brokerd call install_app "$(cat /tmp/ireq)" | grep -o '"ok":[a-z]*' | tr -d '"')$(command -v $(basename ${P%%-[0-9]*}) >/dev/null && echo ',command')$(test -f /usr/share/applications/nexa-$(basename ${P%%-[0-9]*}).desktop && echo ',menu')$(test "$(readlink /usr/local/bin/$(basename ${P%%-[0-9]*}))" = nexa-run && echo ',confined')""",
     # The system broker: the desktop user changes a setting through it; a
     # non-administrator account is refused.
     """printf '%s' '{"zone":"Africa/Accra"}' > /tmp/breq; chmod 644 /tmp/breq; """

@@ -6,12 +6,16 @@
  *
  *   video-player [FILE]     play FILE, or show the ~/Videos library
  *
+ * Installed, it runs confined to files.videos by nexa-run: the library is
+ * ~/Videos; other files play when opened from the command line.
+ *
  * Keys: Space play/pause, Left/Right -/+10 s, Up/Down volume, M mute,
  * F or double-click fullscreen, Esc leave fullscreen / back to library,
  * [ ] slower/faster, O open. Remembers where you stopped in each video.
  */
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
+#include <glib/gstdio.h>
 #include <gtk/gtk.h>
 #include <math.h>
 #include <string.h>
@@ -386,7 +390,14 @@ static gboolean on_bus(GstBus *bus, GstMessage *msg, gpointer d)
         gst_message_parse_error(msg, &err, NULL);
         GtkWidget *dlg = gtk_message_dialog_new(GTK_WINDOW(app.win), GTK_DIALOG_MODAL, GTK_MESSAGE_OTHER,
                                                 GTK_BUTTONS_CLOSE, "Can't play this video");
-        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dlg), "%s", err ? err->message : "unknown error");
+        char *path = app.uri ? g_filename_from_uri(app.uri, NULL, NULL) : NULL;
+        if (path && g_access(path, R_OK) != 0)
+            /* Confined by nexa-run to files.videos: say so plainly. */
+            gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dlg), "%s",
+                "Video Player can only open videos in your Videos folder, or one you open with it from Files.");
+        else
+            gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dlg), "%s", err ? err->message : "unknown error");
+        g_free(path);
         gtk_dialog_run(GTK_DIALOG(dlg));
         gtk_widget_destroy(dlg);
         g_clear_error(&err);
@@ -501,8 +512,8 @@ static void fill_library(void)
     char *fallback = g_build_filename(g_get_home_dir(), "Videos", NULL);
     GPtrArray *found = g_ptr_array_new_with_free_func(g_free);
     scan(videos ? videos : fallback, found, 0);
-    char *downloads = g_build_filename(g_get_home_dir(), "Downloads", NULL);
-    scan(downloads, found, 3);
+    /* Only ~/Videos: the app's permission is files.videos, and nexa-run
+     * keeps it to that (other videos open through Open or a drop). */
     g_ptr_array_sort(found, by_name);
 
     for (guint i = 0; i < found->len; i++) {
@@ -545,7 +556,6 @@ static void fill_library(void)
     gtk_widget_show_all(app.library_list);
     g_ptr_array_free(found, TRUE);
     g_free(fallback);
-    g_free(downloads);
 }
 
 static void show_library(void)
@@ -712,7 +722,7 @@ static GtkWidget *build_library(void)
     GtkWidget *h = gtk_label_new("Videos");
     gtk_style_context_add_class(gtk_widget_get_style_context(h), "heading");
     gtk_label_set_xalign(GTK_LABEL(h), 0);
-    GtkWidget *s = gtk_label_new("From ~/Videos and ~/Downloads. Drop a file here to play it.");
+    GtkWidget *s = gtk_label_new("Your ~/Videos folder. Videos elsewhere: open them with Video Player from Files.");
     gtk_style_context_add_class(gtk_widget_get_style_context(s), "sub");
     gtk_label_set_xalign(GTK_LABEL(s), 0);
     gtk_box_pack_start(GTK_BOX(titles), h, FALSE, FALSE, 0);
