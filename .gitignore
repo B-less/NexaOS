@@ -106,3 +106,6 @@ attic/
 /tools/*/dist/
 # Secret signing keys never belong in the repo
 *.key
+
+# Zips made by hand next to apps (e.g. to share one) are not source.
+/apps/*.zip
