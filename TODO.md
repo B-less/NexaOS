@@ -1,19 +1,20 @@
 # NexaOS TODO
 
-Working list, in order. Autopilot granted 2026-10-12: build and verify each
-item, commit it, move on. `[x]` done and verified · `[~]` built, waiting for
-an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
+Working list, in order. `[x]` done and verified · `[~]` partly built (what's
+missing is said on the line) · `[ ]` not started. Details and history live in
+BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 
 ## 1. Current build (Alpine 3.24 + Hyprland)
 - [x] Fix missing app icons on 3.24 (hicolor-icon-theme, gtk-update-icon-cache) and rebuild the ISO
 - [x] Boot-test the ISO in QEMU (Sway path): Alpine 3.24.2, firewall, hardening, SSH off, no firmware errors, icons fixed (`scripts/test-live-boot.py`); terminal missing from the Dock (foot renamed in 3.24) — fixed
-- [ ] HP test: Hyprland animations/blur, Dock, themes, battery, brightness, lid, Wi-Fi *(needs you)*
+- [~] HP test: first run 2026-10-14 (the assistant: its folder, path and network problems were fixed). Still to check: Hyprland animations/blur, Dock, themes, battery, brightness, lid, Wi-Fi *(needs you)*
 
 ## 2. Security
 - [x] Ask for the password before root-level actions: software/package installs and the assistant's control tools need it on installed systems (checked against real OpenDoas); power/USB/Settings stay passwordless; the installer helper is removed from installed systems
 - [x] Installed systems start at the lock screen (password after every boot); per-user opt-out in Settings > Power; live USB unchanged
 - [x] Browser: WebKit sandbox on by default (verified: pages + JavaScript render with web content inside bwrap)
 - [x] Package server: the QEMU-only HTTP setting was dead config (only old fix_*.sh used it); apps install from Alpine's signed HTTPS repos
+- [x] No root shell on the screen: tty1 used to open a root shell with no login (Ctrl+Alt+F1); now the desktop owns tty1 and tty2 asks for a login (verified in QEMU)
 - [x] Further hardening — research + plan written: docs/HARDENING.md (kernel self-protection → Landlock for root helpers → AppArmor for internet-facing apps → own-key Secure Boot → disk encryption)
 
 - [x] Lock screen: unlocks again (PAM couldn't read /etc/shadow; live USB ignored the empty Enter), new look (blur, clock, theme colours); verified in QEMU: empty Enter unlocks the live USB, installed system accepts the right password and refuses a wrong one
@@ -30,19 +31,23 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [x] Private browsing over Tor: `nexadark` (or Tor window button / start menu) opens a private window through a per-user Tor on 127.0.0.1:9150; verified check.torproject.org says "configured to use Tor" with normal DNS switched off. Honest note in the window: not Tor Browser (fingerprinting)
 - [x] Private windows (Ctrl+Shift+N): nothing saved
 - [x] VPN: WireGuard in the kernel + Settings > VPN (import .conf, on/off, remove; files that run commands refused; VPN DNS applied and restored). Tested with real wg-quick against a peer in another network namespace
-- [ ] Signed updates from GitHub *(needs a GitHub repo + signing key from you)*
+- [ ] Signed updates from GitHub: the repo and the signing key exist now; still to build: the release signing + update tool, and a public place to download releases from (the repo is private)
 - [x] Remember Wi-Fi networks and browser history across reboots: browser history (search, URL-bar suggestions, clear) and sign-in cookies are saved; Wi-Fi was already remembered by iwd on installed systems, and networks joined in the live session carry over at install. The live USB itself forgets everything at shutdown (RAM overlay) — persistence there would need a storage partition
 - [x] Browser download manager: files go to ~/Downloads (safe, unique names), panel shows size, live speed and time left, Cancel / Show; non-viewable files and attachments download instead of failing
 - [x] Nexa Pulse: one app for running apps + processes (search, End task, Force quit) and live CPU/memory/disk/network graphs; Ctrl+Shift+Esc in Sway and Hyprland; old Tasks/System Monitor hidden (checked in headless Sway: `scripts/test-app-headless.sh`)
 - [x] Phase A extras: glass (translucent, blurred on Hyprland) app windows with a Settings switch, eased button/row transitions, Launchpad (Super+Space or the Dock: full-screen app grid with type-to-search)
 - [x] Nexa AI: claude-opus-5-5, max_tokens 16000, server-side refusal fallback, refusal/cut-off handling (tested against a fake API)
+- [x] .nexa apps: nexa-pack (Rust: build, Ed25519-sign, verify, reproducible), Nexa Installer, the first app (Video Player, C + GStreamer, signed, installs through the broker), rules for writing apps (docs/WRITING_NEXA_APPS.md, AGENTS.md); theme colours reach every app
+- [x] Faster boot: login prompt at ~18 s instead of ~38 s in QEMU (DHCP no longer holds up the desktop)
+- [ ] More of our own apps (.nexa, C/Rust): Photos, Music, Backup, Mail
+- [ ] Smart power: power-saving mode on battery, battery health, time-left estimate
 
 ## 4b. Next-gen ideas, made practical (from the "next-generation OS" article)
 - [ ] Per-app internet control ("network-level sandboxing"): choose per app: normal, VPN only, Tor only, or no internet (network namespaces + nftables per app)
 - [ ] Reopen your windows after a reboot or power cut ("orthogonal persistence", practical form): session save/restore + app autosave
 - [ ] Safe updates with rollback ("zero-downtime patching", practical form): update into a new system layer, keep the previous one, one-click undo
-- [ ] Per-app permissions ("capability sandboxing"): apps run in bubblewrap with access only to their own data, plus a file picker that hands over just the chosen file
-- [ ] Smart search ("semantic file system", practical form): Launchpad searches file contents, tags and dates ("last Friday"); a local index the assistant can use without uploading files
+- [~] Per-app permissions ("capability sandboxing"): .nexa apps declare permissions, nexa-pack checks the names and the installer shows and records them, but nothing enforces them yet when an app runs. Next: a Rust launcher applying Landlock from the permissions, then a Privacy Center page
+- [~] Smart search ("semantic file system", practical form): the assistant finds files by name, recent changes and what takes up space (nexa-tools); still missing: contents, tags and dates ("last Friday"), a local index, search from Launchpad
 - [ ] Self-healing desktop parts ("restart the failed module"): bar, Dock, notifications and Wi-Fi restart themselves if they crash
 - Not planned: microkernel, neural scheduler, NPU fabric, ambient cloud compute, phone convergence (research-OS scale, not possible on a Linux base)
 
@@ -53,7 +58,7 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 - [x] M3 (web + system): web search/read/weather/Wikipedia/download (private addresses refused, network per call), date/time, battery, busiest programs, close own programs, exact maths + units, space, recent files; untrusted-content guard
 - [x] System broker nexa-brokerd (Rust, docs/SYSTEM_BROKER.md): every root action (power, CPU, brightness, time zone, hostname, Bluetooth, assistant settings, services + at boot, updates, packages, .nexa apps, VPN, drives, passwords, users) checked, password where needed, Landlock per action, audited; replaces the Python root helpers (assistant control, power, software, .nexa install, mount, most of settings)
 - [ ] M3 (rest): documents (PDF/Office)
-- [ ] Settings pages for Users, Updates and Startup services on top of the broker
+- [~] Settings pages for Users, Updates and Startup services: the broker already does the work (add/remove people, change password, system update, services at startup); the pages themselves aren't built
 - [ ] Move the OS installer and persistence partition helpers last
 - [ ] M4-M6: private index, screen OCR, offline voice
 - [ ] Download the model on the HP and time real answers there
@@ -65,5 +70,6 @@ an HP test · `[ ]` not started. Details and history live in BUILD_CHECKLIST.md.
 ## 6. Release
 - [x] Clean-up: one-off scripts moved to legacy/ (git mv); old image backups and logs moved to attic/ (git-ignored, 272 MB, delete when you like)
 - [x] BUILDING.md / ARCHITECTURE.md rewritten for the current system
-- [ ] Push to GitHub so CI runs *(needs you: create the repo)*
+- [x] On GitHub (B-less/NexaOS, private) with CI on every push: Rust tests + static build, then all 17 Python suites; first run green (2026-10-15)
+- [ ] Faster, lighter rebuilds: bake the build containers' tools into one saved image (each refresh downloads ~37 MB today, ~3-5 MB after)
 - [x] Version 3.2.0 and CHANGELOG.md
