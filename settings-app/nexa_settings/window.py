@@ -12,6 +12,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 from . import privileged
 from .connections import BluetoothPage, VpnPage
 from .privacy_page import PrivacyPage
+from .system_pages import StartupPage, UpdatesPage, UsersPage
 from nexa_common import actionui, compositor, mind, persist, sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
@@ -48,7 +49,7 @@ WALLPAPER_GALLERY = "/usr/share/backgrounds/nexaos/gallery"
 LOGIN_REQUIRED = "/etc/nexa/login-required"  # written by the OS installer
 SKIP_LOGIN_LOCK = os.path.expanduser("~/.config/nexa/skip-login-lock")
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
-PAGES = ("Personalization", "Bluetooth", "VPN", "System", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
+PAGES = ("Personalization", "Bluetooth", "VPN", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
 
 
 class SettingsWindow(Gtk.Window):
@@ -75,7 +76,11 @@ class SettingsWindow(Gtk.Window):
             btn.connect("clicked", self._on_nav, name)
             sidebar.pack_start(btn, False, False, 0)
             self.nav_buttons[name] = btn
-        root.pack_start(sidebar, False, False, 0)
+        # Scrolls on small screens: there are a dozen pages.
+        side_scroll = Gtk.ScrolledWindow()
+        side_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        side_scroll.add(sidebar)
+        root.pack_start(side_scroll, False, False, 0)
 
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
@@ -90,6 +95,12 @@ class SettingsWindow(Gtk.Window):
         self.vpn_page = VpnPage(self)
         self.stack.add_named(self._scrolled(self.vpn_page.page), "VPN")
         self.stack.add_named(self._scrolled(self._build_system_page()), "System")
+        self.users_page = UsersPage(self)
+        self.stack.add_named(self._scrolled(self.users_page.page), "Users")
+        self.updates_page = UpdatesPage(self)
+        self.stack.add_named(self._scrolled(self.updates_page.page), "Updates")
+        self.startup_page = StartupPage(self)
+        self.stack.add_named(self._scrolled(self.startup_page.page), "Startup")
         self.stack.add_named(self._scrolled(self._build_time_page()), "Time & Keyboard")
         self.stack.add_named(self._scrolled(self._build_power_page()), "Power")
         self.privacy_page = PrivacyPage(self)
@@ -107,6 +118,10 @@ class SettingsWindow(Gtk.Window):
     def _on_nav(self, _btn, name):
         if name == "Privacy":
             self.privacy_page.reload()  # apps may have been installed meanwhile
+        elif name == "Users":
+            self.users_page.reload()
+        elif name == "Startup":
+            self.startup_page.reload()
         self.stack.set_visible_child_name(name)
         for n, b in self.nav_buttons.items():
             ctx = b.get_style_context()

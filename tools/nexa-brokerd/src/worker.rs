@@ -173,10 +173,13 @@ pub fn perform(a: &Action, root: &Path, caller: &Caller) -> Result<Value, String
         }
         Action::UpdateIndex => {
             sh("apk", &["update"])?;
-            let out = sh("apk", &["version", "-l", "<"]).unwrap_or_default();
-            let updates = out.lines().filter(|l| l.contains('<')).count();
-            Ok(json!({"done": format!("Checked for new software: {updates} update{} available", if updates == 1 { "" } else { "s" }), "updates": updates}))
+            let list = parse_updates(&sh("apk", &["version", "-l", "<"]).unwrap_or_default());
+            let n = list.len();
+            Ok(json!({"done": if n == 0 { "Everything is up to date".to_string() } else { format!("{n} update{} available", if n == 1 { "" } else { "s" }) },
+                      "updates": n,
+                      "packages": list.iter().take(200).map(|(name, from, to)| json!({"name": name, "from": from, "to": to})).collect::<Vec<_>>()}))
         }
+        Action::ListServices => Ok(list_services(root)),
         Action::SystemUpdate => {
             sh("apk", &["upgrade", "-U", "--no-interactive"])?;
             Ok(json!({"done": "The system is up to date"}))
@@ -210,12 +213,68 @@ pub fn perform(a: &Action, root: &Path, caller: &Caller) -> Result<Value, String
     }
 }
 
+/// `apk version -l "<"` lines ("busybox-1.36.1-r0   < 1.36.1-r1") as
+/// (name, installed version, new version). Names may contain dashes.
+pub fn parse_updates(text: &str) -> Vec<(String, String, String)> {
+    text.lines().filter_map(|l| {
+        let (left, right) = l.split_once('<')?;
+        let full = left.trim();
+        let to = right.trim().to_string();
+        // name-version-rN: the version is the last dash-part starting with a digit before -rN.
+        let parts: Vec<&str> = full.rsplitn(3, '-').collect();
+        if parts.len() < 3 || !parts[0].starts_with('r') || !parts[1].chars().next()?.is_ascii_digit() {
+            return None;
+        }
+        Some((parts[2].to_string(), format!("{}-{}", parts[1], parts[0]), to))
+    }).collect()
+}
+
+/// Services this computer has: which start with it, which run now, and
+/// which are part of the system itself (no switch for those).
+pub fn list_services(root: &Path) -> Value {
+    let init = root.join("etc/init.d");
+    let mut names: Vec<String> = fs::read_dir(&init).into_iter().flatten().flatten()
+        .filter(|e| e.path().is_file()).filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| !n.starts_with('.') && !n.ends_with(".sh") && n != "functions.sh").collect();
+    names.sort();
+    let services: Vec<Value> = names.iter().map(|n| {
+        let script = fs::read_to_string(init.join(n)).unwrap_or_default();
+        let description = script.lines().find_map(|l| l.trim().strip_prefix("description=")).map(|d| d.trim_matches(['"', '\'']).to_string()).unwrap_or_default();
+        let level = ["sysinit", "boot", "default"].into_iter().find(|lv| root.join("etc/runlevels").join(lv).join(n).exists());
+        json!({"name": n, "description": description, "at_startup": level.is_some(), "runlevel": level,
+               "running": root.join("run/openrc/started").join(n).exists(),
+               "protected": crate::policy::PROTECTED_SERVICES.contains(&n.as_str())})
+    }).collect();
+    json!({"services": services})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn me() -> Caller {
         Caller { uid: 1000, user: "user".into() }
+    }
+
+    #[test]
+    fn update_lists_and_services() {
+        let out = "Installed:                                Available:\nbusybox-1.36.1-r0              < 1.36.1-r1\nllama.cpp-cpu-0.0.9564-r0      < 0.0.9600-r0\ngst-plugins-good-1.26.5-r0     < 1.26.6-r0\n";
+        assert_eq!(parse_updates(out), vec![
+            ("busybox".into(), "1.36.1-r0".into(), "1.36.1-r1".into()),
+            ("llama.cpp-cpu".into(), "0.0.9564-r0".into(), "0.0.9600-r0".into()),
+            ("gst-plugins-good".into(), "1.26.5-r0".into(), "1.26.6-r0".into())]);
+        let r = fake_root("svc");
+        fs::create_dir_all(r.join("etc/init.d")).unwrap();
+        fs::create_dir_all(r.join("etc/runlevels/default")).unwrap();
+        fs::create_dir_all(r.join("run/openrc/started")).unwrap();
+        fs::write(r.join("etc/init.d/tor"), "#!/sbin/openrc-run\ndescription=\"Tor anonymity network\"\n").unwrap();
+        fs::write(r.join("etc/init.d/dbus"), "#!/sbin/openrc-run\n").unwrap();
+        fs::write(r.join("etc/runlevels/default/dbus"), "").unwrap();
+        fs::write(r.join("run/openrc/started/dbus"), "").unwrap();
+        let v = list_services(&r);
+        assert_eq!(v["services"][0], json!({"name": "dbus", "description": "", "at_startup": true, "runlevel": "default", "running": true, "protected": true}));
+        assert_eq!(v["services"][1]["description"], "Tor anonymity network");
+        assert_eq!((v["services"][1]["at_startup"].as_bool(), v["services"][1]["protected"].as_bool()), (Some(false), Some(false)));
     }
 
     #[test]

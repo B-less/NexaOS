@@ -36,6 +36,7 @@ pub enum Action {
     // services
     Service { verb: String, name: String },
     ServiceAtBoot { name: String, enable: bool },
+    ListServices,
     // software
     UpdateIndex,
     SystemUpdate,
@@ -254,6 +255,7 @@ pub fn parse(action: &str, args: &Value, root: &Path) -> Result<Action, String> 
                 _ => Action::Service { verb: action.trim_end_matches("_service").into(), name: name.into() },
             }
         }
+        "list_services" => Action::ListServices,
         "update_index" => Action::UpdateIndex,
         "system_update" => Action::SystemUpdate,
         "install_packages" => Action::InstallPackages(packages(args)?),
@@ -355,6 +357,7 @@ impl Action {
             // Installing an app may install its Alpine dependencies too.
             InstallApp { .. } | UninstallApp(_) => a(true, vec!["/"], true, vec![80, 443], 1800),
             VpnList => a(true, vec![], true, vec![], 15),
+            ListServices => a(true, vec![], false, vec![], 10),
             VpnImport { .. } | VpnUp(_) | VpnDown(_) | VpnRemove(_) => a(true, vec!["/etc", "/run"], true, vec![], 45),
             // Unconfined: Landlock forbids mount(2).
             ListDrives | MountDrive(_) | UnmountDrive(_) | EjectDrive(_) => a(false, vec![], true, vec![], 60),
@@ -384,6 +387,7 @@ impl Action {
             InstallApp { path, .. } => format!("Install the app {}", path.rsplit('/').next().unwrap_or(path)),
             UninstallApp(id) => format!("Uninstall the app {id}"),
             VpnList => "List VPNs".into(),
+            ListServices => "List services".into(),
             VpnImport { name, .. } => format!("Add the VPN {name}"),
             VpnUp(n) => format!("Connect the VPN {n}"),
             VpnDown(n) => format!("Disconnect the VPN {n}"),

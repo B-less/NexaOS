@@ -59,7 +59,7 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [x] M3 (web + system): web search/read/weather/Wikipedia/download (private addresses refused, network per call), date/time, battery, busiest programs, close own programs, exact maths + units, space, recent files; untrusted-content guard
 - [x] System broker nexa-brokerd (Rust, docs/SYSTEM_BROKER.md): every root action (power, CPU, brightness, time zone, hostname, Bluetooth, assistant settings, services + at boot, updates, packages, .nexa apps, VPN, drives, passwords, users) checked, password where needed, Landlock per action, audited; replaces the Python root helpers (assistant control, power, software, .nexa install, mount, most of settings)
 - [ ] M3 (rest): documents (PDF/Office)
-- [~] Settings pages for Users, Updates and Startup services: the broker already does the work (add/remove people, change password, system update, services at startup); the pages themselves aren't built
+- [x] Settings > Users (people, administrators, change my password, add / remove a person with their files kept), Updates (check, see what changes, update now) and Startup (switch services on/off at startup; the system's own services aren't listed): all through the broker, password where it needs one
 - [ ] Move the OS installer and persistence partition helpers last
 - [ ] M4-M6: private index, screen OCR, offline voice
 - [ ] Download the model on the HP and time real answers there

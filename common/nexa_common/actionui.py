@@ -104,7 +104,9 @@ class HexBadge(Gtk.DrawingArea):
         cr.set_line_width(1.4)
         cr.stroke()
         layout = PangoCairo.create_layout(cr)
-        layout.set_text(actiontext.GLYPHS.get(self.kind, "•"), -1)
+        # A known kind's glyph, or a single character given directly (an initial).
+        glyph = actiontext.GLYPHS.get(self.kind) or (self.kind if len(self.kind) == 1 else "•")
+        layout.set_text(glyph, -1)
         layout.set_font_description(Pango.FontDescription(f"{design.FONT_UI} Bold {max(9, int(r * 1.0))}px"))
         tw, th = layout.get_pixel_size()
         cr.set_source_rgb(*colour)
