@@ -66,8 +66,9 @@ def current_zone(localtime="/etc/localtime", timezone_file="/etc/timezone", root
     return "UTC"
 
 
-def list_layouts(path=XKB_LIST):
+def list_layouts(path=None):
     """(code, description) pairs from xkeyboard-config's rules list."""
+    path = path or XKB_LIST  # looked up now, so tests can point it elsewhere
     layouts = []
     try:
         with open(path, encoding="utf-8", errors="replace") as f:

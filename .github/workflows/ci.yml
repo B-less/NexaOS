@@ -1,266 +1,70 @@
-name: NexaOS CI/CD Pipeline
+name: NexaOS checks
+
+# Runs on every push and pull request: the Rust workspace (tests + static
+# release build, in the same Alpine builder image as `make native`), then
+# every Python suite against those binaries. The full ISO isn't built here
+# yet: the kernel source isn't in the repository.
 
 on:
   push:
-    branches: [ main, develop ]
-    tags: [ 'v*' ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
   workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/build
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # ============================================================================
-  # Build Job
-  # ============================================================================
-  build:
-    name: Build NexaOS
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - config: "default"
-            features: "all"
-          - config: "minimal"
-            features: "core-only"
-    
+  native:
+    name: Rust (tests + static build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        fetch-depth: 0
+      - uses: actions/checkout@v4
 
-    - name: Set up build environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends \
-          build-essential gcc g++ make pkg-config git curl wget \
-          linux-headers-generic qemu-system-x86 qemu-utils xorriso \
-          isolinux syslinux e2fsprogs mkisofs ccache ninja-build
+      - name: Cache crates and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/tmp/nexa-cargo
+            tools/target
+          key: native-${{ hashFiles('tools/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: native-${{ hashFiles('tools/Cargo.lock') }}-
 
-    - name: Cache ccache
-      uses: actions/cache@v3
-      with:
-        path: ~/.ccache
-        key: ccache-${{ matrix.config }}-${{ github.sha }}
-        restore-keys: ccache-${{ matrix.config }}-
+      - name: Workspace tests (nexa-sys, nexa-pack, nexa-mindd, nexa-tools, nexa-brokerd)
+        run: sh scripts/build-native.sh test
 
-    - name: Check build environment
-      run: |
-        make check-env
+      - name: Static release build
+        run: sh scripts/build-native.sh
 
-    - name: Set version from tag
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "BUILD_VERSION=$VERSION" >> $GITHUB_ENV
-        else
-          echo "BUILD_VERSION=0.0.0-${{ github.sha }}" >> $GITHUB_ENV
-        fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native
+          path: build/native/
+          retention-days: 14
 
-    - name: Build kernel
-      run: make kernel
-
-    - name: Build kernel module
-      run: make kernel-module
-
-    - name: Build rootfs
-      run: make rootfs
-
-    - name: Build initramfs
-      run: make initramfs
-
-    - name: Create disk image
-      run: make disk
-
-    - name: Build applications
-      run: make apps
-
-    - name: Build GUI
-      run: make gui
-
-    - name: Create ISO image
-      run: make iso
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: nexaos-${{ matrix.config }}-${{ env.BUILD_VERSION }}
-        path: dist/
-        retention-days: 30
-
-    - name: Create release assets
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-artifact@v3
-      with:
-        name: release-assets
-        path: dist/
-
-  # ============================================================================
-  # Test Job
-  # ============================================================================
-  test:
-    name: Run Tests
-    needs: build
-    runs-on: ubuntu-latest
-    
+  python:
+    name: Python suites
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends \
-          build-essential make qemu-system-x86 e2fsprogs
+      - uses: actions/download-artifact@v4
+        with:
+          name: native
+          path: build/native/
 
-    - name: Download artifacts
-      uses: actions/download-artifact@v3
-      with:
-        name: nexaos-default-${{ needs.build.outputs.build_version }}
-        path: dist/
+      - name: Test dependencies (GLib bindings and a D-Bus session for the mock iwd/BlueZ)
+        run: |
+          chmod +x build/native/*
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends python3-gi gir1.2-glib-2.0 dbus dbus-daemon
 
-    - name: Run system tests
-      run: make test
-
-    - name: Run boot test (serial)
-      timeout-minutes: 5
-      run: |
-        timeout 30 make boot || true
-
-  # ============================================================================
-  # Security Scanning Job
-  # ============================================================================
-  security:
-    name: Security Scanning
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-
-    - name: Upload Trivy results to GitHub Security
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-  # ============================================================================
-  # Container Build Job
-  # ============================================================================
-  container:
-    name: Build Container Image
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@v2
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v4
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=semver,pattern={{version}}
-          type=sha
-
-    - name: Build and push image
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        file: ./Dockerfile
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-        cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
-
-  # ============================================================================
-  # Documentation Job
-  # ============================================================================
-  docs:
-    name: Generate Documentation
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y doxygen graphviz
-
-    - name: Generate docs
-      run: |
-        make docs
-
-    - name: Deploy to GitHub Pages
-      if: github.ref == 'refs/heads/main'
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./docs
-
-  # ============================================================================
-  # Release Job
-  # ============================================================================
-  release:
-    name: Create Release
-    needs: [build, test, security]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Download all artifacts
-      uses: actions/download-artifact@v3
-      with:
-        path: artifacts/
-
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: artifacts/**/*
-        draft: false
-        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Publish release notes
-      run: |
-        echo "Release ${{ github.ref_name }} published"
-        ls -lah artifacts/
-
-outputs:
-  build_version:
-    description: "Build version"
-    value: ${{ env.BUILD_VERSION }}
+      - name: make test
+        run: make test

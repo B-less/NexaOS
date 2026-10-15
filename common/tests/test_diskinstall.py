@@ -95,6 +95,10 @@ os.makedirs(os.path.join(real_zi, "Africa"))
 open(os.path.join(real_zi, "Africa", "Accra"), "wb").write(b"TZif2" + b"\0"*20)
 from nexa_common import sysconf
 sysconf.ZONEINFO = real_zi
+# Our own layout list: the test mustn't depend on the build machine having xkb-data.
+xkb = os.path.join(tempfile.mkdtemp(), "base.lst")
+open(xkb, "w").write("! layout\n  us              English (US)\n  gh              English (Ghana)\n\n! variant\n")
+sysconf.XKB_LIST = xkb
 di.apply_identity(idroot, "my-laptop", "Africa/Accra", "gh")
 check("hostname written", open(os.path.join(idroot, "etc", "hostname")).read() == "my-laptop\n")
 check("timezone symlink points into the real zoneinfo tree", os.readlink(os.path.join(idroot, "etc", "localtime")) == os.path.join(real_zi, "Africa/Accra"))
