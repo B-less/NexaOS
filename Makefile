@@ -18,7 +18,9 @@ PKG_UTILS := $(subst $(comma),$(space),$(ALPINE_PACKAGES_UTILS))
 # bbsuid; mke2fs -d needs to read those). Rather than requiring host `sudo`, those
 # steps run as root inside a throwaway Alpine container — reproducible and CI-friendly.
 ALPINE_DOCKER_TAG := $(shell echo $(ALPINE_VERSION) | cut -d. -f1,2)
-DOCKER_RUN := docker run --rm -v $(BASE_DIR):/workspace -w /workspace alpine:$(ALPINE_DOCKER_TAG)
+# Build steps run in nexa-build (Alpine + the build tools, made once by
+# scripts/build-image.sh), so a rebuild doesn't download the tools again.
+DOCKER_RUN := sh $(BASE_DIR)/scripts/build-image.sh && docker run --rm -v $(BASE_DIR):/workspace -w /workspace nexa-build:$(ALPINE_DOCKER_TAG)
 # Paths as seen *inside* the container (workspace root == BASE_DIR), since the
 # absolute host paths in ROOTFS_DIR/DIST_DIR don't exist there.
 ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
@@ -182,7 +184,7 @@ rootfs: alpine-download core-binaries
 # never needs host sudo/chroot — see scripts/provision-rootfs.sh.
 provision-rootfs: rootfs gui-apps native wallpaper icons
 	@echo "$(COLOR_BLUE)Provisioning rootfs: Wayland/Sway packages, identity, GUI apps, configs...$(COLOR_RESET)"
-	@$(DOCKER_RUN) sh -c "apk add --no-cache bash >/dev/null && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
+	@$(DOCKER_RUN) sh -c "{ apk info -e bash >/dev/null || apk add --no-cache bash >/dev/null; } && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
 	@echo "$(COLOR_GREEN)✓ rootfs provisioned$(COLOR_RESET)"
 	@du -sh $(ROOTFS_DIR) 2>/dev/null || true
 
@@ -193,7 +195,7 @@ provision-rootfs: rootfs gui-apps native wallpaper icons
 refresh: core-binaries gui-apps native nexa-apps
 	@test -d $(ROOTFS_DIR)/etc || { echo "No rootfs yet: run 'make iso' once first."; exit 1; }
 	@echo "$(COLOR_BLUE)Refreshing rootfs (packages, apps, configs)...$(COLOR_RESET)"
-	@$(DOCKER_RUN) sh -c "apk add --no-cache bash >/dev/null && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
+	@$(DOCKER_RUN) sh -c "{ apk info -e bash >/dev/null || apk add --no-cache bash >/dev/null; } && sh scripts/provision-rootfs.sh $(ROOTFS_RELDIR) '$(PKG_CORE)' '$(PKG_WAYLAND)' '$(PKG_SWAY)' '$(PKG_TERM)' '$(PKG_UTILS)' '$(DNS_PRIMARY)' '$(DNS_SECONDARY)'"
 	@mkdir -p $(DIST_DIR)
 	@bash scripts/build-initramfs.sh $(ROOTFS_DIR) $(DIST_DIR)/initramfs.cpio.gz
 	@rm -f $(DIST_DIR)/nexa.img

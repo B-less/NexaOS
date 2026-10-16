@@ -28,8 +28,11 @@ ISO_OUTPUT=$2
 
 # Retried: a DNS hiccup in the container makes apk report the packages as
 # missing ("no such package"), which used to fail the whole build.
+# Already in the nexa-build image: only missing tools are downloaded.
+missing=$(for p in xorriso syslinux grub grub-efi mtools dosfstools; do apk info -e "$p" >/dev/null || echo "$p"; done)
 for try in 1 2 3 4 5; do
-    apk add --no-cache xorriso syslinux grub grub-efi mtools dosfstools >/dev/null 2>&1 && break
+    [ -z "$missing" ] && break
+    apk add --no-cache $missing >/dev/null 2>&1 && break
     [ "$try" = 5 ] && { echo "ERROR: couldn't download the ISO tools (no internet in the build container?)"; exit 1; }
     echo "[*] package download failed (network?), retrying in 5 s ($try/5)"
     sleep 5

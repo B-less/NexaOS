@@ -31,7 +31,7 @@ and graphics, is built in.
 ## Everyday rebuilds
 
 ```bash
-make refresh  # ~5 min: re-provision packages/apps/configs into the existing rootfs,
+make refresh  # ~7 min, ~3 MB download: re-provision packages/apps/configs into the existing rootfs,
               # then initramfs, disk image and ISO
 make test     # host-side unit tests (no VM); about 15 suites
 ```
@@ -52,6 +52,14 @@ Rebuilds are incremental: a builder image with Rust preinstalled
 (`nexa-rust:3.24`, made once), a shared `tools/target/` folder, the crate
 registry cached in `/var/tmp/nexa-cargo`, and thin LTO, so only the crates
 you changed recompile.
+
+### What a rebuild downloads
+
+About **3 MB**: Alpine's fresh package list, so security updates reach the
+image (plus any updated packages). The build tools live in two images made
+once: `nexa-build` (bash, disk-image and ISO tools; ~29 MB with
+`nexa-rust-apps`) and `nexa-rust-apps` (the Rust builder plus app headers).
+To pick up newer build tools: `docker rmi nexa-build:3.24 nexa-rust-apps:3.24`.
 
 Change `build.conf` to add Alpine packages (`ALPINE_PACKAGES_*`) or bump the
 version. `make refresh` needs a rootfs from one earlier `make iso`.

@@ -19,19 +19,21 @@ DNS_PRIMARY=$7
 DNS_SECONDARY=$8
 
 echo "[*] apk update"
+# One fresh package list (~3 MB); the installs below reuse it. (With
+# --no-cache each of them downloaded the list again: ~12 MB per build.)
 apk update --root "$ROOTFS_DIR"
 
 echo "[*] installing core packages"
-apk add --root "$ROOTFS_DIR" --no-scripts --no-cache $PKG_CORE
+apk add --root "$ROOTFS_DIR" --no-scripts $PKG_CORE
 
 echo "[*] installing Wayland packages"
-apk add --root "$ROOTFS_DIR" --no-scripts --no-cache $PKG_WAYLAND
+apk add --root "$ROOTFS_DIR" --no-scripts $PKG_WAYLAND
 
 echo "[*] installing Sway/Waybar/Wofi stack"
-apk add --root "$ROOTFS_DIR" --no-scripts --no-cache $PKG_SWAY
+apk add --root "$ROOTFS_DIR" --no-scripts $PKG_SWAY
 
 echo "[*] installing terminal and utilities"
-apk add --root "$ROOTFS_DIR" --no-scripts --no-cache $PKG_TERM $PKG_UTILS
+apk add --root "$ROOTFS_DIR" --no-scripts $PKG_TERM $PKG_UTILS
 
 echo "[*] verifying Wayland stack is installed"
 for bin in sway waybar foot wofi seatd dbus-daemon; do

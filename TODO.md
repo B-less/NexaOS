@@ -72,5 +72,5 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [x] Clean-up: one-off scripts moved to legacy/ (git mv); old image backups and logs moved to attic/ (git-ignored, 272 MB, delete when you like)
 - [x] BUILDING.md / ARCHITECTURE.md rewritten for the current system
 - [x] On GitHub (B-less/NexaOS, private) with CI on every push: Rust tests + static build, then all 17 Python suites; first run green (2026-10-15)
-- [ ] Faster, lighter rebuilds: bake the build containers' tools into one saved image (each refresh downloads ~37 MB today, ~3-5 MB after)
+- [x] Lighter rebuilds: build tools saved in nexa-build / nexa-rust-apps images (one-time 29 MB); a full `make refresh` now downloads ~3 MB (was ~37 MB) and takes ~7 min (measured)
 - [x] Version 3.2.0 and CHANGELOG.md

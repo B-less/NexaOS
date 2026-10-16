@@ -9,7 +9,7 @@ ROOTFS_DIR=$1
 IMG=$2
 SIZE=$3
 
-apk add --no-cache e2fsprogs >/dev/null
+apk info -e e2fsprogs >/dev/null || apk add --no-cache e2fsprogs >/dev/null  # in nexa-build already
 
 # Embed the kernel and initramfs in the rootfs itself, not just the ISO's own
 # /boot (build-iso.sh). Without this, a system booted directly via QEMU
