@@ -50,6 +50,10 @@ CHECKS = (
     """printf '%s' '{"zone":"Africa/Accra"}' > /tmp/breq; chmod 644 /tmp/breq; """
     r'echo BROKER=$(su user -s /bin/sh -c "nexa-brokerd call set_timezone \"\$(cat /tmp/breq)\"" | grep -o "\"ok\":[a-z]*")$(grep -q Africa/Accra /etc/timezone && echo ,applied)',
     'echo BROKER_DENY=$(su nexa-mind -s /bin/sh -c "nexa-brokerd call set_brightness {}" | grep -o "only administrators")',
+    # The stick NexaOS runs from is never auto-mounted, offered or ejected
+    # (ejecting it pulled the system out from under itself).
+    r'L=$(basename $(cat /sys/block/loop1/loop/backing_file)); echo LIVE_STICK=listed:$(nexa-brokerd call list_drives {} | grep -c "\"name\":\"$L"),'
+    r'mounted:$(grep -c "^/dev/$L.* /media/" /proc/mounts)$(nexa-brokerd call eject_drive "{\"name\":\"${L}1\"}" | grep -q "using this drive itself" && echo ,eject_refused)',
     # No root shell on the screen: tty1 belongs to the desktop, tty2 asks for a login.
     'echo CONSOLE=tty1_root:$(ps -o tty,user,comm | grep -c "^tty1 *root")$(pgrep -f "getty 38400 tty2" >/dev/null && echo ,tty2_login)',
     'echo APPS=$(for c in nexa-pulse nexadark tor wg-quick nexa-pack nexa-mindd nexa-tools nexa-brokerd llama-server; do command -v $c >/dev/null && printf "%s," $c; done)',
@@ -88,11 +92,11 @@ def ppm_to_png(ppm_path, png_path, half=True):
 def main(argv):
     extra = argv[argv.index("--run") + 1] if "--run" in argv else None
     disk = argv[argv.index("--disk") + 1] if "--disk" in argv else None
+    shot = argv[argv.index("--shot") + 1] if "--shot" in argv else os.path.join(REPO, "dist", "live-desktop.png")
     argv = [a for i, a in enumerate(argv)
-            if not (a in ("--run", "--disk") or (i and argv[i - 1] in ("--run", "--disk", "--shot")))]
+            if not (a in ("--run", "--disk", "--shot") or (i and argv[i - 1] in ("--run", "--disk", "--shot")))]
     args = [a for a in argv if not a.startswith("--")]
     iso = args[0] if args else os.path.join(REPO, "dist", f"NexaOS-{project_version()}.iso")
-    shot = argv[argv.index("--shot") + 1] if "--shot" in argv else os.path.join(REPO, "dist", "live-desktop.png")
     work = tempfile.mkdtemp(prefix="nexa-live-")
     mon, ser = os.path.join(work, "mon.sock"), os.path.join(work, "ser.sock")
     qemu = subprocess.Popen(
@@ -156,7 +160,7 @@ def main(argv):
         report = [l for l in text.rsplit(marker, 1)[0].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
-                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "CONSOLE="))] if text.count(marker) >= 2 else []
+                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "CONSOLE="))] if text.count(marker) >= 2 else []
         print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
         if extra and text.count("EXTRA_END") >= 2:
             print("--- --run output\n" + text.split("EXTRA_BEGIN")[-1].split("EXTRA_END")[0].strip())

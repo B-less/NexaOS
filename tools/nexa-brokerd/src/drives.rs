@@ -2,7 +2,9 @@
 //! hot-plug entry points (`nexa-brokerd drive-added|drive-removed NAME`).
 //! Never trusts the name it is given: every device is re-checked against
 //! the kernel's own sysfs view, only removable or USB-attached plain disks
-//! are touched (never internal, NVMe, virtio or loop devices), and mount
+//! are touched (never internal, NVMe, virtio or loop devices), never a disk
+//! the running system depends on (the live USB stick NexaOS booted from,
+//! its persistence partition, swap, an install on a USB SSD), and mount
 //! points are confined to /media (nosuid, nodev, noexec).
 
 use crate::policy::valid_kname;
@@ -60,8 +62,80 @@ impl Tree {
         v
     }
 
-    /// Only removable disks and USB-attached ones.
+    /// The disk behind a device node path, following loop devices to the
+    /// disk (or the file on a mounted disk) they read from.
+    fn disks_behind(&self, path: &str, table: &[(String, String, String)], depth: u8, out: &mut Vec<String>) {
+        let dev = format!("{}/", self.dev.to_string_lossy().trim_end_matches('/'));
+        let Some(k) = path.strip_prefix(&dev) else { return };
+        // Any kernel name here (loop1, nvme0n1p2), not just the ones we touch.
+        if depth > 4 || k.is_empty() || !k.chars().all(|c| c.is_ascii_alphanumeric()) || !self.block(k).exists() {
+            return;
+        }
+        if k.starts_with("loop") {
+            let backing = fs::read_to_string(self.block(k).join("loop/backing_file")).unwrap_or_default();
+            let backing = backing.trim();
+            if backing.starts_with(&dev) {
+                self.disks_behind(backing, table, depth + 1, out);
+            } else if !backing.is_empty() {
+                // A file: the disk of the filesystem it lives on.
+                let holder = table.iter().filter(|(_, m, _)| {
+                    backing == m || backing.starts_with(&format!("{}/", m.trim_end_matches('/')))
+                }).max_by_key(|(_, m, _)| m.len());
+                if let Some((src, _, _)) = holder {
+                    self.disks_behind(src, table, depth + 1, out);
+                }
+            }
+        } else {
+            out.push(self.disk_of(k));
+        }
+    }
+
+    /// Disks the running system depends on: whatever is mounted outside
+    /// /media (directly or through a loop device: the live stick is
+    /// /dev/loop1 at /mnt/nexa-live), behind any loop device, or swap.
+    /// Ejecting one of these pulls the system out from under itself.
+    pub fn system_disks(&self) -> Vec<String> {
+        let table = self.mount_table();
+        let mut out = Vec::new();
+        for (src, mp, _) in &table {
+            if !self.under_media(mp) {
+                self.disks_behind(src, &table, 0, &mut out);
+            }
+        }
+        let loops = fs::read_dir(self.sys.join("class/block")).into_iter().flatten().flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.starts_with("loop"));
+        for l in loops {
+            self.disks_behind(&format!("{}/{l}", self.dev.display()), &table, 0, &mut out);
+        }
+        let swaps = fs::read_to_string(self.mounts.with_file_name("swaps")).unwrap_or_default();
+        for line in swaps.lines().skip(1) {
+            if let Some(src) = line.split_whitespace().next() {
+                self.disks_behind(src, &table, 0, &mut out);
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// Why this device must not be touched, or None. Only removable disks
+    /// and USB-attached ones, and never one the system runs from.
+    pub fn refusal(&self, k: &str) -> Option<&'static str> {
+        if !self.removable(k) {
+            return Some("That isn't a removable drive.");
+        }
+        if self.system_disks().contains(&self.disk_of(k)) {
+            return Some("NexaOS is using this drive itself (it runs from it), so it can't be opened or ejected here.");
+        }
+        None
+    }
+
     pub fn eligible(&self, k: &str) -> bool {
+        self.refusal(k).is_none()
+    }
+
+    /// Only removable disks and USB-attached ones.
+    fn removable(&self, k: &str) -> bool {
         if !valid_kname(k) {
             return false;
         }
@@ -120,8 +194,8 @@ fn options(fstype: &str) -> String {
 }
 
 pub fn mount(t: &Tree, k: &str) -> Result<Value, String> {
-    if !t.eligible(k) {
-        return Err("That isn't a removable drive.".into());
+    if let Some(why) = t.refusal(k) {
+        return Err(why.into());
     }
     if !t.is_partition(k) && !t.partitions_of(k).is_empty() {
         return Err("This disk is partitioned - open one of its partitions instead.".into());
@@ -171,8 +245,8 @@ pub fn unmount(t: &Tree, k: &str) -> Result<Value, String> {
 }
 
 pub fn eject(t: &Tree, k: &str) -> Result<Value, String> {
-    if !t.eligible(k) {
-        return Err("That isn't a removable drive.".into());
+    if let Some(why) = t.refusal(k) {
+        return Err(why.into());
     }
     let disk = t.disk_of(k);
     for name in t.partitions_of(&disk).into_iter().chain([disk.clone()]) {
@@ -194,7 +268,9 @@ pub fn list(t: &Tree) -> Value {
     let mut names: Vec<String> = fs::read_dir(t.sys.join("class/block")).into_iter().flatten().flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned()).collect();
     names.sort();
-    let vols: Vec<Value> = names.into_iter().filter(|k| t.eligible(k) && (t.is_partition(k) || t.partitions_of(k).is_empty())).map(|k| {
+    let system = t.system_disks();
+    let vols: Vec<Value> = names.into_iter().filter(|k| t.removable(k) && !system.contains(&t.disk_of(k))
+                                                     && (t.is_partition(k) || t.partitions_of(k).is_empty())).map(|k| {
         let (label, fstype) = blkid(t, &k);
         let sectors: u64 = fs::read_to_string(t.real_dir(&k).join("size")).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
         let mp = t.mount_of(&k).map(|(m, _)| m).filter(|m| t.under_media(m));
@@ -205,8 +281,11 @@ pub fn list(t: &Tree) -> Value {
 
 /// udev: a drive appeared. Never fails loudly, never blocks udev for long.
 pub fn added(t: &Tree, k: &str) -> Value {
-    if !t.eligible(k) {
+    if !t.removable(k) {
         return json!({"skipped": "not removable"});
+    }
+    if !t.eligible(k) {
+        return json!({"skipped": "the system runs from it"});
     }
     if !t.is_partition(k) {
         // The kernel announces a disk before its partitions.
@@ -243,8 +322,10 @@ mod tests {
 
     /// A fake machine: sdb (USB stick, one partition sdb1 "MY DRIVE"),
     /// sdc (USB disk with removable=0, no partitions), sda (internal SATA),
-    /// vda (virtio). Fake mount/umount/blkid keep /proc/mounts up to date
-    /// and record every call.
+    /// vda (virtio), and two live sticks NexaOS runs from: sdd written in DD
+    /// mode (read through loop1 at /mnt/nexa-live, nexa.img on loop0) and
+    /// sde written by Rufus (sde1 mounted directly). Fake mount/umount/blkid
+    /// keep /proc/mounts up to date and record every call.
     fn fake(name: &str) -> (Tree, PathBuf) {
         let r = std::env::temp_dir().join(format!("nexa-broker-drives-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&r);
@@ -253,30 +334,40 @@ mod tests {
         let usb2 = devices.join("pci0000:00/0000:00:14.0/usb1/1-2/1-2:1.0/host7/target7:0:0/7:0:0:0/block/sdc");
         let sata = devices.join("pci0000:00/0000:00:17.0/ata1/host0/target0:0:0/0:0:0:0/block/sda");
         let virtio = devices.join("pci0000:00/0000:00:04.0/virtio1/block/vda");
-        for (d, removable) in [(&usb, "1"), (&usb2, "0"), (&sata, "0"), (&virtio, "0")] {
+        let live = devices.join("pci0000:00/0000:00:14.0/usb1/1-3/1-3:1.0/host8/target8:0:0/8:0:0:0/block/sdd");
+        let rufus = devices.join("pci0000:00/0000:00:14.0/usb1/1-4/1-4:1.0/host9/target9:0:0/9:0:0:0/block/sde");
+        for (d, removable) in [(&usb, "1"), (&usb2, "0"), (&sata, "0"), (&virtio, "0"), (&live, "1"), (&rufus, "1")] {
             fs::create_dir_all(d).unwrap();
             fs::write(d.join("removable"), format!("{removable}\n")).unwrap();
             fs::write(d.join("size"), "4096\n").unwrap();
         }
-        for (disk, part) in [(&usb, "sdb1"), (&sata, "sda1")] {
+        for (disk, part) in [(&usb, "sdb1"), (&sata, "sda1"), (&live, "sdd1"), (&live, "sdd2"), (&rufus, "sde1"), (&rufus, "sde2")] {
             fs::create_dir_all(disk.join(part)).unwrap();
             fs::write(disk.join(part).join("partition"), "1").unwrap();
             fs::write(disk.join(part).join("size"), "2048\n").unwrap();
         }
+        let virt = devices.join("virtual/block");
+        for (l, backing) in [("loop0", "/mnt/nexa-live/nexa.img"), ("loop1", "/dev/sdd")] {
+            fs::create_dir_all(virt.join(l).join("loop")).unwrap();
+            fs::write(virt.join(l).join("loop/backing_file"), format!("{backing}\n")).unwrap();
+        }
         // USB devices can be deleted (powered off) through device/delete.
-        for d in [&usb, &usb2] {
+        for d in [&usb, &usb2, &live, &rufus] {
             fs::create_dir_all(d.join("device")).unwrap();
             fs::write(d.join("device/delete"), "").unwrap();
         }
         let cb = r.join("sys/class/block");
         fs::create_dir_all(&cb).unwrap();
         for (n, p) in [("sdb", usb.clone()), ("sdb1", usb.join("sdb1")), ("sdc", usb2.clone()), ("sda", sata.clone()),
-                       ("sda1", sata.join("sda1")), ("vda", virtio.clone())] {
+                       ("sda1", sata.join("sda1")), ("vda", virtio.clone()), ("sdd", live.clone()), ("sdd1", live.join("sdd1")),
+                       ("sdd2", live.join("sdd2")), ("sde", rufus.clone()), ("sde1", rufus.join("sde1")),
+                       ("sde2", rufus.join("sde2")), ("loop0", virt.join("loop0")), ("loop1", virt.join("loop1"))] {
             symlink(p, cb.join(n)).unwrap();
         }
         fs::create_dir_all(r.join("proc")).unwrap();
         let mounts = r.join("proc/mounts");
-        fs::write(&mounts, "/dev/sda1 / ext4 rw 0 0\n").unwrap();
+        fs::write(&mounts, "/dev/sda1 / ext4 rw 0 0\n/dev/loop1 /mnt/nexa-live iso9660 ro 0 0\n\
+                            /dev/sde1 /mnt/rufus\\040stick vfat ro 0 0\n").unwrap();
         // Fakes: blkid answers from files, mount succeeds only for the fs
         // type in accept/<name> (or any type if the file says "any").
         let bin = r.join("bin");
@@ -284,6 +375,9 @@ mod tests {
         fs::create_dir_all(r.join("accept")).unwrap();
         fs::write(r.join("blkid/sdb1"), "/dev/sdb1: LABEL=\"MY DRIVE\" UUID=\"1234\" TYPE=\"vfat\"\n").unwrap();
         fs::write(r.join("accept/sdb1"), "vfat").unwrap();
+        for n in ["sdd", "sdd1", "sdd2", "sde", "sde1", "sde2"] {
+            fs::write(r.join("accept").join(n), "any").unwrap();
+        }
         fs::create_dir_all(&bin).unwrap();
         let calls = r.join("calls");
         let scripts = [
@@ -333,7 +427,7 @@ mod tests {
         assert_eq!(mount(&t, "sda1").unwrap_err(), "That isn't a removable drive.");
         // A drive the system mounted elsewhere is left alone.
         fs::write(&t.mounts, format!("{}/dev/sdc /mnt/backup ext4 rw 0 0\n", fs::read_to_string(&t.mounts).unwrap())).unwrap();
-        assert!(mount(&t, "sdc").unwrap_err().contains("in use by the system"));
+        assert!(mount(&t, "sdc").unwrap_err().contains("using this drive itself"));
         assert!(unmount(&t, "sdc").unwrap_err().contains("isn't one of the removable"));
     }
 
@@ -393,6 +487,30 @@ mod tests {
         removed(&t, "sdb1");
         assert!(calls(&r).contains("umount -l"), "a yanked drive's leftover mount is cleaned up");
         assert_eq!(removed(&t, "../../etc"), json!({"skipped": "bad name"}));
+    }
+
+    #[test]
+    fn never_the_drive_the_system_runs_from() {
+        let (t, r) = fake("live");
+        assert_eq!(t.system_disks(), vec!["sda", "sdd", "sde"], "root, the DD stick behind loop1/loop0, the Rufus stick");
+        for k in ["sdd", "sdd1", "sdd2", "sde", "sde1", "sde2"] {
+            assert!(!t.eligible(k), "{k}");
+            assert!(eject(&t, k).unwrap_err().contains("using this drive itself"), "{k}");
+            assert!(mount(&t, k).unwrap_err().contains("using this drive itself"), "{k}");
+            assert_eq!(added(&t, k), json!({"skipped": "the system runs from it"}), "{k}");
+        }
+        assert!(!calls(&r).contains("mount -t"), "nothing on the live sticks was mounted: {}", calls(&r));
+        for d in ["sdd", "sde"] {
+            let delete = fs::canonicalize(t.sys.join("class/block").join(d)).unwrap().join("device/delete");
+            assert_eq!(fs::read_to_string(delete).unwrap(), "", "{d} was never powered off");
+        }
+        let names: Vec<String> = list(&t)["drives"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap().into()).collect();
+        assert_eq!(names, vec!["sdb1", "sdc"], "the live sticks aren't offered at all");
+        // A stick with swap on it is in use too; once swap is off it's free.
+        fs::write(r.join("proc/swaps"), "Filename Type Size Used Priority\n/dev/sdc partition 1024 0 -2\n").unwrap();
+        assert!(eject(&t, "sdc").unwrap_err().contains("using this drive itself"));
+        fs::write(r.join("proc/swaps"), "Filename Type Size Used Priority\n").unwrap();
+        assert!(eject(&t, "sdc").is_ok());
     }
 
     #[test]
