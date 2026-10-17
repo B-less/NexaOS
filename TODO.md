@@ -39,6 +39,7 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [x] Nexa AI: claude-opus-5-5, max_tokens 16000, server-side refusal fallback, refusal/cut-off handling (tested against a fake API)
 - [x] .nexa apps: nexa-pack (Rust: build, Ed25519-sign, verify, reproducible), Nexa Installer, the first app (Video Player, C + GStreamer, signed, installs through the broker), rules for writing apps (docs/WRITING_NEXA_APPS.md, AGENTS.md); theme colours reach every app
 - [x] Faster boot: login prompt at ~18 s instead of ~38 s in QEMU (DHCP no longer holds up the desktop)
+- [x] Files: multi-select (click, Ctrl/Shift+click, drag a box, Ctrl+A), drag and drop (move; Ctrl copies), right-click menus for items and empty space, Cut/Copy/Paste, Duplicate, Rename (F2), Delete = Trash with Ctrl+Z undo, Trash view (Restore, Empty), Back/Forward (+ mouse buttons), Properties with folder sizes, Ctrl+scroll zoom, sortable columns, type-to-find, live refresh, Open Terminal Here, new window (middle-click). Every change runs in nexa-fileops (Rust): never overwrites, copy_file_range, freedesktop Trash incl. USB drives' own .Trash-<uid>, Landlock per request (`make test-files-app`)
 - [ ] More of our own apps (.nexa, C/Rust): Photos, Music, Backup, Mail
 - [ ] Smart power: power-saving mode on battery, battery health, time-left estimate
 

@@ -280,6 +280,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-fileops"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexa-mindd"
 version = "0.1.0"
 dependencies = [

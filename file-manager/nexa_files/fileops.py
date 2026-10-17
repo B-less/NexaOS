@@ -1,5 +1,5 @@
+"""Listing and display helpers. Changing files is nexa-fileops' job (engine.py)."""
 import os
-import shutil
 import stat as statmod
 import time
 
@@ -63,8 +63,6 @@ def guess_icon(name, is_dir, is_exec):
     return "text-x-generic"
 
 
-
-
 def human_size(n, is_dir):
     if is_dir:
         return ""
@@ -78,50 +76,3 @@ def human_size(n, is_dir):
 
 def human_time(ts):
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
-
-
-def make_dir(parent, name):
-    path = os.path.join(parent, name)
-    try:
-        os.mkdir(path)
-    except OSError as e:
-        raise FileOpError(str(e))
-    return path
-
-
-def rename(path, new_name):
-    new_path = os.path.join(os.path.dirname(path), new_name)
-    try:
-        os.rename(path, new_path)
-    except OSError as e:
-        raise FileOpError(str(e))
-    return new_path
-
-
-def delete(path):
-    try:
-        if os.path.isdir(path) and not os.path.islink(path):
-            shutil.rmtree(path)
-        else:
-            os.remove(path)
-    except OSError as e:
-        raise FileOpError(str(e))
-
-
-def copy_into(src, dest_dir):
-    name = os.path.basename(src.rstrip("/"))
-    dest = os.path.join(dest_dir, name)
-    src_abs = os.path.abspath(src)
-    dest_dir_abs = os.path.abspath(dest_dir)
-    if dest_dir_abs == src_abs or dest_dir_abs.startswith(src_abs + os.sep):
-        raise FileOpError("can't copy a folder into itself")
-    if os.path.abspath(dest) == src_abs:
-        raise FileOpError("source and destination are the same")
-    try:
-        if os.path.isdir(src) and not os.path.islink(src):
-            shutil.copytree(src, dest)
-        else:
-            shutil.copy2(src, dest)
-    except (OSError, shutil.Error) as e:
-        raise FileOpError(str(e))
-    return dest

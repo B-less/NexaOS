@@ -23,10 +23,11 @@ cat > "$rootfs/usr/share/applications/nexa-files.desktop" << 'DESKTOP_EOF'
 Type=Application
 Name=Files
 Comment=Browse and manage files
-Exec=/usr/local/bin/nexa-files
+Exec=/usr/local/bin/nexa-files %U
 Icon=nexa-files
 Terminal=false
 Categories=System;Utility;
+MimeType=inode/directory;
 DESKTOP_EOF
 
 echo "nexa-files staged into $rootfs"

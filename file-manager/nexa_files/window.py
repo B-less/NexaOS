@@ -1,18 +1,33 @@
-import json
+"""Files: browse, select and manage files.
+
+Selection works like other desktops: click, Ctrl+click, Shift+click, drag a
+box from empty space, Ctrl+A. Selected items can be dragged onto a folder
+(move; hold Ctrl to copy) or into another app, cut/copied/pasted, renamed,
+duplicated, sent to the Trash and brought back. Every change runs in
+nexa-fileops (Rust, see engine.py): nothing is ever overwritten and each
+change can be undone with Ctrl+Z."""
 import os
+import pwd
+import stat as statmod
+import subprocess
+import sys
 import threading
+import time
+import json
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, Gio, GLib, GdkPixbuf
+from gi.repository import Gtk, Gdk, Gio, GLib, GdkPixbuf, GObject
 
-from . import fileops
+from . import engine, fileops
 from nexa_common import removable
 from nexa_common.titlebar import attach_titlebar
 
 ICON_SIZES = [16, 20, 24, 32, 48, 64]
 DEFAULT_ICON_SIZE_INDEX = 2  # 24px, matches the size the old fixed icon-name rendering used
 CONFIG_PATH = os.path.expanduser("~/.config/nexa-files/config.json")
+TRASH = "trash:///"
+TERMINALS = ("foot", "alacritty", "kitty", "xterm")
 
 CSS = b"""
 window { background-image: none; background-color: @nexa_bg; }
@@ -21,28 +36,63 @@ window { background-image: none; background-color: @nexa_bg; }
 #toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
 #toolbtn:hover { background-image: none; background-color: @nexa_hover; }
 #toolbtn:disabled { color: @nexa_disabled; }
+#toolbtn.nx-active { background-color: @nexa_accent; color: @nexa_selected_text; }
 treeview { background-image: none; background-color: @nexa_bg; color: @nexa_text; }
 treeview:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
+treeview.rubberband, .rubberband { background-color: alpha(@nexa_accent, 0.18); border: 1px solid @nexa_accent; }
 treeview header button { background-image: none; background-color: @nexa_surface; color: @nexa_muted; }
 #statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
+#statusrow { background-image: none; background-color: @nexa_surface; }
+progressbar trough { min-height: 6px; border-radius: 3px; background-color: @nexa_hover; }
+progressbar progress { min-height: 6px; border-radius: 3px; background-color: @nexa_accent; }
 """
 
-COL_ICON, COL_NAME, COL_SIZE, COL_MTIME, COL_PATH, COL_IS_DIR = range(6)
+(COL_ICON, COL_NAME, COL_SIZE, COL_MTIME, COL_PATH, COL_IS_DIR,
+ COL_BYTES, COL_TIME, COL_ACTIVE, COL_TIP) = range(10)
+
+
+def _uri_targets():
+    return [Gtk.TargetEntry.new("text/uri-list", 0, 0)]
+
+
+def _mods(state):
+    return (bool(state & Gdk.ModifierType.CONTROL_MASK), bool(state & Gdk.ModifierType.SHIFT_MASK),
+            bool(state & Gdk.ModifierType.MOD1_MASK))
+
+
+def _items(n):
+    return "1 item" if n == 1 else f"{n} items"
 
 
 class FileManagerWindow(Gtk.Window):
+    open_windows = 0
+
     def __init__(self, start_dir=None):
         super().__init__(title="Files")
         self.set_icon_name("nexa-files")
         attach_titlebar(self, "Files")
-        self.set_default_size(820, 560)
+        self.set_default_size(880, 580)
         self.path = os.path.abspath(start_dir or os.environ.get("HOME", "/root"))
         self.show_hidden = False
-        self.clipboard_path = None
+        self.clipboard = None          # {"paths": [...], "cut": bool}
+        self.undo_stack = []           # [(what was done, steps)]
+        self.back_stack, self.forward_stack = [], []
         self.icon_size_index = self._load_icon_size_index()
+        self.busy = False
+        self._proc = None
+        self._pending_click = None
+        self._dragging = False
+        self._drop_action = Gdk.DragAction.MOVE
+        self._monitor = None
+        self._refresh_soon_id = 0
+        self._summary = ""
 
+        FileManagerWindow.open_windows += 1
+        self.connect("destroy", self._on_destroy)
         self._build_ui()
-        self._refresh()
+        self._navigate(self.path, remember=False)
+
+    # ---- Settings ----
 
     def _load_icon_size_index(self):
         try:
@@ -68,6 +118,8 @@ class FileManagerWindow(Gtk.Window):
         except GLib.Error:
             return None
 
+    # ---- Layout ----
+
     def _build_ui(self):
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.add(root)
@@ -75,87 +127,159 @@ class FileManagerWindow(Gtk.Window):
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         toolbar.set_name("toolbar")
         toolbar.set_border_width(8)
-
-        self.up_btn = self._toolbtn("↑ Up", self._on_up)
-        self.home_btn = self._toolbtn("Home", self._on_home)
-        toolbar.pack_start(self.up_btn, False, False, 0)
-        toolbar.pack_start(self.home_btn, False, False, 0)
-        self.devices_btn = self._toolbtn("Devices", self._on_devices)
-        toolbar.pack_start(self.devices_btn, False, False, 0)
+        self.back_btn = self._toolbtn("←", self._on_back, "Back (Alt+Left, or the mouse's back button)")
+        self.forward_btn = self._toolbtn("→", self._on_forward, "Forward (Alt+Right)")
+        self.up_btn = self._toolbtn("↑", self._on_up, "Parent folder (Alt+Up or Backspace)")
+        self.home_btn = self._toolbtn("Home", self._on_home, "Home folder (Alt+Home)")
+        self.trash_btn = self._toolbtn("Trash", self._on_show_trash, "What you deleted; restore it from here")
+        self.devices_btn = self._toolbtn("Devices", self._on_devices, "USB drives and SD cards")
+        for b in (self.back_btn, self.forward_btn, self.up_btn, self.home_btn, self.trash_btn, self.devices_btn):
+            toolbar.pack_start(b, False, False, 0)
 
         self.path_entry = Gtk.Entry()
         self.path_entry.set_name("pathentry")
+        self.path_entry.set_width_chars(8)  # shrinks first when the window is narrow
         self.path_entry.connect("activate", self._on_path_entered)
         toolbar.pack_start(self.path_entry, True, True, 0)
 
-        self.hidden_btn = self._toolbtn("Hidden: off", self._on_toggle_hidden)
-        toolbar.pack_start(self.hidden_btn, False, False, 0)
-
-        self.zoom_out_btn = self._toolbtn("−", self._on_zoom_out)
-        self.zoom_out_btn.set_tooltip_text("Smaller icons")
-        self.zoom_in_btn = self._toolbtn("+", self._on_zoom_in)
-        self.zoom_in_btn.set_tooltip_text("Larger icons")
-        toolbar.pack_start(self.zoom_out_btn, False, False, 0)
-        toolbar.pack_start(self.zoom_in_btn, False, False, 0)
+        # Hidden files, icon size, refresh: a View menu keeps the bar short.
+        self.view_btn = Gtk.MenuButton(label="View ▾")
+        self.view_btn.set_name("toolbtn")
+        view_menu = Gtk.Menu()
+        self.hidden_item = Gtk.CheckMenuItem(label="Show Hidden Files  (Ctrl+H)")
+        self.hidden_item.connect("toggled", lambda i: i.get_active() != self.show_hidden and self._on_toggle_hidden(None))
+        self.zoom_in_item = Gtk.MenuItem(label="Larger Icons  (Ctrl++)")
+        self.zoom_in_item.connect("activate", self._on_zoom_in)
+        self.zoom_out_item = Gtk.MenuItem(label="Smaller Icons  (Ctrl+−)")
+        self.zoom_out_item.connect("activate", self._on_zoom_out)
+        normal = Gtk.MenuItem(label="Normal Size  (Ctrl+0)")
+        normal.connect("activate", lambda _i: self._set_zoom(DEFAULT_ICON_SIZE_INDEX))
+        refresh = Gtk.MenuItem(label="Refresh  (F5)")
+        refresh.connect("activate", lambda _i: self._refresh())
+        for item in (self.hidden_item, Gtk.SeparatorMenuItem(), self.zoom_in_item, self.zoom_out_item, normal,
+                     Gtk.SeparatorMenuItem(), refresh):
+            view_menu.append(item)
+        view_menu.show_all()
+        self.view_btn.set_popup(view_menu)
+        toolbar.pack_start(self.view_btn, False, False, 0)
         root.pack_start(toolbar, False, False, 0)
 
-        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        actions.set_name("toolbar")
-        actions.set_border_width(8)
-        self.new_folder_btn = self._toolbtn("New Folder", self._on_new_folder)
-        self.rename_btn = self._toolbtn("Rename", self._on_rename)
-        self.delete_btn = self._toolbtn("Delete", self._on_delete)
-        self.copy_btn = self._toolbtn("Copy", self._on_copy)
-        self.paste_btn = self._toolbtn("Paste", self._on_paste)
-        self.open_btn = self._toolbtn("Open", self._on_open_selected)
-        for b in (self.new_folder_btn, self.rename_btn, self.delete_btn,
-                  self.copy_btn, self.paste_btn, self.open_btn):
-            actions.pack_start(b, False, False, 0)
-        root.pack_start(actions, False, False, 0)
+        # Two action bars: files, and the Trash.
+        self.actions = Gtk.Stack()
+        files_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        files_bar.set_name("toolbar")
+        files_bar.set_border_width(8)
+        self.new_folder_btn = self._toolbtn("New Folder", self._on_new_folder, "Ctrl+Shift+N")
+        self.cut_btn = self._toolbtn("Cut", self._on_cut, "Ctrl+X")
+        self.copy_btn = self._toolbtn("Copy", self._on_copy, "Ctrl+C")
+        self.paste_btn = self._toolbtn("Paste", self._on_paste, "Ctrl+V")
+        self.rename_btn = self._toolbtn("Rename", self._on_rename, "F2")
+        self.delete_btn = self._toolbtn("Delete", self._on_trash, "Move to the Trash (Delete key); Ctrl+Z brings it back. "
+                                        "Shift+Delete deletes for good.")
+        self.open_btn = self._toolbtn("Open", self._on_open_selected, "Enter")
+        self.undo_btn = self._toolbtn("Undo", self._on_undo, "Ctrl+Z")
+        for b in (self.new_folder_btn, self.cut_btn, self.copy_btn, self.paste_btn, self.rename_btn,
+                  self.delete_btn, self.open_btn):
+            files_bar.pack_start(b, False, False, 0)
+        files_bar.pack_end(self.undo_btn, False, False, 0)
+        trash_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        trash_bar.set_name("toolbar")
+        trash_bar.set_border_width(8)
+        self.restore_btn = self._toolbtn("Restore", self._on_restore, "Put back where it was")
+        self.purge_btn = self._toolbtn("Delete for Good", self._on_delete_forever, "Shift+Delete")
+        self.empty_btn = self._toolbtn("Empty Trash", self._on_empty_trash, None)
+        for b in (self.restore_btn, self.purge_btn):
+            trash_bar.pack_start(b, False, False, 0)
+        trash_bar.pack_end(self.empty_btn, False, False, 0)
+        self.actions.add_named(files_bar, "files")
+        self.actions.add_named(trash_bar, "trash")
+        root.pack_start(self.actions, False, False, 0)
 
         scroller = Gtk.ScrolledWindow()
-        self.store = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, str, str, bool)
+        self.store = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, str, str, bool, GObject.TYPE_INT64, float, bool, str)
+        for col in (COL_NAME, COL_BYTES, COL_TIME):
+            self.store.set_sort_func(col, self._sort, col)
+        self.store.set_sort_column_id(COL_NAME, Gtk.SortType.ASCENDING)
         self.view = Gtk.TreeView(model=self.store)
         self.view.set_headers_visible(True)
+        self.view.set_rubber_banding(True)
+        self.view.set_search_column(COL_NAME)  # type a name to jump to it
+        self.view.set_tooltip_column(COL_TIP)
+        self.view.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE)
         self.view.connect("row-activated", self._on_row_activated)
         self.view.get_selection().connect("changed", self._on_selection_changed)
+        self.view.connect("button-press-event", self._on_button_press)
+        self.view.connect("button-release-event", self._on_button_release)
+        self.view.connect("scroll-event", self._on_scroll)
+        self.view.connect("popup-menu", self._on_menu_key)
 
         icon_renderer = Gtk.CellRendererPixbuf()
         name_renderer = Gtk.CellRendererText()
         name_col = Gtk.TreeViewColumn("Name")
         name_col.pack_start(icon_renderer, False)
         name_col.add_attribute(icon_renderer, "pixbuf", COL_ICON)
+        name_col.add_attribute(icon_renderer, "sensitive", COL_ACTIVE)
         name_col.pack_start(name_renderer, True)
         name_col.add_attribute(name_renderer, "text", COL_NAME)
+        name_col.add_attribute(name_renderer, "sensitive", COL_ACTIVE)
         name_col.set_expand(True)
         name_col.set_resizable(True)
+        name_col.set_sort_column_id(COL_NAME)
         self.view.append_column(name_col)
 
         size_renderer = Gtk.CellRendererText()
         size_renderer.set_property("xalign", 1.0)
         size_col = Gtk.TreeViewColumn("Size", size_renderer, text=COL_SIZE)
         size_col.set_fixed_width(90)
+        size_col.set_sort_column_id(COL_BYTES)
         self.view.append_column(size_col)
 
-        mtime_col = Gtk.TreeViewColumn("Modified", Gtk.CellRendererText(), text=COL_MTIME)
-        mtime_col.set_fixed_width(150)
-        self.view.append_column(mtime_col)
+        self.mtime_col = Gtk.TreeViewColumn("Modified", Gtk.CellRendererText(), text=COL_MTIME)
+        self.mtime_col.set_fixed_width(150)
+        self.mtime_col.set_sort_column_id(COL_TIME)
+        self.view.append_column(self.mtime_col)
+
+        # Drag selected items out (to a folder here, another window, another
+        # app); drop files in. Drops are handled by hand (not the tree's
+        # row-reordering) so only folders light up as targets.
+        self.view.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, _uri_targets(),
+                                           Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        self.view.connect("drag-begin", self._on_drag_begin)
+        self.view.connect("drag-end", self._on_drag_end)
+        self.view.connect("drag-data-get", self._on_drag_data_get)
+        self.view.connect("drag-data-delete", lambda w, _c: w.stop_emission_by_name("drag-data-delete"))
+        self.view.drag_dest_set(0, _uri_targets(), Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        self.view.connect("drag-motion", self._on_drag_motion)
+        self.view.connect("drag-leave", lambda w, _c, _t: w.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE))
+        self.view.connect("drag-drop", self._on_drag_drop)
+        self.view.connect("drag-data-received", self._on_drag_data_received)
 
         scroller.add(self.view)
         root.pack_start(scroller, True, True, 0)
 
+        status_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        status_row.set_name("statusrow")
         self.status = Gtk.Label(label="")
         self.status.set_name("statusbar")
         self.status.set_xalign(0)
+        self.status.set_ellipsize(3)  # Pango.EllipsizeMode.END
         self.status.set_margin_start(10)
         self.status.set_margin_top(4)
         self.status.set_margin_bottom(4)
-        root.pack_start(self.status, False, False, 0)
+        status_row.pack_start(self.status, True, True, 0)
+        self.progress = Gtk.ProgressBar()
+        self.progress.set_valign(Gtk.Align.CENTER)
+        self.progress.set_size_request(180, -1)
+        self.progress.set_no_show_all(True)
+        status_row.pack_start(self.progress, False, False, 0)
+        self.cancel_btn = self._toolbtn("Cancel", self._on_cancel, "Stop the copy or move")
+        self.cancel_btn.set_no_show_all(True)
+        self.cancel_btn.set_margin_end(6)
+        status_row.pack_start(self.cancel_btn, False, False, 0)
+        root.pack_start(status_row, False, False, 0)
 
-        gesture = Gtk.GestureMultiPress.new(self.view)
-        gesture.set_button(3)
-        gesture.connect("pressed", self._on_right_click)
-        self._right_click_gesture = gesture
+        self.connect("key-press-event", self._on_key)
+        self.connect("button-press-event", self._on_window_button)
 
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
@@ -163,82 +287,448 @@ class FileManagerWindow(Gtk.Window):
             Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
 
-        self._update_action_sensitivity()
-
-    def _toolbtn(self, label, handler):
+    def _toolbtn(self, label, handler, tip):
         btn = Gtk.Button(label=label)
         btn.set_name("toolbtn")
+        if tip:
+            btn.set_tooltip_text(tip)
         btn.connect("clicked", handler)
         return btn
 
-    def _refresh(self):
-        self.path_entry.set_text(self.path)
-        self.store.clear()
-        try:
-            entries = fileops.list_dir(self.path, self.show_hidden)
-        except fileops.FileOpError as e:
-            self._error(f"Can't open {self.path}: {e}")
-            return
-        dirs = 0
-        files = 0
-        for e in entries:
-            icon_name = fileops.guess_icon(e["name"], e["is_dir"], e["is_exec"])
-            self.store.append([
-                self._icon_pixbuf(icon_name), e["name"], fileops.human_size(e["size"], e["is_dir"]),
-                fileops.human_time(e["mtime"]), e["path"], e["is_dir"],
-            ])
-            dirs += e["is_dir"]
-            files += not e["is_dir"]
-        self.status.set_text(f"{dirs} folder{'s' if dirs != 1 else ''}, {files} file{'s' if files != 1 else ''}")
-        self._update_action_sensitivity()
+    def _on_destroy(self, _w):
+        FileManagerWindow.open_windows -= 1
+        if self._proc:
+            self._proc.terminate()
+        if FileManagerWindow.open_windows <= 0 and Gtk.main_level() > 0:
+            Gtk.main_quit()
 
-    def _navigate(self, path):
-        if not os.path.isdir(path):
-            self._error(f"Not a directory: {path}")
+    # ---- Listing ----
+
+    @property
+    def in_trash(self):
+        return self.path == TRASH
+
+    def _sort(self, model, a, b, col):
+        da, db = model.get_value(a, COL_IS_DIR), model.get_value(b, COL_IS_DIR)
+        if da != db:  # folders first, whichever way the column is sorted
+            first = -1 if da else 1
+            _, order = model.get_sort_column_id()
+            return -first if order == Gtk.SortType.DESCENDING else first
+        x, y = model.get_value(a, col), model.get_value(b, col)
+        if col != COL_NAME and x == y:
+            # Equal sizes or dates: by name, A to Z either way.
+            x, y = model.get_value(a, COL_NAME).lower(), model.get_value(b, COL_NAME).lower()
+            _, order = model.get_sort_column_id()
+            return ((x > y) - (x < y)) * (-1 if order == Gtk.SortType.DESCENDING else 1)
+        if col == COL_NAME:
+            x, y = x.lower(), y.lower()
+        return (x > y) - (x < y)
+
+    def _refresh(self, select=None):
+        """Reload the folder, keeping (or setting) which items are selected."""
+        if select is None:
+            select = [i["path"] for i in self._selected()]
+        self._refresh_soon_id = 0
+        self.path_entry.set_text("Trash" if self.in_trash else self.path)
+        cut = set(self.clipboard["paths"]) if self.clipboard and self.clipboard["cut"] else set()
+        self.store.clear()
+        if self.in_trash:
+            try:
+                entries = engine.trash_list()
+            except engine.EngineError as e:
+                self._error(f"Can't open the Trash: {e}")
+                entries = []
+            for e in entries:
+                when = e["deleted"].replace("T", " ")[:16]
+                try:
+                    ts = time.mktime(time.strptime(e["deleted"], "%Y-%m-%dT%H:%M:%S"))
+                except ValueError:
+                    ts = 0.0
+                icon = fileops.guess_icon(e["name"], e["is_dir"], False)
+                self.store.append([self._icon_pixbuf(icon), e["name"], fileops.human_size(e["size"], False),
+                                   when, e["trashed"], e["is_dir"], e["size"], ts, True,
+                                   GLib.markup_escape_text(f"From {os.path.dirname(e['original'])}")])
+            self._summary = "The Trash is empty" if not entries else f"{_items(len(entries))} in the Trash"
+        else:
+            try:
+                entries = fileops.list_dir(self.path, self.show_hidden)
+            except fileops.FileOpError as e:
+                self._error(f"Can't open {self.path}: {e}")
+                return
+            dirs = files = 0
+            for e in entries:
+                icon_name = fileops.guess_icon(e["name"], e["is_dir"], e["is_exec"])
+                self.store.append([
+                    self._icon_pixbuf(icon_name), e["name"], fileops.human_size(e["size"], e["is_dir"]),
+                    fileops.human_time(e["mtime"]), e["path"], e["is_dir"], e["size"], e["mtime"],
+                    e["path"] not in cut, None,
+                ])
+                dirs += e["is_dir"]
+                files += not e["is_dir"]
+            self._summary = f"{dirs} folder{'s' if dirs != 1 else ''}, {files} file{'s' if files != 1 else ''}"
+        self._select_paths(select)
+        self._update_action_sensitivity()
+        self._show_selection_summary()
+
+    def _select_paths(self, paths):
+        sel = self.view.get_selection()
+        sel.unselect_all()
+        wanted = set(paths or [])
+        first = None
+        for row in self.store:
+            if row[COL_PATH] in wanted:
+                sel.select_iter(row.iter)
+                first = first or row.path
+        if first is not None:
+            self.view.set_cursor(first, None, False) if len(wanted) == 1 else None
+            self.view.scroll_to_cell(first, None, False, 0, 0)
+            for path in paths:  # set_cursor may have dropped the others
+                for row in self.store:
+                    if row[COL_PATH] == path:
+                        sel.select_iter(row.iter)
+
+    def _navigate(self, path, remember=True):
+        if path != TRASH and not os.path.isdir(path):
+            self._error(f"Not a folder: {path}")
             return
-        self.path = os.path.abspath(path)
+        new = path if path == TRASH else os.path.abspath(path)
+        if remember and new != self.path:
+            self.back_stack.append(self.path)
+            self.forward_stack.clear()
+        self.path = new
+        self.actions.set_visible_child_name("trash" if self.in_trash else "files")
+        self.mtime_col.set_title("Deleted" if self.in_trash else "Modified")
+        ctx = self.trash_btn.get_style_context()
+        (ctx.add_class if self.in_trash else ctx.remove_class)("nx-active")
+        self._watch()
+        self._refresh(select=[])
+
+    def _watch(self):
+        """Refresh by itself when files change (another app, a download)."""
+        if self._monitor:
+            self._monitor.cancel()
+            self._monitor = None
+        target = os.path.join(engine_trash_dir(), "files") if self.in_trash else self.path
+        try:
+            self._monitor = Gio.File.new_for_path(target).monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None)
+            self._monitor.connect("changed", lambda *_a: self._refresh_soon())
+        except GLib.Error:
+            self._monitor = None
+
+    def _refresh_soon(self):
+        if not self._refresh_soon_id:
+            self._refresh_soon_id = GLib.timeout_add(300, self._refresh_when_idle)
+
+    def _refresh_when_idle(self):
+        if self._dragging or self._pending_click is not None:
+            return True  # try again once the mouse is done
         self._refresh()
+        return False
+
+    # ---- Selection ----
+
+    def _selected(self):
+        model, paths = self.view.get_selection().get_selected_rows()
+        return [{"path": model[p][COL_PATH], "name": model[p][COL_NAME], "is_dir": model[p][COL_IS_DIR],
+                 "bytes": model[p][COL_BYTES]} for p in paths]
 
     def _selected_entry(self):
-        model, it = self.view.get_selection().get_selected()
-        if it is None:
-            return None
-        return {
-            "path": model[it][COL_PATH], "name": model[it][COL_NAME],
-            "is_dir": model[it][COL_IS_DIR],
-        }
+        sel = self._selected()
+        return sel[0] if len(sel) == 1 else None
 
     def _update_action_sensitivity(self):
-        sel = self._selected_entry()
-        for b in (self.rename_btn, self.delete_btn, self.copy_btn, self.open_btn):
-            b.set_sensitive(sel is not None)
-        self.paste_btn.set_sensitive(self.clipboard_path is not None)
+        n = len(self._selected())
+        for b in (self.cut_btn, self.copy_btn, self.delete_btn, self.open_btn, self.restore_btn, self.purge_btn):
+            b.set_sensitive(n > 0)
+        self.rename_btn.set_sensitive(n == 1)
+        self.paste_btn.set_sensitive(self.clipboard is not None and not self.in_trash)
+        self.undo_btn.set_sensitive(bool(self.undo_stack) and not self.busy)
+        self.empty_btn.set_sensitive(len(self.store) > 0)
+        self.back_btn.set_sensitive(bool(self.back_stack))
+        self.forward_btn.set_sensitive(bool(self.forward_stack))
         self.up_btn.set_sensitive(self.path != "/")
-        self.zoom_out_btn.set_sensitive(self.icon_size_index > 0)
-        self.zoom_in_btn.set_sensitive(self.icon_size_index < len(ICON_SIZES) - 1)
+        self.zoom_out_item.set_sensitive(self.icon_size_index > 0)
+        self.zoom_in_item.set_sensitive(self.icon_size_index < len(ICON_SIZES) - 1)
+
+    def _show_selection_summary(self):
+        if self.busy:
+            return
+        sel = self._selected()
+        if not sel:
+            self.status.set_text(self._summary)
+            return
+        folders = sum(i["is_dir"] for i in sel)
+        size = sum(i["bytes"] for i in sel if not i["is_dir"] or self.in_trash)
+        parts = []
+        if folders:
+            parts.append(f"{folders} folder{'s' if folders != 1 else ''}")
+        if size or folders < len(sel):
+            parts.append(fileops.human_size(size, False))
+        self.status.set_text(f"{_items(len(sel))} selected ({', '.join(parts)})")
 
     def _on_selection_changed(self, _sel):
         self._update_action_sensitivity()
+        self._show_selection_summary()
 
-    def _on_zoom_out(self, _btn):
-        if self.icon_size_index > 0:
-            self.icon_size_index -= 1
-            self._save_icon_size_index()
-            self._refresh()
+    def select_all(self):
+        self.view.get_selection().select_all()
 
-    def _on_zoom_in(self, _btn):
-        if self.icon_size_index < len(ICON_SIZES) - 1:
-            self.icon_size_index += 1
-            self._save_icon_size_index()
-            self._refresh()
+    # ---- Mouse ----
+
+    def _on_button_press(self, view, event):
+        if event.type != Gdk.EventType.BUTTON_PRESS:
+            return False  # double-clicks open through row-activated
+        if event.button in (8, 9):
+            (self._on_back if event.button == 8 else self._on_forward)(None)
+            return True
+        hit = view.get_path_at_pos(int(event.x), int(event.y))
+        sel = view.get_selection()
+        ctrl, shift, _alt = _mods(event.state)
+        if event.button == 3:
+            if hit is None:
+                sel.unselect_all()
+            elif not sel.path_is_selected(hit[0]):
+                view.set_cursor(hit[0], None, False)
+            self._popup(self._item_menu() if hit else self._background_menu(), event)
+            return True
+        if event.button == 2:
+            if hit and self.store[hit[0]][COL_IS_DIR] and not self.in_trash:
+                self._open_window(self.store[hit[0]][COL_PATH])
+            return True
+        if event.button == 1:
+            if hit is None:
+                if not (ctrl or shift):
+                    sel.unselect_all()
+                return False  # a box selection can start here
+            if not (ctrl or shift) and sel.path_is_selected(hit[0]) and sel.count_selected_rows() > 1:
+                # Keep the whole selection so it can be dragged; a plain
+                # click (no drag) narrows it to this item on release.
+                sel.set_select_function(lambda *_a: False, None)
+                self._pending_click = hit[0]
+        return False
+
+    def _on_button_release(self, view, _event):
+        if self._pending_click is not None and not self._dragging:
+            view.get_selection().set_select_function(lambda *_a: True, None)
+            path, self._pending_click = self._pending_click, None
+            view.set_cursor(path, None, False)
+        return False
+
+    def _on_window_button(self, _w, event):
+        if event.button in (8, 9):
+            (self._on_back if event.button == 8 else self._on_forward)(None)
+            return True
+        return False
+
+    def _on_scroll(self, _view, event):
+        if not event.state & Gdk.ModifierType.CONTROL_MASK:
+            return False
+        if event.direction == Gdk.ScrollDirection.UP:
+            self._on_zoom_in(None)
+        elif event.direction == Gdk.ScrollDirection.DOWN:
+            self._on_zoom_out(None)
+        elif event.direction == Gdk.ScrollDirection.SMOOTH:
+            _ok, _dx, dy = event.get_scroll_deltas()
+            (self._on_zoom_out if dy > 0 else self._on_zoom_in)(None)
+        return True
 
     def _on_row_activated(self, _view, tree_path, _column):
-        it = self.store.get_iter(tree_path)
-        path, is_dir = self.store[it][COL_PATH], self.store[it][COL_IS_DIR]
-        if is_dir:
-            self._navigate(path)
+        row = self.store[tree_path]
+        if self.in_trash:
+            self.status.set_text("Restore it to open it (right-click > Restore).")
+        elif row[COL_IS_DIR]:
+            self._navigate(row[COL_PATH])
         else:
-            self._open_path(path)
+            self._open_path(row[COL_PATH])
+
+    # ---- Drag and drop ----
+
+    def _on_drag_begin(self, _view, _ctx):
+        self._dragging = True
+
+    def _on_drag_end(self, view, _ctx):
+        self._dragging = False
+        if self._pending_click is not None:
+            view.get_selection().set_select_function(lambda *_a: True, None)
+            self._pending_click = None
+
+    def _on_drag_data_get(self, _view, _ctx, data, _info, _time):
+        data.set_uris([Gio.File.new_for_path(i["path"]).get_uri() for i in self._selected()])
+
+    def _drop_folder(self, x, y):
+        """The folder a drop at (x, y) goes into: the folder row under the
+        pointer, or the folder being shown."""
+        if self.in_trash:
+            return None
+        dest = self.view.get_dest_row_at_pos(x, y)
+        if dest:
+            row = self.store[dest[0]]
+            if row[COL_IS_DIR]:
+                return dest[0], row[COL_PATH]
+        return None, self.path
+
+    def _on_drag_motion(self, view, ctx, x, y, t):
+        target = self._drop_folder(x, y)
+        dragged = {i["path"] for i in self._selected()} if Gtk.drag_get_source_widget(ctx) is view else set()
+        if target is None or target[1] in dragged:
+            view.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
+            Gdk.drag_status(ctx, 0, t)
+            return True
+        _win, _x, _y, mask = view.get_window().get_device_position(ctx.get_device())
+        ctrl, shift, _alt = _mods(mask)
+        internal = Gtk.drag_get_source_widget(ctx) is not None  # from a Files window
+        action = (Gdk.DragAction.COPY if ctrl else Gdk.DragAction.MOVE if shift
+                  else Gdk.DragAction.MOVE if internal else Gdk.DragAction.COPY)
+        if not ctx.get_actions() & action:
+            action = ctx.get_suggested_action()
+        if not internal and target[0] is None:
+            view.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
+        elif target[0] is not None:
+            view.set_drag_dest_row(target[0], Gtk.TreeViewDropPosition.INTO_OR_AFTER)
+        else:
+            view.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
+        self._drop_action = action
+        Gdk.drag_status(ctx, action, t)
+        return True
+
+    def _on_drag_drop(self, view, ctx, _x, _y, t):
+        view.drag_get_data(ctx, Gdk.Atom.intern("text/uri-list", False), t)
+        return True
+
+    def _on_drag_data_received(self, view, ctx, x, y, data, _info, t):
+        view.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
+        target = self._drop_folder(x, y)
+        paths = [Gio.File.new_for_uri(u).get_path() for u in (data.get_uris() or [])]
+        paths = [p for p in paths if p]
+        # Never ask the source to delete: a move is done here, by the engine.
+        Gtk.drag_finish(ctx, bool(paths and target), False, t)
+        if not paths or target is None or target[1] in paths:
+            return
+        self._transfer(paths, target[1], move=self._drop_action == Gdk.DragAction.MOVE)
+
+    # ---- Keyboard ----
+
+    def _on_key(self, _w, event):
+        focus = self.get_focus()
+        k = Gdk.keyval_to_lower(event.keyval)
+        ctrl, shift, alt = _mods(event.state)
+        if isinstance(focus, Gtk.Entry):
+            if focus is self.path_entry and k == Gdk.KEY_Escape:
+                self.path_entry.set_text("Trash" if self.in_trash else self.path)
+                self.view.grab_focus()
+                return True
+            return False
+        keys = {
+            (True, False, False, Gdk.KEY_c): self._on_copy,
+            (True, False, False, Gdk.KEY_x): self._on_cut,
+            (True, False, False, Gdk.KEY_v): self._on_paste,
+            (True, False, False, Gdk.KEY_a): lambda _b: self.select_all(),
+            (True, False, False, Gdk.KEY_z): self._on_undo,
+            (True, False, False, Gdk.KEY_h): self._on_toggle_hidden,
+            (True, False, False, Gdk.KEY_l): lambda _b: self._focus_path(),
+            (True, False, False, Gdk.KEY_r): lambda _b: self._refresh(),
+            (True, False, False, Gdk.KEY_plus): self._on_zoom_in,
+            (True, False, False, Gdk.KEY_equal): self._on_zoom_in,
+            (True, False, False, Gdk.KEY_minus): self._on_zoom_out,
+            (True, False, False, Gdk.KEY_0): lambda _b: self._set_zoom(DEFAULT_ICON_SIZE_INDEX),
+            (True, True, False, Gdk.KEY_n): self._on_new_folder,
+            (False, False, False, Gdk.KEY_F2): self._on_rename,
+            (False, False, False, Gdk.KEY_F5): lambda _b: self._refresh(),
+            (False, False, False, Gdk.KEY_Delete): self._on_delete_forever if self.in_trash else self._on_trash,
+            (False, True, False, Gdk.KEY_Delete): self._on_delete_forever,
+            (False, False, False, Gdk.KEY_BackSpace): self._on_up,
+            (False, False, True, Gdk.KEY_Up): self._on_up,
+            (False, False, True, Gdk.KEY_Left): self._on_back,
+            (False, False, True, Gdk.KEY_Right): self._on_forward,
+            (False, False, True, Gdk.KEY_Home): self._on_home,
+            (False, False, True, Gdk.KEY_Return): lambda _b: self._properties(),
+            (False, False, False, Gdk.KEY_Return): self._on_open_selected,
+            (False, False, False, Gdk.KEY_KP_Enter): self._on_open_selected,
+            (False, False, False, Gdk.KEY_Escape): lambda _b: self.view.get_selection().unselect_all(),
+        }
+        handler = keys.get((ctrl, shift, alt, k))
+        if handler is None:
+            return False
+        handler(None)
+        return True
+
+    def _focus_path(self):
+        self.path_entry.grab_focus()
+        self.path_entry.select_region(0, -1)
+
+    # ---- Menus ----
+
+    def _popup(self, entries, event=None):
+        menu = Gtk.Menu()
+        for e in entries:
+            if e is None:
+                menu.append(Gtk.SeparatorMenuItem())
+                continue
+            label, handler, *rest = e
+            if rest and rest[0] == "check":
+                item = Gtk.CheckMenuItem(label=label)
+                item.set_active(rest[1])
+            else:
+                item = Gtk.MenuItem(label=label)
+                item.set_sensitive(rest[0] if rest else True)
+            item.connect("activate", lambda _i, h=handler: h(None))
+            menu.append(item)
+        menu.show_all()
+        menu.attach_to_widget(self.view, None)
+        if event is not None:
+            menu.popup_at_pointer(event)
+        else:
+            menu.popup_at_widget(self.view, Gdk.Gravity.CENTER, Gdk.Gravity.NORTH_WEST, None)
+        self._menu = menu  # keep it alive while shown
+        return menu
+
+    def _item_menu(self):
+        sel = self._selected()
+        n = len(sel)
+        single = sel[0] if n == 1 else None
+        if self.in_trash:
+            return [("Restore", self._on_restore), ("Delete for Good…", self._on_delete_forever), None,
+                    ("Select All", lambda _b: self.select_all())]
+        folder = single and single["is_dir"]
+        return [
+            ("Open", self._on_open_selected),
+            ("Open in New Window", lambda _b: [self._open_window(i["path"]) for i in sel if i["is_dir"]], any(i["is_dir"] for i in sel)),
+            ("Open With…", self._on_open_with, bool(single and not single["is_dir"])),
+            None,
+            ("Cut", self._on_cut), ("Copy", self._on_copy),
+            ("Paste Into Folder", lambda _b: self._paste_into(single["path"]), bool(folder and self.clipboard)),
+            ("Duplicate", self._on_duplicate),
+            ("Rename…", self._on_rename, n == 1),
+            None,
+            ("Copy Location", self._on_copy_location),
+            ("Move to Trash", self._on_trash),
+            ("Delete for Good…", self._on_delete_forever),
+            None,
+            ("Properties", lambda _b: self._properties()),
+        ]
+
+    def _background_menu(self):
+        if self.in_trash:
+            return [("Empty Trash", self._on_empty_trash, len(self.store) > 0), ("Select All", lambda _b: self.select_all()),
+                    ("Refresh", lambda _b: self._refresh())]
+        return [
+            ("New Folder…", self._on_new_folder),
+            ("New Empty File…", self._on_new_file),
+            ("Paste", self._on_paste, self.clipboard is not None),
+            None,
+            ("Select All", lambda _b: self.select_all()),
+            ("Show Hidden Files", self._on_toggle_hidden, "check", self.show_hidden),
+            ("Refresh", lambda _b: self._refresh()),
+            None,
+            ("Open Terminal Here", self._on_terminal, self._terminal() is not None),
+            ("Properties", lambda _b: self._properties([{"path": self.path, "name": os.path.basename(self.path) or "/", "is_dir": True}])),
+        ]
+
+    def _on_menu_key(self, _view):
+        self._popup(self._item_menu() if self._selected() else self._background_menu())
+        return True
+
+    # ---- Opening ----
 
     def _content_type(self, path):
         gfile = Gio.File.new_for_path(path)
@@ -262,6 +752,24 @@ class FileManagerWindow(Gtk.Window):
             app_info.launch([gfile], None)
         except GLib.Error as e:
             self._error(f"Couldn't launch {app_info.get_display_name()}: {e.message}")
+
+    def _on_open_selected(self, _btn):
+        sel = self._selected()
+        if self.in_trash or not sel:
+            return
+        folders = [i for i in sel if i["is_dir"]]
+        if len(sel) == 1 and folders:
+            self._navigate(folders[0]["path"])
+            return
+        for i in sel:
+            if i["is_dir"]:
+                self._open_window(i["path"])
+            else:
+                self._open_path(i["path"])
+
+    def _open_window(self, path):
+        win = FileManagerWindow(path)
+        win.show_all()
 
     def _on_open_with(self, _btn):
         sel = self._selected_entry()
@@ -311,6 +819,19 @@ class FileManagerWindow(Gtk.Window):
                 app.set_as_default_for_type(content_type)
             except GLib.Error:
                 pass
+
+    def _terminal(self):
+        for t in TERMINALS:
+            for d in os.environ.get("PATH", "/usr/bin:/bin").split(":"):
+                if os.access(os.path.join(d, t), os.X_OK):
+                    return os.path.join(d, t)
+        return None
+
+    def _on_terminal(self, _btn):
+        term = self._terminal()
+        if term and not self.in_trash:
+            subprocess.Popen([term], cwd=self.path, start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # ---- Removable drives ----
 
@@ -378,111 +899,378 @@ class FileManagerWindow(Gtk.Window):
 
         self._in_thread(lambda: removable.eject(vol["name"]), done)
 
+    # ---- Navigation ----
+
+    def _on_back(self, _btn):
+        if self.back_stack:
+            self.forward_stack.append(self.path)
+            self._navigate(self.back_stack.pop(), remember=False)
+
+    def _on_forward(self, _btn):
+        if self.forward_stack:
+            self.back_stack.append(self.path)
+            self._navigate(self.forward_stack.pop(), remember=False)
+
     def _on_up(self, _btn):
+        came_from = self.path
+        if self.in_trash:
+            self._navigate(os.environ.get("HOME", "/root"))
+            return
         self._navigate(os.path.dirname(self.path.rstrip("/")) or "/")
+        self._select_paths([came_from])  # keep your place
 
     def _on_home(self, _btn):
         self._navigate(os.environ.get("HOME", "/root"))
 
+    def _on_show_trash(self, _btn):
+        self._navigate(TRASH)
+
     def _on_path_entered(self, entry):
-        self._navigate(entry.get_text().strip() or "/")
+        text = entry.get_text().strip()
+        if text.lower() in ("trash", TRASH, "trash:"):
+            self._navigate(TRASH)
+        else:
+            self._navigate(os.path.expanduser(text) or "/")
+        self.view.grab_focus()
 
     def _on_toggle_hidden(self, _btn):
         self.show_hidden = not self.show_hidden
-        self.hidden_btn.set_label(f"Hidden: {'on' if self.show_hidden else 'off'}")
+        self.hidden_item.set_active(self.show_hidden)
         self._refresh()
 
-    def _on_open_selected(self, _btn):
-        sel = self._selected_entry()
+    def _set_zoom(self, index):
+        if 0 <= index < len(ICON_SIZES) and index != self.icon_size_index:
+            self.icon_size_index = index
+            self._save_icon_size_index()
+            self._refresh()
+
+    def _on_zoom_out(self, _btn):
+        self._set_zoom(self.icon_size_index - 1)
+
+    def _on_zoom_in(self, _btn):
+        self._set_zoom(self.icon_size_index + 1)
+
+    # ---- Changing files (all through the engine) ----
+
+    def _job(self, label, work, done):
+        """Run an engine call off the main thread, with a progress bar when
+        it moves bytes and a Cancel button."""
+        if self.busy:
+            self.status.set_text("Wait for the current job to finish, or cancel it.")
+            return
+        self.busy = True
+        self.status.set_text(label + "…")
+        self._update_action_sensitivity()
+
+        def progress(p):
+            GLib.idle_add(self._show_progress, label, p)
+
+        def started(proc):
+            self._proc = proc
+
+        def run():
+            try:
+                result, error = work(progress, started), None
+            except engine.EngineError as e:
+                result, error = None, str(e)
+            GLib.idle_add(finish, result, error)
+
+        def finish(result, error):
+            self.busy = False
+            self._proc = None
+            self.progress.hide()
+            self.cancel_btn.hide()
+            done(result, error)
+            self._update_action_sensitivity()
+            return False
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _show_progress(self, label, p):
+        if not self.busy:
+            return False
+        total = p.get("total") or 0
+        self.progress.show()
+        self.cancel_btn.show()
+        self.progress.set_fraction(min(1.0, p["done"] / total) if total else 0)
+        done_s = fileops.human_size(p["done"], False)
+        total_s = fileops.human_size(total, False)
+        self.status.set_text(f"{label}: {p.get('current', '')} - {done_s} of {total_s}")
+        return False
+
+    def _on_cancel(self, _btn):
+        if self._proc:
+            self._proc.terminate()
+
+    def _changed(self, result, error, select_key=None, undo=True):
+        """Show what an engine call did, remember how to undo it, refresh."""
+        if error:
+            self._error(error)
+            self._refresh()
+            return
+        steps = result.get("undo") or []
+        if undo and steps:
+            self.undo_stack.append((result.get("done", "the last change"), steps))
+            del self.undo_stack[:-50]
+        failed = result.get("failed") or []
+        text = result.get("done", "Done")
+        if undo and steps:
+            text += " - Ctrl+Z to undo"
+        select = result.get(select_key) if select_key else None
+        if isinstance(select, str):
+            select = [select]
+        self._refresh(select=select)
+        self.status.set_text(text)
+        if failed:
+            lines = "\n".join(f"{os.path.basename(f['path'])}: {f['error']}" for f in failed[:8])
+            more = f"\n…and {len(failed) - 8} more" if len(failed) > 8 else ""
+            self._error(f"{_items(len(failed))} couldn't be handled", lines + more)
+
+    def _on_copy(self, _btn):
+        self._to_clipboard(cut=False)
+
+    def _on_cut(self, _btn):
+        self._to_clipboard(cut=True)
+
+    def _to_clipboard(self, cut):
+        sel = self._selected()
+        if not sel or self.in_trash:
+            return
+        self.clipboard = {"paths": [i["path"] for i in sel], "cut": cut}
+        # Other apps get the locations as text (a terminal, an editor).
+        Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text("\n".join(self.clipboard["paths"]), -1)
+        verb = "Cut" if cut else "Copied"
+        self._refresh()
+        self.status.set_text(f"{verb} {_items(len(sel))} - go to a folder and paste (Ctrl+V)")
+
+    def _clipboard_paths(self):
+        if self.clipboard:
+            return self.clipboard["paths"], self.clipboard["cut"]
+        # Files copied in another app (a list of file:// links).
+        uris = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).wait_for_uris() or []
+        paths = [Gio.File.new_for_uri(u).get_path() for u in uris]
+        return [p for p in paths if p], False
+
+    def _on_paste(self, _btn):
+        if not self.in_trash:
+            self._paste_into(self.path)
+
+    def _paste_into(self, folder):
+        paths, cut = self._clipboard_paths()
+        if not paths:
+            self.status.set_text("Nothing to paste - copy or cut something first.")
+            return
+        if cut:
+            self.clipboard = None  # a cut is pasted once
+        self._transfer(paths, folder, move=cut)
+
+    def _transfer(self, paths, folder, move):
+        verb = "Moving" if move else "Copying"
+        call = engine.move if move else engine.copy
+        self._job(f"{verb} {_items(len(paths))}",
+                  lambda progress, started: call(paths, folder, progress=progress, started=started),
+                  lambda r, e: self._changed(r, e, "moved" if move else "created"))
+
+    def _on_duplicate(self, _btn):
+        sel = self._selected()
+        if sel:
+            self._job(f"Duplicating {_items(len(sel))}",
+                      lambda progress, started: engine.duplicate([i["path"] for i in sel], progress=progress, started=started),
+                      lambda r, e: self._changed(r, e, "created"))
+
+    def _on_trash(self, _btn):
+        sel = self._selected()
+        if not sel or self.in_trash:
+            return
+        paths = [i["path"] for i in sel]
+
+        def done(result, error):
+            no_trash = [f["path"] for f in (result or {}).get("failed", []) if "no Trash" in f["error"]]
+            if error and "no Trash" in error:
+                no_trash = paths
+                error = None
+                result = {"done": "Nothing was moved to the Trash", "failed": []}
+            if result:
+                result["failed"] = [f for f in result.get("failed", []) if f["path"] not in no_trash]
+            self._changed(result, error)
+            if no_trash and self._confirm(
+                    f"Delete {_items(len(no_trash))} for good?",
+                    "This drive has no Trash, so they can't be brought back afterwards."):
+                self._job("Deleting", lambda progress, started: engine.delete(no_trash, started=started),
+                          lambda r, e: self._changed(r, e))
+
+        self._job(f"Moving {_items(len(paths))} to the Trash",
+                  lambda progress, started: engine.trash(paths, started=started), done)
+
+    def _on_delete_forever(self, _btn):
+        sel = self._selected()
         if not sel:
             return
-        if sel["is_dir"]:
-            self._navigate(sel["path"])
-        else:
-            self._open_path(sel["path"])
-
-    def _on_new_folder(self, _btn):
-        name = self._prompt("New Folder", "Folder name:", "New Folder")
-        if not name:
+        what = f"“{sel[0]['name']}”" if len(sel) == 1 else _items(len(sel))
+        if not self._confirm(f"Delete {what} for good?", "This can't be undone."):
             return
-        try:
-            fileops.make_dir(self.path, name)
-        except fileops.FileOpError as e:
-            self._error(str(e))
-        self._refresh()
+        self._job("Deleting", lambda progress, started: engine.delete([i["path"] for i in sel], started=started),
+                  lambda r, e: self._changed(r, e))
+
+    def _on_restore(self, _btn):
+        sel = self._selected()
+        if sel and self.in_trash:
+            self._job(f"Restoring {_items(len(sel))}",
+                      lambda progress, started: engine.restore([i["path"] for i in sel], started=started),
+                      lambda r, e: self._changed(r, e))
+
+    def _on_empty_trash(self, _btn):
+        if not len(self.store):
+            return
+        if not self._confirm("Empty the Trash?", f"{_items(len(self.store))} will be deleted for good."):
+            return
+        self._job("Emptying the Trash", lambda progress, started: engine.empty_trash(), lambda r, e: self._changed(r, e))
+
+    def _on_undo(self, _btn):
+        if not self.undo_stack or self.busy:
+            return
+        what, steps = self.undo_stack.pop()
+
+        def done(result, error):
+            if result:
+                result["done"] = f"Undone: {what}"
+            self._changed(result, error, undo=False)
+
+        self._job("Undoing", lambda progress, started: engine.undo(steps), done)
 
     def _on_rename(self, _btn):
         sel = self._selected_entry()
-        if not sel:
+        if not sel or self.in_trash:
             return
-        new_name = self._prompt("Rename", "New name:", sel["name"])
+        new_name = self._prompt("Rename", "New name:", sel["name"], select_stem=not sel["is_dir"])
         if not new_name or new_name == sel["name"]:
             return
         try:
-            fileops.rename(sel["path"], new_name)
-        except fileops.FileOpError as e:
+            result = engine.rename(sel["path"], new_name)
+        except engine.EngineError as e:
             self._error(str(e))
-        self._refresh()
-
-    def _on_delete(self, _btn):
-        sel = self._selected_entry()
-        if not sel:
             return
-        if not self._confirm(f"Delete '{sel['name']}'?", "This cannot be undone."):
+        self._changed(result, None, "path")
+
+    def _create(self, folder):
+        kind = "Folder" if folder else "File"
+        name = self._prompt(f"New {kind}", f"{kind} name:", "New Folder" if folder else "Untitled.txt",
+                            select_stem=not folder)
+        if not name:
             return
         try:
-            fileops.delete(sel["path"])
-        except fileops.FileOpError as e:
+            result = (engine.new_folder if folder else engine.new_file)(self.path, name)
+        except engine.EngineError as e:
             self._error(str(e))
-        self._refresh()
-
-    def _on_copy(self, _btn):
-        sel = self._selected_entry()
-        if sel:
-            self.clipboard_path = sel["path"]
-            self.status.set_text(f"Copied: {sel['name']} (select a folder and Paste, or Paste here)")
-            self._update_action_sensitivity()
-
-    def _on_paste(self, _btn):
-        if not self.clipboard_path:
             return
-        sel = self._selected_entry()
-        dest_dir = sel["path"] if (sel and sel["is_dir"]) else self.path
-        try:
-            fileops.copy_into(self.clipboard_path, dest_dir)
-        except fileops.FileOpError as e:
-            self._error(str(e))
-        self._refresh()
+        self._changed(result, None, "path")
 
-    def _on_right_click(self, _gesture, _n_press, x, y):
-        path_info = self.view.get_path_at_pos(int(x), int(y))
-        if path_info:
-            self.view.set_cursor(path_info[0])
-        menu = Gtk.Menu()
-        for label, handler in (
-            ("Open", self._on_open_selected), ("Open With…", self._on_open_with),
-            ("Rename", self._on_rename),
-            ("Copy", self._on_copy), ("Paste", self._on_paste),
-            ("Delete", self._on_delete), ("New Folder", self._on_new_folder),
-        ):
-            item = Gtk.MenuItem(label=label)
-            item.connect("activate", handler)
-            menu.append(item)
-        menu.show_all()
-        menu.popup_at_pointer(None)
+    def _on_new_folder(self, _btn):
+        if not self.in_trash:
+            self._create(folder=True)
 
-    def _prompt(self, title, message, default_text):
+    def _on_new_file(self, _btn):
+        if not self.in_trash:
+            self._create(folder=False)
+
+    def _on_copy_location(self, _btn):
+        paths = [i["path"] for i in self._selected()] or [self.path]
+        Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text("\n".join(paths), -1)
+        self.status.set_text("Location copied" if len(paths) == 1 else f"{len(paths)} locations copied")
+
+    # ---- Properties ----
+
+    def _properties(self, items=None):
+        items = items or self._selected()
+        if not items or self.in_trash:
+            if self.in_trash:
+                return
+            items = [{"path": self.path, "name": os.path.basename(self.path) or "/", "is_dir": True}]
+        dialog = Gtk.Dialog(title="Properties", transient_for=self, modal=True)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        grid = Gtk.Grid(column_spacing=16, row_spacing=8)
+        grid.set_border_width(14)
+        dialog.get_content_area().add(grid)
+        rows = []
+
+        def add(label, value):
+            key = Gtk.Label(label=label, xalign=1)
+            key.get_style_context().add_class("dim-label")
+            val = Gtk.Label(label=value, xalign=0, selectable=True)
+            val.set_line_wrap(True)
+            val.set_max_width_chars(48)
+            grid.attach(key, 0, len(rows), 1, 1)
+            grid.attach(val, 1, len(rows), 1, 1)
+            rows.append(val)
+            return val
+
+        if len(items) == 1:
+            p = items[0]["path"]
+            add("Name", items[0]["name"])
+            try:
+                st = os.lstat(p)
+            except OSError as e:
+                st = None
+                add("Error", str(e))
+            if st is not None:
+                if statmod.S_ISLNK(st.st_mode):
+                    kind = f"Link to {os.readlink(p)}"
+                elif statmod.S_ISDIR(st.st_mode):
+                    kind = "Folder"
+                else:
+                    kind = Gio.content_type_get_description(self._content_type(p)[1])
+                add("Type", kind)
+                add("Location", os.path.dirname(p) or "/")
+                size_label = add("Size", "Calculating…" if statmod.S_ISDIR(st.st_mode) else
+                                 f"{fileops.human_size(st.st_size, False)} ({st.st_size:,} bytes)")
+                add("Modified", fileops.human_time(st.st_mtime))
+                try:
+                    owner = pwd.getpwuid(st.st_uid).pw_name
+                except KeyError:
+                    owner = str(st.st_uid)
+                add("Permissions", f"{statmod.filemode(st.st_mode)}  (owner: {owner})")
+                if not statmod.S_ISDIR(st.st_mode):
+                    size_label = None
+        else:
+            add("Selected", _items(len(items)))
+            add("Location", os.path.dirname(items[0]["path"]))
+            size_label = add("Total size", "Calculating…")
+
+        alive = {"yes": True}
+        if size_label is not None:
+            def measure():
+                try:
+                    u = engine.size([i["path"] for i in items])
+                    text = (f"{fileops.human_size(u['bytes'], False)} ({u['bytes']:,} bytes) - "
+                            f"{u['files']} file{'s' if u['files'] != 1 else ''}, "
+                            f"{max(0, u['folders'] - sum(1 for i in items if i['is_dir']))} folders inside")
+                except engine.EngineError as e:
+                    text = f"Couldn't measure: {e}"
+                GLib.idle_add(lambda: alive["yes"] and size_label.set_text(text) and False)
+            threading.Thread(target=measure, daemon=True).start()
+        dialog.show_all()
+        dialog.run()
+        alive["yes"] = False
+        dialog.destroy()
+
+    # ---- Dialogs ----
+
+    def _prompt(self, title, message, default_text, select_stem=False):
         dialog = Gtk.Dialog(title=title, transient_for=self, modal=True)
         dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
         box = dialog.get_content_area()
         box.set_border_width(10)
-        box.add(Gtk.Label(label=message))
+        box.add(Gtk.Label(label=message, xalign=0))
         entry = Gtk.Entry()
         entry.set_text(default_text)
         entry.set_activates_default(True)
+        entry.set_width_chars(36)
         dialog.set_default_response(Gtk.ResponseType.OK)
         box.add(entry)
         dialog.show_all()
+        # Select the name without its extension, ready to type over.
+        stem = os.path.splitext(default_text)[0] if select_stem and not default_text.startswith(".") else default_text
+        entry.select_region(0, len(stem))
         response = dialog.run()
         text = entry.get_text().strip()
         dialog.destroy()
@@ -498,18 +1286,35 @@ class FileManagerWindow(Gtk.Window):
         dialog.destroy()
         return response == Gtk.ResponseType.YES
 
-    def _error(self, text):
+    def _error(self, text, secondary=None):
         dialog = Gtk.MessageDialog(
             transient_for=self, flags=0, message_type=Gtk.MessageType.OTHER,
             buttons=Gtk.ButtonsType.OK, text=text,
         )
+        if secondary:
+            dialog.format_secondary_text(secondary)
         dialog.run()
         dialog.destroy()
 
 
+def engine_trash_dir():
+    data = os.environ.get("XDG_DATA_HOME")
+    base = data if data and os.path.isabs(data) else os.path.join(os.environ.get("HOME", "/root"), ".local/share")
+    return os.path.join(base, "Trash")
+
+
+def _start_dir(argv):
+    for arg in argv[1:]:
+        path = Gio.File.new_for_commandline_arg(arg).get_path()
+        if path and os.path.isdir(path):
+            return path
+        if path and os.path.exists(path):
+            return os.path.dirname(path)
+    return None
+
+
 def main():
     Gtk.init()
-    win = FileManagerWindow()
-    win.connect("destroy", Gtk.main_quit)
+    win = FileManagerWindow(_start_dir(sys.argv))
     win.show_all()
     Gtk.main()

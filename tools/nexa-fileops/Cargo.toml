@@ -1,0 +1,11 @@
+[package]
+name = "nexa-fileops"
+version = "0.1.0"
+edition = "2021"
+description = "The Files app's engine: copy, move, rename, Trash, restore and undo, confined with Landlock"
+
+[dependencies]
+libc = "0.2"
+nexa-sys = { path = "../nexa-sys" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
