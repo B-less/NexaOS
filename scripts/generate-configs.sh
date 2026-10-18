@@ -589,6 +589,30 @@ BROKER_EOF
     chmod +x "$MNT_DIR/etc/init.d/nexa-broker"
     ln -sf /etc/init.d/nexa-broker "$MNT_DIR/etc/runlevels/default/nexa-broker"
 
+    echo "[*] Generating the kernel link for Nexa Mind (nexa-kerneld)..."
+    # nexa-kerneld (Rust, tools/nexa-kerneld): pressure (PSI triggers),
+    # crashes (netlink process connector), OOM kills (/dev/kmsg) and power
+    # (RAPL) for the assistant; a CPU floor (uclamp) for the app in front and
+    # a cgroup that keeps the AI out of your way. Socket /run/nexa-kerneld.sock.
+    cat > "$MNT_DIR/etc/init.d/nexa-kerneld" << 'KERNELD_EOF'
+#!/sbin/openrc-run
+description="Nexa Mind's kernel link (pressure, crashes, power, app boost)"
+command=/usr/local/bin/nexa-kerneld
+command_args="serve"
+command_background=true
+pidfile=/run/nexa-kerneld.pid
+output_log=/var/log/nexa-kerneld.log
+error_log=/var/log/nexa-kerneld.log
+
+depend() {
+    need localmount
+    after cgroups
+    before sway
+}
+KERNELD_EOF
+    chmod +x "$MNT_DIR/etc/init.d/nexa-kerneld"
+    ln -sf /etc/init.d/nexa-kerneld "$MNT_DIR/etc/runlevels/default/nexa-kerneld"
+
     cat > "$MNT_DIR/etc/init.d/zram" << 'ZRAM_EOF'
 #!/sbin/openrc-run
 description="Compressed RAM swap (zram)"
@@ -704,6 +728,9 @@ net.ipv4.icmp_echo_ignore_broadcasts = 1
 SYSCTL_EOF
     mkdir -p "$MNT_DIR/etc/runlevels/boot"
     [ -x "$MNT_DIR/etc/init.d/sysctl" ] && ln -sf /etc/init.d/sysctl "$MNT_DIR/etc/runlevels/boot/sysctl"
+    # cgroup v2 at /sys/fs/cgroup: nexa-kerneld gives the AI its own CPU share.
+    [ -x "$MNT_DIR/etc/init.d/cgroups" ] && ln -sf /etc/init.d/cgroups "$MNT_DIR/etc/runlevels/boot/cgroups"
+    [ -f "$MNT_DIR/etc/rc.conf" ] && sed -i 's/^#\?rc_cgroup_mode=.*/rc_cgroup_mode="unified"/' "$MNT_DIR/etc/rc.conf"
 
     echo "[*] Enabling syslog and crond (sshd stays off)..."
     # All three are already installed (openssh/busybox-extras from
@@ -861,6 +888,8 @@ exec sh -c 'nexa-theme apply --saved --no-reload >/dev/null 2>&1; swaymsg reload
 exec nexa-dock
 exec nexa-idle
 exec nexa-battery-watch
+# Tell nexa-kerneld which app is in front (it gets a CPU floor).
+exec nexa-kerneld focus-watch
 
 # Keybindings
 bindsym $mod+Return exec $term
@@ -970,6 +999,7 @@ exec-once = mako
 exec-once = nexa-dock
 exec-once = nexa-idle
 exec-once = nexa-battery-watch
+exec-once = nexa-kerneld focus-watch
 exec-once = nexa-keyboard-layout
 
 general {

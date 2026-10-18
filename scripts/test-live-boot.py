@@ -53,6 +53,9 @@ CHECKS = (
     # The Files app's engine (Rust, Landlock) as the desktop user: Delete = Trash.
     r"""su user -s /bin/sh -c 'echo hi > $HOME/fo-check; printf "{\"op\":\"trash\",\"paths\":[\"%s/fo-check\"]}" $HOME | nexa-fileops' > /tmp/fo; """
     r"""echo FILEOPS=$(grep -o '"ok":[a-z]*' /tmp/fo | tr -d '"')$(test -f /home/user/.local/share/Trash/info/fo-check.trashinfo && echo ,trashed)""",
+    # Nexa Mind's kernel link: which kernel interfaces it got (PSI triggers,
+    # process connector, OOM log, RAPL, uclamp, the AI's cgroup).
+    r"""echo KERNELD=$(nexa-kerneld status 2>&1 | tr -d ' \n' | grep -o '"can":{[^}]*}')""",
     # The stick NexaOS runs from is never auto-mounted, offered or ejected
     # (ejecting it pulled the system out from under itself).
     r'L=$(basename $(cat /sys/block/loop1/loop/backing_file)); echo LIVE_STICK=listed:$(nexa-brokerd call list_drives {} | grep -c "\"name\":\"$L"),'
@@ -163,7 +166,7 @@ def main(argv):
         report = [l for l in text.rsplit(marker, 1)[0].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
-                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "FILEOPS=", "CONSOLE="))] if text.count(marker) >= 2 else []
+                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "FILEOPS=", "KERNELD=", "CONSOLE="))] if text.count(marker) >= 2 else []
         print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
         if extra and text.count("EXTRA_END") >= 2:
             print("--- --run output\n" + text.split("EXTRA_BEGIN")[-1].split("EXTRA_END")[0].strip())

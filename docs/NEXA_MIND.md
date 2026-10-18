@@ -264,12 +264,43 @@ Still to do in M3: documents (PDF/Office text), and settings and system
 control (Wi-Fi, Bluetooth, brightness, services) through a Rust
 permission broker instead of the Python root helper.
 
+## The kernel link (nexa-kerneld)
+
+The model never runs inside the kernel: a crash there would take the whole
+computer down, and the kernel can't safely do the floating-point work a
+model needs. Instead `nexa-kerneld` (Rust, `tools/nexa-kerneld`, root,
+Landlock-confined once its interfaces are open) gives the AI the kernel's
+view and lets it steer the kernel's own controls.
+
+| It sees | From | Kernel option |
+|---|---|---|
+| Programs held up waiting for the CPU, memory or disk | PSI triggers: the kernel wakes the daemon (POLLPRI) when stalls cross a threshold | `PSI` |
+| Every crash, the moment it happens, and how (SIGSEGV, SIGABRT...) | netlink process connector (fork/exec/exit events) | `CONNECTOR`, `PROC_EVENTS` |
+| Which program the out-of-memory killer closed | `/dev/kmsg` | (always) |
+| Watts drawn, and by which programs | Intel RAPL energy counters, else the battery; CPU-time shares from `/proc` | `POWERCAP`, `INTEL_RAPL` |
+
+| It steers | How | Kernel option |
+|---|---|---|
+| The app in front stays snappy, even in power-saving mode | a utilization floor (`sched_setattr`, `UTIL_CLAMP_MIN`) on its threads; `nexa-kerneld focus-watch` in the session reports focus (Sway IPC / Hyprland socket) and the daemon only accepts processes the reporter owns | `UCLAMP_TASK` |
+| The AI never gets in your way | the `nexa-mind` account's processes live in cgroup `nexa-mind-model`: full CPU when you're away, `cpu.weight` 20 while you work, a hard `cpu.max` cap under pressure or when memory is short; nice levels without cgroup v2 | `CGROUP_SCHED`, `CFS_BANDWIDTH` |
+
+The assistant asks it with three tools: `system_pressure` ("why is it
+slow?"), `energy_users` ("what's draining my battery?") and `kernel_events`
+("what crashed?"). Everyone sees their own programs; administrators see all.
+Transparent huge pages (`madvise`) are on for the model's memory.
+
+Tests: `cargo test -p nexa-kerneld` (protocol decoding, policy, cgroup
+limits, a fake Sway, the daemon end to end on a fake /sys; crash detection
+for real when run with the host's pid and network namespaces),
+`common/tests/test_kernel.py` (the assistant's tools against the real
+daemon), and the `KERNELD=` live-boot check.
+
 ## Milestones
 
 | | Milestone | Done when |
 |---|---|---|
 | M1 ✅ | **Runtime** (done 2026-10-13, `tools/nexa-mindd`, Rust): llama.cpp in the image, model manager with SHA-256 check, `nexa-mind` service on a Unix socket, auto-tune; the assistant's agent talks to it (tool calls included) | offline question answered with a tool call, in QEMU and on the HP |
-| M2 | **Kernel**: PSI, UCLAMP_TASK, POWERCAP/RAPL, THP (madvise); cgroup for the model | readings visible in Pulse; model throttled under load |
+| M2 🔧 | **Kernel** (code done 2026-10-18, `tools/nexa-kerneld`; kernel built with the next ISO): PSI, UCLAMP_TASK, POWERCAP/RAPL, THP (madvise), process connector; cgroup for the model; app-in-front boost; assistant tools for pressure, energy and crashes | readings via the assistant; model throttled under load (Pulse view still to do) |
 | M3 | **Rust tool runner** (`nexa-tools`) + **permission broker** + audit log + untrusted-content guard. Tools: files (read, write/edit with **undo** — every write keeps the previous version — create, rename, move, copy, delete to a recoverable Nexa trash, search by name and by meaning), documents (summarise, extract text from PDF/Office/images), organise (sort a folder, batch rename, duplicates; shows the whole plan first), apps and web (open, read a page as untrusted), settings (Wi-Fi, Bluetooth, VPN, theme, brightness, volume, Do Not Disturb via the same services Settings uses), system (status, logs, services, packages, power), screen (copy text, ask about it). Each call runs under Landlock limited to the folders it names. | tests: injected file text can't trigger a silent action; a write is undoable; a sandboxed call can't read `~/.ssh` |
 | M4 | **Context index** (text, PDF) + Nexus file search by meaning | finds a file by describing it |
 | M5 | **Screen**: copy text from screen, ask about screen | OCR round trip test |

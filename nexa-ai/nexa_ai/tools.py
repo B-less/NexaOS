@@ -6,7 +6,7 @@ import shlex
 import subprocess
 import time
 
-from nexa_common import apkops, audioctl, hands
+from nexa_common import apkops, audioctl, hands, kernel
 
 READ = "read"
 CONTROL = "control"
@@ -556,6 +556,29 @@ def get_battery(_args):
     return _hands("battery", {})
 
 
+# The kernel's view: nexa-kerneld (Rust) hears pressure stalls, crashes and
+# out-of-memory kills from the kernel as they happen; see nexa_common/kernel.py.
+def _kernel(op, **args):
+    try:
+        return kernel.request(op, **args)
+    except kernel.KernelError as e:
+        raise ToolError(str(e))
+
+
+def system_pressure(_args):
+    s = _kernel("status")
+    return {"summary": s["pressure"]["summary"], "pressure": s["pressure"], "ai": s["ai"], "app_in_front": s["focus"],
+            "processes_started_per_second": s["processes_started_per_second"]}
+
+
+def energy_users(_args):
+    return _kernel("energy")
+
+
+def kernel_events(args):
+    return _kernel("events", limit=max(1, min(int(args.get("limit") or 15), 100)))
+
+
 def top_processes(args):
     return _hands("top_processes", {"limit": args.get("limit", 8)})
 
@@ -896,6 +919,21 @@ TOOLS = {
         "description": "Today's date, the time, time zone and week number on this computer.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    "system_pressure": {
+        "category": READ, "func": system_pressure,
+        "description": "Why the computer feels slow, from the kernel: how much programs are held up waiting for the processor, memory or the disk (PSI), which app is in front and boosted, and how much the AI itself is allowed to use.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "energy_users": {
+        "category": READ, "func": energy_users,
+        "description": "What is draining the battery: programs ranked by processor share with estimated watts (measured by the processor's power meter or the battery).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "kernel_events": {
+        "category": READ, "func": kernel_events,
+        "description": "Programs that crashed (and how), programs the kernel closed because memory ran out, and moments the computer was held up, newest first.",
+        "input_schema": {"type": "object", "properties": {"limit": {"type": "integer"}}},
+    },
     "get_battery": {
         "category": READ, "func": get_battery,
         "description": "Battery charge, charging or not, time left or to full, and battery health.",
@@ -1081,8 +1119,10 @@ LOCAL_TOPICS = (
      ("get_weather",)),
     (("time", "date", "today", "day is", "week", "clock", "tomorrow", "yesterday"),
      ("get_datetime",)),
-    (("battery", "charge", "charging", "plugged", "power"),
-     ("get_battery",)),
+    (("battery", "charge", "charging", "plugged", "power", "drain", "watt", "energy"),
+     ("get_battery", "energy_users")),
+    (("crash", "crashed", "closed by itself", "disappeared", "quit by itself", "killed", "out of memory", "kernel"),
+     ("kernel_events",)),
     (("bright", "dim", "screen", "display"),
      ("set_brightness",)),
     (("time zone", "timezone", "wrong time"),
@@ -1092,7 +1132,7 @@ LOCAL_TOPICS = (
     (("update", "upgrade", "latest version", "new version"),
      ("check_updates", "update_system")),
     (("slow", "lag", "frozen", "freez", "process", "memory", "ram", "cpu", "kill", "stop", "quit", "hung", "not responding"),
-     ("top_processes", "stop_app")),
+     ("system_pressure", "top_processes", "stop_app")),
     (("calculat", "how much is", "plus", "minus", "times", "divided", "percent", "%", "sum", "average", "tip", "math"),
      ("calculate",)),
     (("convert", " to km", " to miles", "fahrenheit", "celsius", "pounds", "kilos", "inches", "feet", "gallons", "litres", "liters"),
