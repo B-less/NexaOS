@@ -184,7 +184,10 @@ class BrowserWindow(Gtk.Window):
 
     def _on_title_changed(self, webview, _pspec):
         title = webview.get_title()
-        self.set_title(title if title else "Nexa Browser")
+        # Private and Tor windows keep saying so: you can tell them apart, and
+        # Nexa Patterns never learns from a window marked private.
+        mark = " — Tor" if self.use_tor else " — Private" if self.private else ""
+        self.set_title((title if title else "Nexa Browser") + mark)
         if self.history is not None and title:
             self.history.set_title(webview.get_uri(), title)
 

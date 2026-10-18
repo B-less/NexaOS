@@ -47,6 +47,7 @@ binaries into `build/native/`, which provisioning copies to `/usr/local/bin`.
 make native        # release build of every tool
 make test-native   # cargo tests + nexa-pack and nexa-mindd end-to-end tests
 make test-files-app  # the Files window (selection, mouse, keys, Trash, undo) in a headless Sway
+make test-desktop-card  # Nexa Patterns' desktop card and Nexus suggestions in a headless Sway
 ```
 
 Rebuilds are incremental: a builder image with Rust preinstalled
@@ -79,6 +80,7 @@ cd kernel/linux-6.18.33 && make -j"$(nproc)" bzImage && cp arch/x86/boot/bzImage
 |---|---|
 | `make test` | Unit tests: installer, privilege helpers, Wi-Fi/Bluetooth against mock D-Bus services, VPN file checks, browser history/downloads/Tor helpers, themes, Nexa Pulse, the assistant (agent loop, local back-end, file tools and their cards) |
 | `make test-native` | Rust workspace tests (sandbox, packages, Nexa Mind, file actions with undo/trash/Landlock), signed-package round trips, and Nexa Mind answering with the real model |
+| `make test-desktop-card` | The desktop "For you" card (bottom layer, never takes the keyboard, a button per suggestion with its reason, Don't suggest, Move, Hide for today, off = no card) and Nexus' Suggested row, against the real `nexa-patternd` holding a synthetic month; screenshots in dist/card-test/ |
 | `make test-files-app` | The Files window driven like a person would (clicks, right-click menus, Ctrl+A/C/X/V/Z, F2, Delete, Backspace, mouse back button, Ctrl+scroll), copying, moving, the Trash and undo through the real `nexa-fileops` engine, plus a screenshot (dist/files-test.png) |
 | `python3 scripts/test-live-boot.py` | Boots the ISO (UEFI, as a USB stick) in QEMU, screenshots the desktop, logs in on serial and reports Alpine version, firewall, kernel hardening, SSH off, firmware errors, running desktop parts, Bluetooth service, WireGuard |
 | `python3 scripts/test-install-cycle.py [--uefi]` | Boots the live ISO, installs to a blank virtual disk with a custom username and password, boots the installed disk alone and logs in |

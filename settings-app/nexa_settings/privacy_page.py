@@ -7,6 +7,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import GdkPixbuf, GLib, Gtk, Pango
 
 from nexa_common import actionui, privacy
+from .patterns_section import PatternsSection
 
 CSS = b"""
 .nx-perm-row { padding: 6px 0; }
@@ -38,6 +39,8 @@ class PrivacyPage:
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_screen(window.get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
         self.page = window._page("Privacy")
+        self.patterns = PatternsSection(window)
+        self.page.pack_start(self.patterns.box, False, False, 0)
         self.page.pack_start(_label(
             "What each app you installed may use. NexaOS holds apps to this: switch something off and the app "
             "can't use it from the next time it starts.", "nx-intro"), False, False, 0)
@@ -48,6 +51,7 @@ class PrivacyPage:
         self.reload()
 
     def reload(self):
+        self.patterns.reload()
         for child in self.list.get_children():
             child.destroy()
         apps = privacy.list_apps(**self.where)

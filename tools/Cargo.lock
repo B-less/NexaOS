@@ -323,6 +323,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-patternd"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexa-run"
 version = "0.1.0"
 dependencies = [

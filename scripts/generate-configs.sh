@@ -890,6 +890,9 @@ exec nexa-idle
 exec nexa-battery-watch
 # Tell nexa-kerneld which app is in front (it gets a CPU floor).
 exec nexa-kerneld focus-watch
+# Nexa Patterns (off until switched on in Settings > Privacy) and its desktop card.
+exec nexa-patternd serve
+exec nexa-desktop
 
 # Keybindings
 bindsym $mod+Return exec $term
@@ -1000,6 +1003,8 @@ exec-once = nexa-dock
 exec-once = nexa-idle
 exec-once = nexa-battery-watch
 exec-once = nexa-kerneld focus-watch
+exec-once = nexa-patternd serve
+exec-once = nexa-desktop
 exec-once = nexa-keyboard-layout
 
 general {

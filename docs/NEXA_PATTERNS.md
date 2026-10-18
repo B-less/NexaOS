@@ -1,6 +1,6 @@
 # Nexa Patterns — learning how you use the computer, and getting ahead of you
 
-Written 2026-10-18. A plan for NexaOS to learn each person's habits on the
+Written 2026-10-18; **phases 1 and 2 built the same day** (see 9). A plan for NexaOS to learn each person's habits on the
 laptop itself, adapt to them, and make useful predictions: the app you're
 about to open, when the battery will run out, the brightness you'd pick,
 the routine you do every morning. Nothing leaves the machine, you can see
@@ -129,9 +129,9 @@ visible and never covers your work). Works the same in Sway and Hyprland.
 - **Hexa design:** a translucent glass card in the theme's `@nexa_*`
   colours (blurred on Hyprland), hexagon app badges, Inter, a soft fade
   when it updates; follows light/dark and the accent colour.
-- **Costs nothing when hidden:** it asks `nexa-patternd` only when the
-  desktop is visible (a window-count check over the compositor's IPC) and
-  sleeps otherwise.
+- **Costs next to nothing:** one sub-millisecond question to `nexa-patternd`
+  every 5 minutes (and when Patterns settings change); between them it
+  sleeps.
 - **Feedback:** clicks count as "used", right-click "Don't suggest" counts
   as a negative example (section 3), so the card learns what's useful.
 - **Off switch:** Settings > Privacy > Patterns > "Show suggestions on the
@@ -215,3 +215,44 @@ is measured before it ships.
 | Preloading wastes memory or battery | only free memory, dropped under memory pressure, off on low battery, never more than 3 apps |
 | Feedback loops (suggesting X makes you open X, which makes it more likely) | launches that came from a suggestion count half; accuracy measured against launches *not* prompted by it |
 | Shared accounts | per-account models; Pause; "Guest" account never learns |
+
+---
+
+## 9. What's built (phases 1 and 2)
+
+| Piece | Where |
+|---|---|
+| `nexa-patternd` (Rust): the session service, journal, models, explanations, forget/export, replay | `tools/nexa-patternd` |
+| Desktop "For you" card | `shell/nexa_shell/desktop.py` (`nexa-desktop`) |
+| Nexus "Suggested for you" row | `shell/nexa_shell/nexus.py` |
+| Settings > Privacy > Patterns | `settings-app/nexa_settings/patterns_section.py` |
+| Client and settings file | `common/nexa_common/patterns.py`, `~/.config/nexa/patterns.json` |
+
+Differences from the plan above, found while building it:
+
+- **Apps come from the compositor, not the kernel link.** Every NexaOS app
+  runs as `python3`, so process names can't tell them apart; Sway's and
+  Hyprland's focus events carry the Wayland app id (`nexa-files`, `foot`),
+  which also matches the app's `.desktop` file. So `nexa-kerneld` needed no
+  `subscribe` op.
+- **An app counts after 5 seconds in front**, so flicking past windows isn't
+  learned.
+- **Confidence threshold:** suggestions show at 12% or more (the ranker's
+  probability that this app is *the* next one, out of all apps). On the
+  synthetic month the true next app is the top guess 70% of the time and in
+  the top 3 80% of the time (`nexa-patternd replay --synthetic 35`).
+- **Places** are the default router's hardware address, hashed (from
+  /proc/net/route and /proc/net/arp), so no Wi-Fi name is ever read.
+- **Files on the card** come straight from GTK's recent-files list
+  (`recently-used.xbel`), read when the card asks; file names are never
+  copied into the journal.
+- Private and Tor windows of Nexa Browser now keep "— Private" / "— Tor"
+  at the end of their title (it used to be replaced by the page's title), so
+  they're recognised; Firefox and Chromium private windows are too.
+
+Tests: `cargo test -p nexa-patternd` (journal, decay, models, explanations,
+time zones, the replay accuracy bar, a fake Sway session: off until on,
+private/excluded/flicked windows never recorded, titles never kept,
+forgetting deletes), `common/tests/test_patterns.py` (the client against the
+real daemon) and `make test-desktop-card` (the card and Nexus in a headless
+Sway, with screenshots).

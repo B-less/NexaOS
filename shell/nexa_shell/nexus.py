@@ -17,7 +17,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("GtkLayerShell", "0.1")
 from gi.repository import Gdk, GLib, Gtk, GtkLayerShell, Pango
 
-from nexa_common import design, desktopapps, themes
+from nexa_common import design, desktopapps, patterns, themes
 from . import search
 from .panel import power, run_panel, spawn
 
@@ -204,8 +204,30 @@ class Nexus(Gtk.ApplicationWindow):
             self._fill_results()
         else:
             self.results = []
+            self._fill_suggested()
             self._fill_honeycomb(self._ordered_apps())
         self.content.show_all()
+
+    def _fill_suggested(self):
+        """Nexa Patterns' guesses at what you'll open next (when it's on)."""
+        try:
+            found = patterns.suggestions("predict", apps=self.apps, k=3, timeout=0.3)["apps"]
+        except patterns.PatternsError:
+            return
+        if not found:
+            return
+        label = Gtk.Label(label="Suggested for you", xalign=0)
+        label.set_name("nx-date")
+        label.set_halign(Gtk.Align.CENTER)
+        self.content.pack_start(label, False, False, 4)
+        row = Gtk.Box(spacing=TILE_GAP)
+        row.set_halign(Gtk.Align.CENTER)
+        row.set_margin_bottom(12)
+        for s in found:
+            tile = HexTile(s["entry"], self.colours, lambda _app, s=s: (patterns.launch(s), self.close()))
+            tile.set_tooltip_text(s["text"])
+            row.pack_start(tile, False, False, 0)
+        self.content.pack_start(row, False, False, 0)
 
     def _fill_honeycomb(self, apps):
         """Rows of 7 and 6 tiles, each centred: the shorter rows sit half a
