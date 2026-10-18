@@ -64,6 +64,9 @@ CHECKS = (
     r'L=$(basename $(cat /sys/block/loop1/loop/backing_file)); echo LIVE_STICK=listed:$(nexa-brokerd call list_drives {} | grep -c "\"name\":\"$L"),'
     r'mounted:$(grep -c "^/dev/$L.* /media/" /proc/mounts)$(nexa-brokerd call eject_drive "{\"name\":\"${L}1\"}" | grep -q "using this drive itself" && echo ,eject_refused)',
     # No root shell on the screen: tty1 belongs to the desktop, tty2 asks for a login.
+    # Exactly one desktop session (a launcher name clash once started a second
+    # whole session nested in a window).
+    'echo SESSIONS=$(( $(pgrep -x sway | wc -l) + $(pgrep -x Hyprland | wc -l) ))',
     'echo CONSOLE=tty1_root:$(ps -o tty,user,comm | grep -c "^tty1 *root")$(pgrep -f "getty 38400 tty2" >/dev/null && echo ,tty2_login)',
     'echo APPS=$(for c in nexa-pulse nexadark tor wg-quick nexa-pack nexa-mindd nexa-tools nexa-brokerd llama-server; do command -v $c >/dev/null && printf "%s," $c; done)',
     # Nexa Mind runs at boot and the desktop user can reach it (group nexa-mind).
@@ -172,7 +175,7 @@ def main(argv):
         report = [l for l in text.rsplit(marker, 1)[0].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
-                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "FILEOPS=", "KERNELD=", "CONSOLE="))] if text.count(marker) >= 2 else []
+                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "FILEOPS=", "KERNELD=", "SESSIONS=", "CONSOLE="))] if text.count(marker) >= 2 else []
         if not no_checks:
             print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
         if extra and text.count("EXTRA_END") >= 2:

@@ -926,7 +926,7 @@ exec nexa-battery-watch
 exec nexa-kerneld focus-watch
 # Nexa Patterns (off until switched on in Settings > Privacy) and its desktop card.
 exec nexa-patternd serve
-exec nexa-desktop
+exec nexa-foryou
 
 # Keybindings
 bindsym $mod+Return exec $term
@@ -1038,7 +1038,7 @@ exec-once = nexa-idle
 exec-once = nexa-battery-watch
 exec-once = nexa-kerneld focus-watch
 exec-once = nexa-patternd serve
-exec-once = nexa-desktop
+exec-once = nexa-foryou
 exec-once = nexa-keyboard-layout
 
 general {
@@ -1174,6 +1174,14 @@ HYPR_EOF
 # Override with one word, "sway" or "hyprland", in ~/.config/nexa/session
 # or /etc/nexa/session.
 choice=$(cat "$HOME/.config/nexa/session" /etc/nexa/session 2>/dev/null | head -n 1)
+
+# Never a desktop inside a desktop: started from within a running session
+# (anything that runs "nexa-desktop" by mistake), this would open a second
+# full session in a window, with its own lock screen.
+if [ -n "${WAYLAND_DISPLAY:-}" ] || [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || [ -n "${SWAYSOCK:-}" ]; then
+    echo "nexa-desktop: already inside a desktop session; not starting another" >&2
+    exit 1
+fi
 
 gpu_ok() {
     for drv in /sys/class/drm/card[0-9]*/device/driver; do

@@ -104,7 +104,7 @@ Every suggestion has a **Why?** that shows the evidence, and a
 ### 4a. Suggestions on the desktop
 
 A "For you" card on the desktop itself, drawn by the shell
-(`nexa_shell desktop`, GTK + gtk-layer-shell on the **bottom layer**: above
+(`nexa_shell foryou`, launcher `nexa-foryou`; GTK + gtk-layer-shell on the **bottom layer**: above
 the wallpaper, below every window, so it's there when the desktop is
 visible and never covers your work). Works the same in Sway and Hyprland.
 
@@ -223,7 +223,7 @@ is measured before it ships.
 | Piece | Where |
 |---|---|
 | `nexa-patternd` (Rust): the session service, journal, models, explanations, forget/export, replay | `tools/nexa-patternd` |
-| Desktop "For you" card | `shell/nexa_shell/desktop.py` (`nexa-desktop`) |
+| Desktop "For you" card | `shell/nexa_shell/desktop.py` (`nexa-foryou`) |
 | Nexus "Suggested for you" row | `shell/nexa_shell/nexus.py` |
 | Settings > Privacy > Patterns | `settings-app/nexa_settings/patterns_section.py` |
 | Client and settings file | `common/nexa_common/patterns.py`, `~/.config/nexa/patterns.json` |

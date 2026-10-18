@@ -12,7 +12,9 @@ rm -rf "$rootfs/usr/local/lib/nexa-shell/nexa_shell"
 cp -a "$base/shell/nexa_shell" "$rootfs/usr/local/lib/nexa-shell/nexa_shell"
 find "$rootfs/usr/local/lib/nexa-shell/nexa_shell" -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
 
-for panel in nexus start control dock launchpad desktop; do
+# ("foryou" is the desktop card; nexa-desktop is the session launcher, see
+# generate-configs.sh - never reuse that name.)
+for panel in nexus start control dock launchpad foryou; do
     printf '%s\n' \
         '#!/bin/sh' \
         '. /usr/local/lib/nexa-wayland-env.sh' \
