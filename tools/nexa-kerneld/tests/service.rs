@@ -118,7 +118,7 @@ fn sees_and_steers() {
 
     // Crashes, if this kernel lets us hear about them (host pid namespace + CAP_NET_ADMIN).
     if s["can"]["process_events"] == true {
-        let _ = Command::new("sh").args(["-c", "kill -SEGV $$"]).status();
+        let _ = Command::new("sh").args(["-c", "ulimit -c 0; kill -SEGV $$"]).status();
         std::thread::sleep(Duration::from_millis(300));
         let ev = d.ok(json!({"op": "events"}));
         let crash = ev["events"].as_array().unwrap().iter().find(|e| e["kind"] == "crash");
