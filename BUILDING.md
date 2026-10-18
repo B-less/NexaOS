@@ -47,7 +47,7 @@ binaries into `build/native/`, which provisioning copies to `/usr/local/bin`.
 ```bash
 make native        # release build of every tool
 make test-native   # cargo tests + nexa-pack and nexa-mindd end-to-end tests
-make test-files-app  # the Files window (selection, mouse, keys, Trash, undo) in a headless Sway
+make test-files-app  # the Files window (selection, mouse, keys, Trash, undo, grid, thumbnails) + nexa-thumb in a headless Sway
 make test-desktop-card  # Nexa Patterns' desktop card and Nexus suggestions in a headless Sway
 ```
 

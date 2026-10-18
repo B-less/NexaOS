@@ -245,6 +245,7 @@ nexa-apps:
 
 native:
 	@sh scripts/build-native.sh
+	@sh scripts/build-c-tools.sh
 
 # The native tools' own tests (cargo test) and nexa-pack end to end
 # (templates, signing, tampering), in a clean Alpine container.

@@ -19,11 +19,13 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, Gio, GLib, GdkPixbuf, GObject
 
-from . import engine, fileops
-from nexa_common import removable
+from . import engine, fileops, thumbs
+from nexa_common import removable, themes
 from nexa_common.titlebar import attach_titlebar
 
 ICON_SIZES = [16, 20, 24, 32, 48, 64]
+GRID_SIZES = [64, 96, 128, 160, 200, 256]
+DEFAULT_GRID_SIZE_INDEX = 2  # 128px
 DEFAULT_ICON_SIZE_INDEX = 2  # 24px, matches the size the old fixed icon-name rendering used
 CONFIG_PATH = os.path.expanduser("~/.config/nexa-files/config.json")
 TRASH = "trash:///"
@@ -41,6 +43,9 @@ treeview { background-image: none; background-color: @nexa_bg; color: @nexa_text
 treeview:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
 treeview.rubberband, .rubberband { background-color: alpha(@nexa_accent, 0.18); border: 1px solid @nexa_accent; }
 treeview header button { background-image: none; background-color: @nexa_surface; color: @nexa_muted; }
+iconview { background-image: none; background-color: @nexa_bg; color: @nexa_text; }
+iconview:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; border-radius: 10px; }
+iconview .rubberband, iconview.rubberband { background-color: alpha(@nexa_accent, 0.18); border: 1px solid @nexa_accent; }
 #statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
 #statusrow { background-image: none; background-color: @nexa_surface; }
 progressbar trough { min-height: 6px; border-radius: 3px; background-color: @nexa_hover; }
@@ -77,7 +82,12 @@ class FileManagerWindow(Gtk.Window):
         self.clipboard = None          # {"paths": [...], "cut": bool}
         self.undo_stack = []           # [(what was done, steps)]
         self.back_stack, self.forward_stack = [], []
-        self.icon_size_index = self._load_icon_size_index()
+        prefs = self._load_prefs()
+        self.icon_size_index = prefs["icon_size_index"]
+        self.grid_size_index = prefs["grid_size_index"]
+        self.view_mode = prefs["view"]
+        self.thumbnailer = thumbs.Thumbnailer()
+        self._thumb_cache = {}  # (path, mtime, size) -> pixbuf
         self.busy = False
         self._proc = None
         self._pending_click = None
@@ -90,31 +100,116 @@ class FileManagerWindow(Gtk.Window):
         FileManagerWindow.open_windows += 1
         self.connect("destroy", self._on_destroy)
         self._build_ui()
+        for child in self.views.get_children():
+            child.show_all()
+        self._set_view(self.view_mode)
         self._navigate(self.path, remember=False)
 
     # ---- Settings ----
 
-    def _load_icon_size_index(self):
+    def _load_prefs(self):
+        prefs = {"icon_size_index": DEFAULT_ICON_SIZE_INDEX, "grid_size_index": DEFAULT_GRID_SIZE_INDEX, "view": "grid"}
         try:
             with open(CONFIG_PATH) as f:
-                index = int(json.load(f).get("icon_size_index", DEFAULT_ICON_SIZE_INDEX))
-        except (OSError, ValueError, TypeError):
-            return DEFAULT_ICON_SIZE_INDEX
-        return index if 0 <= index < len(ICON_SIZES) else DEFAULT_ICON_SIZE_INDEX
+                saved = json.load(f)
+        except (OSError, ValueError):
+            saved = {}
+        if isinstance(saved, dict):
+            for key, sizes in (("icon_size_index", ICON_SIZES), ("grid_size_index", GRID_SIZES)):
+                if isinstance(saved.get(key), int) and 0 <= saved[key] < len(sizes):
+                    prefs[key] = saved[key]
+            if saved.get("view") in ("grid", "list"):
+                prefs["view"] = saved["view"]
+        return prefs
 
-    def _save_icon_size_index(self):
+    def _save_prefs(self):
         try:
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
             with open(CONFIG_PATH, "w") as f:
-                json.dump({"icon_size_index": self.icon_size_index}, f)
+                json.dump({"icon_size_index": self.icon_size_index, "grid_size_index": self.grid_size_index,
+                           "view": self.view_mode}, f)
         except OSError:
             pass
 
+    @property
+    def is_grid(self):
+        return self.view_mode == "grid"
+
+    @property
+    def view(self):
+        """The view in use: the grid (IconView) or the list (TreeView)."""
+        return self.grid if self.is_grid else self.tree
+
+    def _shown_size(self):
+        return GRID_SIZES[self.grid_size_index] if self.is_grid else ICON_SIZES[self.icon_size_index]
+
+    # The two views differ in API; everything else goes through these.
+    def _selected_paths(self):
+        return self.grid.get_selected_items() if self.is_grid else self.tree.get_selection().get_selected_rows()[1]
+
+    def _unselect_all(self):
+        (self.grid if self.is_grid else self.tree.get_selection()).unselect_all()
+
+    def _select_path(self, path):
+        (self.grid if self.is_grid else self.tree.get_selection()).select_path(path)
+
+    def _is_selected(self, path):
+        return (self.grid if self.is_grid else self.tree.get_selection()).path_is_selected(path)
+
+    def _count_selected(self):
+        return len(self._selected_paths())
+
+    def _path_at(self, x, y):
+        if self.is_grid:
+            return self.grid.get_path_at_pos(int(x), int(y))
+        hit = self.tree.get_path_at_pos(int(x), int(y))
+        return hit[0] if hit else None
+
+    def _set_cursor(self, path):
+        self.view.set_cursor(path, None, False)
+
+    def _scroll_to(self, path):
+        if self.is_grid:
+            self.grid.scroll_to_path(path, False, 0, 0)
+        else:
+            self.tree.scroll_to_cell(path, None, False, 0, 0)
+
+    def _drop_row_at(self, x, y):
+        if self.is_grid:
+            found = self.grid.get_dest_item_at_pos(x, y)
+            return found[1] if found and found[0] else None
+        dest = self.tree.get_dest_row_at_pos(x, y)
+        return dest[0] if dest else None
+
+    def _highlight_drop(self, path):
+        if self.is_grid:
+            self.grid.set_drag_dest_item(path, Gtk.IconViewDropPosition.DROP_INTO if path else Gtk.IconViewDropPosition.NO_DROP)
+        else:
+            self.tree.set_drag_dest_row(path, Gtk.TreeViewDropPosition.INTO_OR_AFTER if path else Gtk.TreeViewDropPosition.BEFORE)
+
+    def _set_view(self, mode):
+        """Grid or list: the same items, selection kept."""
+        keep = [i["path"] for i in self._selected()] if hasattr(self, "grid") else []
+        self.view_mode = mode
+        self.views.set_visible_child_name(mode)
+        self.mode_btn.set_label("☰" if mode == "grid" else "▦")
+        self.mode_btn.set_tooltip_text("List view (Ctrl+1)" if mode == "grid" else "Grid view (Ctrl+2)")
+        (self.grid_item if mode == "grid" else self.list_item).set_active(True)
+        self.grid.set_item_width(GRID_SIZES[self.grid_size_index] + 24)
+        self._save_prefs()
+        self._refresh(select=keep)
+        self.view.grab_focus()
+
+    def _set_sort(self, col, reverse):
+        cur_col, cur_order = self.store.get_sort_column_id()
+        col = cur_col if col is None else col
+        if reverse is None:
+            reverse = cur_order == Gtk.SortType.DESCENDING
+        self.store.set_sort_column_id(col, Gtk.SortType.DESCENDING if reverse else Gtk.SortType.ASCENDING)
+
     def _icon_pixbuf(self, icon_name):
         try:
-            return Gtk.IconTheme.get_default().load_icon(
-                icon_name, ICON_SIZES[self.icon_size_index], 0,
-            )
+            return Gtk.IconTheme.get_default().load_icon(icon_name, self._shown_size(), Gtk.IconLookupFlags.FORCE_SIZE)
         except GLib.Error:
             return None
 
@@ -146,6 +241,26 @@ class FileManagerWindow(Gtk.Window):
         self.view_btn = Gtk.MenuButton(label="View ▾")
         self.view_btn.set_name("toolbtn")
         view_menu = Gtk.Menu()
+        self.grid_item = Gtk.RadioMenuItem(label="Grid  (Ctrl+2)")
+        self.list_item = Gtk.RadioMenuItem.new_with_label_from_widget(self.grid_item, "List  (Ctrl+1)")
+        self.grid_item.connect("toggled", lambda i: i.get_active() and self._set_view("grid"))
+        self.list_item.connect("toggled", lambda i: i.get_active() and self._set_view("list"))
+        sort_item = Gtk.MenuItem(label="Sort by")
+        sort_menu = Gtk.Menu()
+        self.sort_items = {}
+        group = None
+        for col, label in ((COL_NAME, "Name"), (COL_BYTES, "Size"), (COL_TIME, "Modified")):
+            it = Gtk.RadioMenuItem(label=label) if group is None else Gtk.RadioMenuItem.new_with_label_from_widget(group, label)
+            group = group or it
+            it.connect("toggled", lambda i, c=col: i.get_active() and self._set_sort(c, None))
+            sort_menu.append(it)
+            self.sort_items[col] = it
+        sort_menu.append(Gtk.SeparatorMenuItem())
+        self.reverse_item = Gtk.CheckMenuItem(label="Reversed")
+        self.reverse_item.connect("toggled", lambda i: self._set_sort(None, i.get_active()))
+        sort_menu.append(self.reverse_item)
+        sort_menu.show_all()
+        sort_item.set_submenu(sort_menu)
         self.hidden_item = Gtk.CheckMenuItem(label="Show Hidden Files  (Ctrl+H)")
         self.hidden_item.connect("toggled", lambda i: i.get_active() != self.show_hidden and self._on_toggle_hidden(None))
         self.zoom_in_item = Gtk.MenuItem(label="Larger Icons  (Ctrl++)")
@@ -153,14 +268,17 @@ class FileManagerWindow(Gtk.Window):
         self.zoom_out_item = Gtk.MenuItem(label="Smaller Icons  (Ctrl+−)")
         self.zoom_out_item.connect("activate", self._on_zoom_out)
         normal = Gtk.MenuItem(label="Normal Size  (Ctrl+0)")
-        normal.connect("activate", lambda _i: self._set_zoom(DEFAULT_ICON_SIZE_INDEX))
+        normal.connect("activate", lambda _i: self._set_zoom(DEFAULT_GRID_SIZE_INDEX if self.is_grid else DEFAULT_ICON_SIZE_INDEX))
         refresh = Gtk.MenuItem(label="Refresh  (F5)")
         refresh.connect("activate", lambda _i: self._refresh())
-        for item in (self.hidden_item, Gtk.SeparatorMenuItem(), self.zoom_in_item, self.zoom_out_item, normal,
+        for item in (self.grid_item, self.list_item, sort_item, Gtk.SeparatorMenuItem(), self.hidden_item,
+                     Gtk.SeparatorMenuItem(), self.zoom_in_item, self.zoom_out_item, normal,
                      Gtk.SeparatorMenuItem(), refresh):
             view_menu.append(item)
         view_menu.show_all()
         self.view_btn.set_popup(view_menu)
+        self.mode_btn = self._toolbtn("", lambda _b: self._set_view("list" if self.is_grid else "grid"), None)
+        toolbar.pack_start(self.mode_btn, False, False, 0)
         toolbar.pack_start(self.view_btn, False, False, 0)
         root.pack_start(toolbar, False, False, 0)
 
@@ -195,23 +313,23 @@ class FileManagerWindow(Gtk.Window):
         self.actions.add_named(trash_bar, "trash")
         root.pack_start(self.actions, False, False, 0)
 
-        scroller = Gtk.ScrolledWindow()
+        list_scroller = Gtk.ScrolledWindow()
         self.store = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str, str, str, bool, GObject.TYPE_INT64, float, bool, str)
         for col in (COL_NAME, COL_BYTES, COL_TIME):
             self.store.set_sort_func(col, self._sort, col)
         self.store.set_sort_column_id(COL_NAME, Gtk.SortType.ASCENDING)
-        self.view = Gtk.TreeView(model=self.store)
-        self.view.set_headers_visible(True)
-        self.view.set_rubber_banding(True)
-        self.view.set_search_column(COL_NAME)  # type a name to jump to it
-        self.view.set_tooltip_column(COL_TIP)
-        self.view.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE)
-        self.view.connect("row-activated", self._on_row_activated)
-        self.view.get_selection().connect("changed", self._on_selection_changed)
-        self.view.connect("button-press-event", self._on_button_press)
-        self.view.connect("button-release-event", self._on_button_release)
-        self.view.connect("scroll-event", self._on_scroll)
-        self.view.connect("popup-menu", self._on_menu_key)
+        self.tree = Gtk.TreeView(model=self.store)
+        self.tree.set_headers_visible(True)
+        self.tree.set_rubber_banding(True)
+        self.tree.set_search_column(COL_NAME)  # type a name to jump to it
+        self.tree.set_tooltip_column(COL_TIP)
+        self.tree.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE)
+        self.tree.connect("row-activated", self._on_row_activated)
+        self.tree.get_selection().connect("changed", self._on_selection_changed)
+        self.tree.connect("button-press-event", self._on_button_press)
+        self.tree.connect("button-release-event", self._on_button_release)
+        self.tree.connect("scroll-event", self._on_scroll)
+        self.tree.connect("popup-menu", self._on_menu_key)
 
         icon_renderer = Gtk.CellRendererPixbuf()
         name_renderer = Gtk.CellRendererText()
@@ -225,37 +343,63 @@ class FileManagerWindow(Gtk.Window):
         name_col.set_expand(True)
         name_col.set_resizable(True)
         name_col.set_sort_column_id(COL_NAME)
-        self.view.append_column(name_col)
+        self.tree.append_column(name_col)
 
         size_renderer = Gtk.CellRendererText()
         size_renderer.set_property("xalign", 1.0)
         size_col = Gtk.TreeViewColumn("Size", size_renderer, text=COL_SIZE)
         size_col.set_fixed_width(90)
         size_col.set_sort_column_id(COL_BYTES)
-        self.view.append_column(size_col)
+        self.tree.append_column(size_col)
 
         self.mtime_col = Gtk.TreeViewColumn("Modified", Gtk.CellRendererText(), text=COL_MTIME)
         self.mtime_col.set_fixed_width(150)
         self.mtime_col.set_sort_column_id(COL_TIME)
-        self.view.append_column(self.mtime_col)
+        self.tree.append_column(self.mtime_col)
 
         # Drag selected items out (to a folder here, another window, another
         # app); drop files in. Drops are handled by hand (not the tree's
         # row-reordering) so only folders light up as targets.
-        self.view.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, _uri_targets(),
+        self.tree.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, _uri_targets(),
                                            Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-        self.view.connect("drag-begin", self._on_drag_begin)
-        self.view.connect("drag-end", self._on_drag_end)
-        self.view.connect("drag-data-get", self._on_drag_data_get)
-        self.view.connect("drag-data-delete", lambda w, _c: w.stop_emission_by_name("drag-data-delete"))
-        self.view.drag_dest_set(0, _uri_targets(), Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
-        self.view.connect("drag-motion", self._on_drag_motion)
-        self.view.connect("drag-leave", lambda w, _c, _t: w.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE))
-        self.view.connect("drag-drop", self._on_drag_drop)
-        self.view.connect("drag-data-received", self._on_drag_data_received)
 
-        scroller.add(self.view)
-        root.pack_start(scroller, True, True, 0)
+        # The grid: the same items as big icons and thumbnails, in rows.
+        self.grid = Gtk.IconView(model=self.store)
+        self.grid.set_pixbuf_column(COL_ICON)
+        self.grid.set_text_column(COL_NAME)
+        self.grid.set_tooltip_column(COL_TIP)
+        self.grid.set_selection_mode(Gtk.SelectionMode.MULTIPLE)
+        self.grid.set_item_padding(6)
+        self.grid.set_column_spacing(6)
+        self.grid.set_row_spacing(10)
+        self.grid.set_margin(12)
+        self.grid.connect("item-activated", lambda _v, path: self._activate_path(path))
+        self.grid.connect("selection-changed", self._on_selection_changed)
+        self.grid.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK, _uri_targets(),
+                                           Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        for w in (self.tree, self.grid):
+            if w is self.grid:
+                for sig, handler in (("button-press-event", self._on_button_press), ("button-release-event", self._on_button_release),
+                                     ("scroll-event", self._on_scroll), ("popup-menu", self._on_menu_key)):
+                    w.connect(sig, handler)
+            w.connect("drag-begin", self._on_drag_begin)
+            w.connect("drag-end", self._on_drag_end)
+            w.connect("drag-data-get", self._on_drag_data_get)
+            w.connect("drag-data-delete", lambda w, _c: w.stop_emission_by_name("drag-data-delete"))
+            w.drag_dest_set(0, _uri_targets(), Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+            w.connect("drag-motion", self._on_drag_motion)
+            w.connect("drag-leave", lambda _w, _c, _t: self._highlight_drop(None))
+            w.connect("drag-drop", self._on_drag_drop)
+            w.connect("drag-data-received", self._on_drag_data_received)
+
+        list_scroller.add(self.tree)
+        grid_scroller = Gtk.ScrolledWindow()
+        grid_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        grid_scroller.add(self.grid)
+        self.views = Gtk.Stack()
+        self.views.add_named(grid_scroller, "grid")
+        self.views.add_named(list_scroller, "list")
+        root.pack_start(self.views, True, True, 0)
 
         status_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         status_row.set_name("statusrow")
@@ -369,23 +513,61 @@ class FileManagerWindow(Gtk.Window):
         self._select_paths(select)
         self._update_action_sensitivity()
         self._show_selection_summary()
+        if not self.in_trash:
+            self._load_thumbnails()
 
     def _select_paths(self, paths):
-        sel = self.view.get_selection()
-        sel.unselect_all()
+        self._unselect_all()
         wanted = set(paths or [])
         first = None
         for row in self.store:
             if row[COL_PATH] in wanted:
-                sel.select_iter(row.iter)
+                self._select_path(row.path)
                 first = first or row.path
         if first is not None:
-            self.view.set_cursor(first, None, False) if len(wanted) == 1 else None
-            self.view.scroll_to_cell(first, None, False, 0, 0)
-            for path in paths:  # set_cursor may have dropped the others
-                for row in self.store:
-                    if row[COL_PATH] == path:
-                        sel.select_iter(row.iter)
+            if len(wanted) == 1:
+                self._set_cursor(first)
+            self._scroll_to(first)
+            for row in self.store:  # set_cursor may have dropped the others
+                if row[COL_PATH] in wanted:
+                    self._select_path(row.path)
+
+    # ---- Thumbnails ----
+
+    def _load_thumbnails(self):
+        """Pictures, videos, PDFs and folders get thumbnails (nexa-thumb, in
+        the background); remembered while the window is open."""
+        size = self._shown_size()
+        want = 256 if size > 128 else 128
+        files, folders = [], []
+        for row in self.store:
+            path, is_dir = row[COL_PATH], row[COL_IS_DIR]
+            if not thumbs.wanted(path, is_dir):
+                continue
+            key = (path, row[COL_TIME], size)
+            if key in self._thumb_cache:
+                if self._thumb_cache[key] is not None:
+                    row[COL_ICON] = self._thumb_cache[key]
+                continue
+            (folders if is_dir else files).append(path)
+        if not files and not folders:
+            return
+        settings = themes.load_settings()
+        accent = themes.THEMES[settings["theme"]]["accent"].lstrip("#")
+
+        def ready(found):
+            for row in self.store:
+                png = found.get(row[COL_PATH])
+                if not png:
+                    continue
+                try:
+                    pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(png, size, size, True)
+                except GLib.Error:
+                    continue
+                self._thumb_cache[(row[COL_PATH], row[COL_TIME], size)] = pix
+                row[COL_ICON] = pix
+
+        self.thumbnailer.request(files, folders, want, accent, ready)
 
     def _navigate(self, path, remember=True):
         if path != TRASH and not os.path.isdir(path):
@@ -428,9 +610,9 @@ class FileManagerWindow(Gtk.Window):
     # ---- Selection ----
 
     def _selected(self):
-        model, paths = self.view.get_selection().get_selected_rows()
+        model = self.store
         return [{"path": model[p][COL_PATH], "name": model[p][COL_NAME], "is_dir": model[p][COL_IS_DIR],
-                 "bytes": model[p][COL_BYTES]} for p in paths]
+                 "bytes": model[p][COL_BYTES]} for p in self._selected_paths()]
 
     def _selected_entry(self):
         sel = self._selected()
@@ -447,8 +629,9 @@ class FileManagerWindow(Gtk.Window):
         self.back_btn.set_sensitive(bool(self.back_stack))
         self.forward_btn.set_sensitive(bool(self.forward_stack))
         self.up_btn.set_sensitive(self.path != "/")
-        self.zoom_out_item.set_sensitive(self.icon_size_index > 0)
-        self.zoom_in_item.set_sensitive(self.icon_size_index < len(ICON_SIZES) - 1)
+        index, sizes = (self.grid_size_index, GRID_SIZES) if self.is_grid else (self.icon_size_index, ICON_SIZES)
+        self.zoom_out_item.set_sensitive(index > 0)
+        self.zoom_in_item.set_sensitive(index < len(sizes) - 1)
 
     def _show_selection_summary(self):
         if self.busy:
@@ -471,7 +654,7 @@ class FileManagerWindow(Gtk.Window):
         self._show_selection_summary()
 
     def select_all(self):
-        self.view.get_selection().select_all()
+        (self.grid if self.is_grid else self.tree.get_selection()).select_all()
 
     # ---- Mouse ----
 
@@ -481,37 +664,39 @@ class FileManagerWindow(Gtk.Window):
         if event.button in (8, 9):
             (self._on_back if event.button == 8 else self._on_forward)(None)
             return True
-        hit = view.get_path_at_pos(int(event.x), int(event.y))
-        sel = view.get_selection()
+        hit = self._path_at(event.x, event.y)
         ctrl, shift, _alt = _mods(event.state)
         if event.button == 3:
             if hit is None:
-                sel.unselect_all()
-            elif not sel.path_is_selected(hit[0]):
-                view.set_cursor(hit[0], None, False)
-            self._popup(self._item_menu() if hit else self._background_menu(), event)
+                self._unselect_all()
+            elif not self._is_selected(hit):
+                self._unselect_all()
+                self._select_path(hit)
+                self._set_cursor(hit)
+            self._popup(self._item_menu() if hit is not None else self._background_menu(), event)
             return True
         if event.button == 2:
-            if hit and self.store[hit[0]][COL_IS_DIR] and not self.in_trash:
-                self._open_window(self.store[hit[0]][COL_PATH])
+            if hit is not None and self.store[hit][COL_IS_DIR] and not self.in_trash:
+                self._open_window(self.store[hit][COL_PATH])
             return True
         if event.button == 1:
             if hit is None:
                 if not (ctrl or shift):
-                    sel.unselect_all()
+                    self._unselect_all()
                 return False  # a box selection can start here
-            if not (ctrl or shift) and sel.path_is_selected(hit[0]) and sel.count_selected_rows() > 1:
+            if not self.is_grid and not (ctrl or shift) and self._is_selected(hit) and self._count_selected() > 1:
                 # Keep the whole selection so it can be dragged; a plain
-                # click (no drag) narrows it to this item on release.
-                sel.set_select_function(lambda *_a: False, None)
-                self._pending_click = hit[0]
+                # click (no drag) narrows it to this item on release. (The
+                # grid does this by itself.)
+                self.tree.get_selection().set_select_function(lambda *_a: False, None)
+                self._pending_click = hit
         return False
 
     def _on_button_release(self, view, _event):
         if self._pending_click is not None and not self._dragging:
-            view.get_selection().set_select_function(lambda *_a: True, None)
+            self.tree.get_selection().set_select_function(lambda *_a: True, None)
             path, self._pending_click = self._pending_click, None
-            view.set_cursor(path, None, False)
+            self.tree.set_cursor(path, None, False)
         return False
 
     def _on_window_button(self, _w, event):
@@ -533,6 +718,9 @@ class FileManagerWindow(Gtk.Window):
         return True
 
     def _on_row_activated(self, _view, tree_path, _column):
+        self._activate_path(tree_path)
+
+    def _activate_path(self, tree_path):
         row = self.store[tree_path]
         if self.in_trash:
             self.status.set_text("Restore it to open it (right-click > Restore).")
@@ -549,7 +737,7 @@ class FileManagerWindow(Gtk.Window):
     def _on_drag_end(self, view, _ctx):
         self._dragging = False
         if self._pending_click is not None:
-            view.get_selection().set_select_function(lambda *_a: True, None)
+            self.tree.get_selection().set_select_function(lambda *_a: True, None)
             self._pending_click = None
 
     def _on_drag_data_get(self, _view, _ctx, data, _info, _time):
@@ -560,18 +748,18 @@ class FileManagerWindow(Gtk.Window):
         pointer, or the folder being shown."""
         if self.in_trash:
             return None
-        dest = self.view.get_dest_row_at_pos(x, y)
-        if dest:
-            row = self.store[dest[0]]
+        dest = self._drop_row_at(x, y)
+        if dest is not None:
+            row = self.store[dest]
             if row[COL_IS_DIR]:
-                return dest[0], row[COL_PATH]
+                return dest, row[COL_PATH]
         return None, self.path
 
     def _on_drag_motion(self, view, ctx, x, y, t):
         target = self._drop_folder(x, y)
         dragged = {i["path"] for i in self._selected()} if Gtk.drag_get_source_widget(ctx) is view else set()
         if target is None or target[1] in dragged:
-            view.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
+            self._highlight_drop(None)
             Gdk.drag_status(ctx, 0, t)
             return True
         _win, _x, _y, mask = view.get_window().get_device_position(ctx.get_device())
@@ -581,12 +769,7 @@ class FileManagerWindow(Gtk.Window):
                   else Gdk.DragAction.MOVE if internal else Gdk.DragAction.COPY)
         if not ctx.get_actions() & action:
             action = ctx.get_suggested_action()
-        if not internal and target[0] is None:
-            view.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
-        elif target[0] is not None:
-            view.set_drag_dest_row(target[0], Gtk.TreeViewDropPosition.INTO_OR_AFTER)
-        else:
-            view.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
+        self._highlight_drop(target[0])
         self._drop_action = action
         Gdk.drag_status(ctx, action, t)
         return True
@@ -596,7 +779,7 @@ class FileManagerWindow(Gtk.Window):
         return True
 
     def _on_drag_data_received(self, view, ctx, x, y, data, _info, t):
-        view.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
+        self._highlight_drop(None)
         target = self._drop_folder(x, y)
         paths = [Gio.File.new_for_uri(u).get_path() for u in (data.get_uris() or [])]
         paths = [p for p in paths if p]
@@ -630,7 +813,7 @@ class FileManagerWindow(Gtk.Window):
             (True, False, False, Gdk.KEY_plus): self._on_zoom_in,
             (True, False, False, Gdk.KEY_equal): self._on_zoom_in,
             (True, False, False, Gdk.KEY_minus): self._on_zoom_out,
-            (True, False, False, Gdk.KEY_0): lambda _b: self._set_zoom(DEFAULT_ICON_SIZE_INDEX),
+            (True, False, False, Gdk.KEY_0): lambda _b: self._set_zoom(DEFAULT_GRID_SIZE_INDEX if self.is_grid else DEFAULT_ICON_SIZE_INDEX),
             (True, True, False, Gdk.KEY_n): self._on_new_folder,
             (False, False, False, Gdk.KEY_F2): self._on_rename,
             (False, False, False, Gdk.KEY_F5): lambda _b: self._refresh(),
@@ -644,7 +827,9 @@ class FileManagerWindow(Gtk.Window):
             (False, False, True, Gdk.KEY_Return): lambda _b: self._properties(),
             (False, False, False, Gdk.KEY_Return): self._on_open_selected,
             (False, False, False, Gdk.KEY_KP_Enter): self._on_open_selected,
-            (False, False, False, Gdk.KEY_Escape): lambda _b: self.view.get_selection().unselect_all(),
+            (False, False, False, Gdk.KEY_Escape): lambda _b: self._unselect_all(),
+            (True, False, False, Gdk.KEY_1): lambda _b: self._set_view("list"),
+            (True, False, False, Gdk.KEY_2): lambda _b: self._set_view("grid"),
         }
         handler = keys.get((ctrl, shift, alt, k))
         if handler is None:
@@ -939,16 +1124,21 @@ class FileManagerWindow(Gtk.Window):
         self._refresh()
 
     def _set_zoom(self, index):
-        if 0 <= index < len(ICON_SIZES) and index != self.icon_size_index:
-            self.icon_size_index = index
-            self._save_icon_size_index()
+        current, sizes = (self.grid_size_index, GRID_SIZES) if self.is_grid else (self.icon_size_index, ICON_SIZES)
+        if 0 <= index < len(sizes) and index != current:
+            if self.is_grid:
+                self.grid_size_index = index
+                self.grid.set_item_width(GRID_SIZES[index] + 24)
+            else:
+                self.icon_size_index = index
+            self._save_prefs()
             self._refresh()
 
     def _on_zoom_out(self, _btn):
-        self._set_zoom(self.icon_size_index - 1)
+        self._set_zoom((self.grid_size_index if self.is_grid else self.icon_size_index) - 1)
 
     def _on_zoom_in(self, _btn):
-        self._set_zoom(self.icon_size_index + 1)
+        self._set_zoom((self.grid_size_index if self.is_grid else self.icon_size_index) + 1)
 
     # ---- Changing files (all through the engine) ----
 

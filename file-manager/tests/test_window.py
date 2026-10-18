@@ -49,6 +49,11 @@ for d in ("Documents", "Music", "Pictures"):
 for f, data in (("notes.txt", "milk"), ("b-report.pdf", "x" * 2048), ("a-song.mp3", "y" * 10)):
     open(h(f), "w").write(data)
 open(h(".hidden"), "w").write("")
+from gi.repository import GdkPixbuf  # noqa: E402
+for name, colour, size in (("beach.png", 0x3399ffff, (1600, 900)), ("forest.png", 0x22aa55ff, (800, 800)), ("dusk.png", 0xff8844ff, (900, 1200))):
+    pix = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, *size)
+    pix.fill(colour)
+    pix.savev(h("Pictures", name), "png", [], [])
 
 win = W.FileManagerWindow(HOME)
 errors, confirms, answers = [], [], []
@@ -57,6 +62,8 @@ win._confirm = lambda text, secondary: confirms.append(text) or True
 win._prompt = lambda title, message, default, select_stem=False: answers.pop(0) if answers else default
 win.show_all()
 pump(0.5)
+win._set_view("list")  # the first part drives the list; the grid comes last
+pump(0.3)
 
 
 def names():
@@ -94,7 +101,7 @@ def mouse(kind, button, x, y, state=0):
     event GTK reads modifiers from): our handler, then the tree's own."""
     ev = Gdk.Event.new(kind)
     ev.button, ev.x, ev.y, ev.state = button, x, y, state
-    ev.window = win.view.get_bin_window()
+    ev.window = win.tree.get_bin_window()
     ev.set_device(Gdk.Display.get_default().get_default_seat().get_pointer())
     CLOCK[0] += 1000  # far apart: never a double-click by accident
     ev.time = CLOCK[0]
@@ -105,14 +112,14 @@ def mouse(kind, button, x, y, state=0):
 def spot(name):
     pump(0.15)  # let a freshly loaded folder lay out first
     if name is None:
-        return 40, win.view.get_bin_window().get_height() - 5
-    rect = win.view.get_background_area(row(name).path, win.view.get_column(0))
+        return 40, win.tree.get_bin_window().get_height() - 5
+    rect = win.tree.get_background_area(row(name).path, win.tree.get_column(0))
     return rect.x + 40, rect.y + rect.height / 2
 
 
 def add(name):
     """Add to the selection, as Ctrl+click does."""
-    win.view.get_selection().select_iter(row(name).iter)
+    win.tree.get_selection().select_iter(row(name).iter)
     pump(0.02)
 
 
@@ -150,7 +157,7 @@ check("a click selects one item", selected() == ["notes.txt"])
 x, y = spot("a-song.mp3")
 ev = Gdk.Event.new(Gdk.EventType.BUTTON_PRESS)
 ev.button, ev.x, ev.y, ev.state = 1, x, y, Gdk.ModifierType.CONTROL_MASK
-check("Ctrl+click is left to GTK (multi-select)", win._on_button_press(win.view, ev.button) is False and selected() == ["notes.txt"])
+check("Ctrl+click is left to GTK (multi-select)", win._on_button_press(win.tree, ev.button) is False and selected() == ["notes.txt"])
 click("Music", button=3)
 check("right-click on an unselected item selects just it", selected() == ["Music"])
 check("...and shows the item menu", {"Open in New Window", "Cut", "Copy", "Rename…", "Move to Trash", "Properties"} <= set(menu_labels()), str(menu_labels()))
@@ -176,7 +183,7 @@ check("Escape clears the selection", selected() == [])
 before = win.icon_size_index
 sc = Gdk.Event.new(Gdk.EventType.SCROLL)
 sc.direction, sc.state = Gdk.ScrollDirection.UP, Gdk.ModifierType.CONTROL_MASK
-win._on_scroll(win.view, sc)
+win._on_scroll(win.tree, sc)
 check("Ctrl+scroll zooms", win.icon_size_index == before + 1)
 key(Gdk.KEY_0, ctrl=True)
 
@@ -307,6 +314,77 @@ if shot:
     os.system(f"grim {shot}")
 win._menu.popdown()
 
+
+# ---- The grid: big icons and thumbnails, arranged in rows ----
+import json as _json  # noqa: E402
+win._navigate(HOME)
+pump(0.2)
+click("notes.txt")
+key(Gdk.KEY_2, ctrl=True)
+pump(0.3)
+check("Ctrl+2 switches to the grid", win.is_grid and win.views.get_visible_child_name() == "grid")
+check("...keeping the selection", selected() == ["notes.txt"], str(selected()))
+check("...and is remembered", _json.load(open(W.CONFIG_PATH))["view"] == "grid")
+pump(0.3, until=lambda: (h("Pictures"), row("Pictures")[W.COL_TIME], 128) in win._thumb_cache)
+folder_icon = row("Pictures")[W.COL_ICON]
+check("a folder with pictures shows them (folder thumbnail)", (h("Pictures"), row("Pictures")[W.COL_TIME], 128) in win._thumb_cache
+      and folder_icon.get_width() == 128 and folder_icon.get_has_alpha())
+win._navigate(h("Pictures"))
+pump(0.3, until=lambda: all((h("Pictures", n), row(n)[W.COL_TIME], 128) in win._thumb_cache for n in ("beach.png", "dusk.png")))
+beach = row("beach.png")[W.COL_ICON]
+dusk = row("dusk.png")[W.COL_ICON]
+check("pictures show as thumbnails, shape kept", (beach.get_width(), beach.get_height()) == (128, 72)
+      and (dusk.get_width(), dusk.get_height()) == (96, 128), f"{beach.get_width()}x{beach.get_height()} {dusk.get_width()}x{dusk.get_height()}")
+gwin = win.grid.get_window().get_children()[0] if win.grid.get_window().get_children() else win.grid.get_bin_window()
+
+
+def gspot(name):
+    pump(0.15)
+    ok, rect = win.grid.get_cell_rect(row(name).path, None)
+    return rect.x + rect.width / 2, rect.y + rect.height / 3
+
+
+def gmouse(kind, button, x, y, state=0):
+    ev = Gdk.Event.new(kind)
+    ev.button, ev.x, ev.y, ev.state = button, x, y, state
+    ev.window = gwin
+    ev.set_device(Gdk.Display.get_default().get_default_seat().get_pointer())
+    CLOCK[0] += 1000
+    ev.time = CLOCK[0]
+    Gtk.main_do_event(ev)
+    pump(0.05)
+
+
+x, y = gspot("forest.png")
+gmouse(Gdk.EventType.BUTTON_PRESS, 3, x, y)
+check("right-click in the grid selects the item and shows its menu",
+      selected() == ["forest.png"] and "Rename…" in menu_labels(), str((selected(), menu_labels())))
+win._menu.popdown()
+key(Gdk.KEY_a, ctrl=True)
+check("Ctrl+A in the grid", len(selected()) == 3)
+key(Gdk.KEY_Escape)
+check("Escape clears it", selected() == [])
+before = win.grid_size_index
+sc = Gdk.Event.new(Gdk.EventType.SCROLL)
+sc.direction, sc.state = Gdk.ScrollDirection.UP, Gdk.ModifierType.CONTROL_MASK
+win._on_scroll(win.grid, sc)
+pump(0.5, until=lambda: (h("Pictures", "beach.png"), row("beach.png")[W.COL_TIME], W.GRID_SIZES[before + 1]) in win._thumb_cache)
+check("Ctrl+scroll makes the grid bigger, thumbnails sharp at the new size",
+      win.grid_size_index == before + 1 and row("beach.png")[W.COL_ICON].get_width() == W.GRID_SIZES[before + 1])
+win._set_sort(W.COL_BYTES, True)
+check("View > Sort by size, reversed, in the grid", [r[W.COL_NAME] for r in win.store][0] in ("beach.png", "dusk.png"))
+win._set_sort(W.COL_NAME, False)
+key(Gdk.KEY_0, ctrl=True)
+pump(0.6)
+shot = os.environ.get("SHOT")
+if shot:
+    os.system(f"grim {shot.replace('.png', '-grid.png')}")
+win._navigate(HOME)
+pump(0.8)
+if shot:
+    os.system(f"grim {shot.replace('.png', '-grid-home.png')}")
+key(Gdk.KEY_1, ctrl=True)
+check("Ctrl+1 back to the list", not win.is_grid and win.views.get_visible_child_name() == "list")
 check("no error dialogs along the way", not errors, str(errors))
 shutil.rmtree(HOME, ignore_errors=True)
 print(f"\n{len(failures)} failure(s)")
