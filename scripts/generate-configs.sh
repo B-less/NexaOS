@@ -1100,6 +1100,13 @@ gesture = 3, horizontal, workspace
 misc {
     disable_hyprland_logo = true
     disable_splash_rendering = true
+    # No warning banners across the top of the screen at every login:
+    # NexaOS starts Hyprland through start-hyprland (nexa-desktop) and sets
+    # the desktop environment itself; hyprland-guiutils (optional dialogs)
+    # isn't packaged by Alpine 3.24.
+    disable_watchdog_warning = true
+    disable_xdg_env_checks = true
+    disable_hyprland_guiutils_check = true
     force_default_wallpaper = 0
     focus_on_activate = true
 }
