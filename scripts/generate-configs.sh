@@ -475,7 +475,15 @@ IWD_CONF_EOF
     # /lib/firmware is reachable; harmless for devices nothing can drive.
     cat > "$MNT_DIR/etc/init.d/wifi-probe" << 'WIFIPROBE_EOF'
 #!/sbin/openrc-run
-description="Re-probe unbound PCI devices now that firmware is available"
+description="Attach network adapters whose firmware is on the system disk"
+
+# Wi-Fi drivers are built into the kernel but their firmware lives on the
+# system disk, which isn't there yet when the kernel first looks. iwlwifi
+# then gives up and lets go of the card - but only after a moment, so with
+# a fast, parallel boot this service may run while the card still has its
+# (firmware-less) driver. So: watch network adapters in the background for
+# up to 20 s; one without a network interface is probed again - at once if
+# it has no driver, after 3 s if its driver is stuck - each at most once.
 
 depend() {
     need localmount
@@ -483,13 +491,34 @@ depend() {
     before iwd
 }
 
-start() {
-    ebegin "Re-probing PCI devices without a driver"
-    local dev
-    for dev in /sys/bus/pci/devices/*; do
-        [ -e "$dev/driver" ] && continue
-        basename "$dev" > /sys/bus/pci/drivers_probe 2>/dev/null
+attach_loop() {
+    local i=0 dev id done_ids=" " missing
+    while [ $i -lt 20 ]; do
+        missing=0
+        for dev in /sys/bus/pci/devices/*; do
+            case "$(cat "$dev/class" 2>/dev/null)" in 0x02*) ;; *) continue ;; esac
+            [ -d "$dev/net" ] || [ -d "$dev/ieee80211" ] && continue
+            missing=1
+            id=${dev##*/}
+            case "$done_ids" in *" $id "*) continue ;; esac
+            if [ ! -e "$dev/driver" ]; then
+                echo "$id" > /sys/bus/pci/drivers_probe 2>/dev/null
+                done_ids="$done_ids$id "
+            elif [ $i -ge 3 ]; then
+                echo "$id" > "$dev/driver/unbind" 2>/dev/null
+                echo "$id" > /sys/bus/pci/drivers_probe 2>/dev/null
+                done_ids="$done_ids$id "
+            fi
+        done
+        [ $missing = 0 ] && break
+        sleep 1
+        i=$((i + 1))
     done
+}
+
+start() {
+    ebegin "Attaching network adapters"
+    attach_loop >/dev/null 2>&1 &
     eend 0
 }
 WIFIPROBE_EOF
@@ -505,9 +534,12 @@ WIFIPROBE_EOF
 #!/sbin/openrc-run
 description="Re-probe USB Bluetooth adapters now that firmware is available"
 
+# After wifi-probe: on Intel cards Wi-Fi and Bluetooth are one chip; their
+# firmware loads go one after the other, as they did before services were
+# started in parallel.
 depend() {
     need localmount
-    after udev udev-trigger
+    after udev udev-trigger wifi-probe
     before bluetooth
 }
 
