@@ -43,7 +43,14 @@ trap 'rm -rf "$STAGE"' EXIT
 
 mkdir -p "$STAGE/boot/isolinux"
 cp "$DIST_DIR/bzImage" "$STAGE/boot/vmlinuz"
-cp "$DIST_DIR/initramfs.cpio.gz" "$STAGE/boot/initramfs.cpio.gz"
+# The initramfs in three pieces (see build-initramfs.sh) so the boot loader
+# reads only the GPU firmware this machine can use.
+for f in initramfs-core.cpio.gz initramfs-i915.cpio initramfs-amdgpu.cpio; do
+    cp "$DIST_DIR/$f" "$STAGE/boot/$f"
+done
+# Boot readahead map (make preload-map); ignored at boot if it was made for
+# another build of nexa.img.
+[ -f "$DIST_DIR/nexa-preload.map" ] && cp "$DIST_DIR/nexa-preload.map" "$STAGE/boot/nexa-preload.map"
 cp "$DIST_DIR/nexa.img" "$STAGE/nexa.img"
 
 for f in isolinux.bin ldlinux.c32; do
@@ -60,18 +67,18 @@ done
 
 cat > "$STAGE/boot/isolinux/isolinux.cfg" << 'CFG_EOF'
 DEFAULT nexa
-TIMEOUT 50
+TIMEOUT 10
 PROMPT 1
 
 LABEL nexa
   MENU LABEL NexaOS (live)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.cpio.gz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
 
 LABEL fresh
   MENU LABEL NexaOS (live, don't load saved changes)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.cpio.gz nexa.live nexa.nopersist mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio nexa.live nexa.nopersist mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
 CFG_EOF
 
 # UEFI. The volume label can't be used to find the boot files: Rufus's ISO
@@ -83,11 +90,35 @@ touch "$STAGE/boot/nexa-live.id"
 mkdir -p "$STAGE/boot/grub" "$STAGE/EFI/BOOT"
 cat > "$STAGE/boot/grub/grub.cfg" << 'CFG_EOF'
 insmod all_video
-# Boot straight away without a menu or GRUB's "Booting ..." line (the boot
-# animation takes the screen next); Esc during these 2 s shows the menu.
-if sleep --interruptible 2; then
+# GPU firmware: Intel's with an Intel CPU, AMD's with an AMD one (read from
+# the firmware's SMBIOS tables), both when that can't be told.
+set nexa_gpu=both
+if smbios --type 4 --get-string 7 --set nexa_cpu; then
+    if regexp Intel "$nexa_cpu"; then set nexa_gpu=intel; fi
+    if regexp "AMD|Advanced Micro" "$nexa_cpu"; then set nexa_gpu=amd; fi
+fi
+export nexa_gpu
+function nexa_initrd {
+    if [ "$nexa_gpu" = intel ]; then
+        initrd /boot/initramfs-core.cpio.gz /boot/initramfs-i915.cpio
+    elif [ "$nexa_gpu" = amd ]; then
+        initrd /boot/initramfs-core.cpio.gz /boot/initramfs-amdgpu.cpio
+    else
+        initrd /boot/initramfs-core.cpio.gz /boot/initramfs-i915.cpio /boot/initramfs-amdgpu.cpio
+    fi
+}
+# Boot straight away, no menu and no waiting (the boot animation takes the
+# screen next); hold Shift for the menu. If the firmware can't report keys,
+# Esc within 1 s shows it instead.
+set nexa_menu=
+if keystatus; then
+    if keystatus --shift; then set nexa_menu=1; fi
+else
+    if sleep --interruptible 1; then set nexa_menu=; else set nexa_menu=1; fi
+fi
+if [ -z "$nexa_menu" ]; then
     linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
-    initrd /boot/initramfs.cpio.gz
+    nexa_initrd
     boot
 fi
 set timeout=-1
@@ -99,18 +130,18 @@ set menu_color_highlight=black/light-gray
 
 menuentry "NexaOS (live)" {
     linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
-    initrd /boot/initramfs.cpio.gz
+    nexa_initrd
 }
 # Persistent live USB: start once without the files and settings kept on
 # the stick (e.g. if a saved change stops the desktop from starting).
 menuentry "NexaOS (live, don't load saved changes)" {
     linux /boot/vmlinuz nexa.live nexa.nopersist mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
-    initrd /boot/initramfs.cpio.gz
+    nexa_initrd
 }
 # Skips the i915/amdgpu drivers and stays on the firmware framebuffer.
 menuentry "NexaOS (live, safe graphics)" {
     linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 nomodeset quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
-    initrd /boot/initramfs.cpio.gz
+    nexa_initrd
 }
 # Kernel messages on screen from the first instant (EFI framebuffer
 # earlycon), nothing filtered, and a panic stays on screen.
@@ -118,7 +149,7 @@ menuentry "NexaOS (live, debug: show all boot messages)" {
     echo "Loading kernel..."
     linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 earlycon=efifb keep_bootcon ignore_loglevel panic=0 console=ttyS0 console=tty0
     echo "Loading initramfs..."
-    initrd /boot/initramfs.cpio.gz
+    nexa_initrd
     echo "Starting kernel..."
 }
 menuentry "UEFI firmware settings" {
@@ -147,7 +178,7 @@ CFG_EOF
 grub-mkstandalone -O x86_64-efi -o "$STAGE/EFI/BOOT/BOOTX64.EFI" \
     --install-modules="normal linux echo test regexp search search_fs_file \
         configfile iso9660 fat exfat ntfs part_gpt part_msdos all_video \
-        efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup sleep" \
+        efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup sleep smbios keystatus" \
     --modules="part_gpt part_msdos iso9660 fat" \
     --locales="" --fonts="" --themes="" \
     "boot/grub/grub.cfg=$STAGE/embedded.cfg"

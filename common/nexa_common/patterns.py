@@ -31,7 +31,7 @@ def config_path():
 
 
 DEFAULTS = {"enabled": False, "desktop_card": True, "card_position": "top-right",
-            "excluded_apps": [], "never_suggest": [], "hidden_until": 0}
+            "excluded_apps": [], "never_suggest": [], "hidden_until": 0, "preload": True}
 POSITIONS = {"top-left": "Top left", "top-right": "Top right", "bottom-right": "Bottom right", "center": "Centre"}
 
 

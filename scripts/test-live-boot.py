@@ -4,6 +4,9 @@ save a screenshot, log in on the serial console and print a health report.
 
 Usage: python3 scripts/test-live-boot.py [ISO] [--shot desktop.png] [--run 'shell command']
 --run also runs that command as root on the booted system and prints its output.
+--no-checks skips the health report (only --run / --fetch / the screenshot).
+--fetch REMOTE LOCAL copies a file off the booted system after 85 s of uptime
+(used by `make preload-map` for the boot readahead map).
 --disk FILE boots a writable USB-stick image (e.g. the ISO written into a bigger
 file) instead of the read-only ISO; used by scripts/test-persistence.py.
 Defaults: dist/NexaOS-<PROJECT_VERSION>.iso, screenshot to dist/live-desktop.png.
@@ -99,8 +102,11 @@ def main(argv):
     extra = argv[argv.index("--run") + 1] if "--run" in argv else None
     disk = argv[argv.index("--disk") + 1] if "--disk" in argv else None
     shot = argv[argv.index("--shot") + 1] if "--shot" in argv else os.path.join(REPO, "dist", "live-desktop.png")
+    fetch = argv[argv.index("--fetch") + 1:argv.index("--fetch") + 3] if "--fetch" in argv else None
+    no_checks = "--no-checks" in argv
     argv = [a for i, a in enumerate(argv)
-            if not (a in ("--run", "--disk", "--shot") or (i and argv[i - 1] in ("--run", "--disk", "--shot")))]
+            if not (a in ("--run", "--disk", "--shot", "--fetch") or (i and argv[i - 1] in ("--run", "--disk", "--shot", "--fetch"))
+                    or (i > 1 and argv[i - 2] == "--fetch"))]
     args = [a for a in argv if not a.startswith("--")]
     iso = args[0] if args else os.path.join(REPO, "dist", f"NexaOS-{project_version()}.iso")
     work = tempfile.mkdtemp(prefix="nexa-live-")
@@ -156,7 +162,7 @@ def main(argv):
         s.sendall(b"root\n")
         pump(3)
         marker = "NEXA_CHECKS_DONE"
-        checks = list(CHECKS) + ([f"echo EXTRA_BEGIN; {extra}; echo EXTRA_END"] if extra else [])
+        checks = ([] if no_checks else list(CHECKS)) + ([f"echo EXTRA_BEGIN; {extra}; echo EXTRA_END"] if extra else [])
         # One command per line: BusyBox's line editor stops at ~2 KB.
         s.sendall(("\n".join(checks) + f"\necho {marker}\n").encode())
         end = time.time() + (120 if extra else 20)
@@ -167,9 +173,27 @@ def main(argv):
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=",
                                    "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "FILEOPS=", "KERNELD=", "CONSOLE="))] if text.count(marker) >= 2 else []
-        print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
+        if not no_checks:
+            print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
         if extra and text.count("EXTRA_END") >= 2:
             print("--- --run output\n" + text.split("EXTRA_BEGIN")[-1].split("EXTRA_END")[0].strip())
+
+        if fetch:
+            remote, local = fetch
+            buf = b""
+            s.sendall(f'while [ $(cut -d. -f1 /proc/uptime) -lt 85 ]; do sleep 1; done; echo FETCH_BEGIN; '
+                      f'base64 {remote} | tr -d "\\n"; echo; echo FETCH_END\n'.encode())
+            end = time.time() + 150
+            while time.time() < end and buf.count(b"FETCH_END") < 2:
+                pump(1)
+            text = buf.decode(errors="replace").replace("\r", "")
+            data = "".join(text.split("FETCH_BEGIN")[-1].split("FETCH_END")[0].split()) if text.count("FETCH_END") >= 2 else ""
+            if not data:
+                print(f"FAIL: couldn't fetch {remote}")
+                return 1
+            with open(local, "wb") as f:
+                f.write(base64.b64decode(data + "=" * (-len(data) % 4)))
+            print(f"fetched {remote} -> {local} ({os.path.getsize(local)} bytes)")
 
         # Screenshot from inside the session with grim: QEMU's own screendump
         # comes out black under Sway here. Without a GPU the bar and Dock

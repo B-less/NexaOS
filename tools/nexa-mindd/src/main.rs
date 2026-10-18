@@ -15,6 +15,7 @@
 //!   GET  /v1/models                    catalogue with installed flags
 //!   POST /v1/models/download {"name"}  start a verified download
 //!   POST /v1/unload                    free the model's memory now
+//!   POST /v1/warm                      load the default model ahead of use
 //!   POST /v1/chat/completions          OpenAI-style chat (tools, streaming)
 
 mod catalog;
@@ -104,6 +105,20 @@ fn handle(svc: &Service, mut stream: UnixStream) {
             }
         }
         ("POST", "/v1/chat/completions") => chat(svc, req, &mut stream),
+        // Nexa Patterns expects you to ask soon: load the default model now
+        // (answers at once; loads in this connection's thread). It is
+        // unloaded again after the usual idle time if nothing asks.
+        ("POST", "/v1/warm") => match catalog::find(catalog::DEFAULT_CHAT) {
+            Some(m) if models::is_installed(&svc.cfg, m) => {
+                let r = http::respond_json(&mut stream, 202, &json!({"ok": true, "model": m.name}));
+                drop(stream);
+                if let Err(e) = svc.sup.acquire(m) {
+                    eprintln!("nexa-mindd: warm-up: {e}");
+                }
+                r
+            }
+            _ => http::respond_json(&mut stream, 409, &json!({"error": "no model installed to warm up"})),
+        },
         _ => http::respond_json(&mut stream, 404, &json!({"error": "no such endpoint"})),
     };
     if let Err(e) = result {

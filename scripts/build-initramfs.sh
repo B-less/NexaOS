@@ -63,10 +63,20 @@ if [ -x "$ROOTFS_DIR/usr/local/bin/bootsplash" ]; then
     cp "$ROOTFS_DIR/usr/local/bin/bootsplash" "$STAGE/bin/bootsplash"
 fi
 
+# Boot readahead (tools/nexa-preload): reads what the boot will need from
+# nexa.img in large in-order pieces, started below as soon as the image is found.
+if [ -x "$ROOTFS_DIR/usr/local/bin/nexa-preload" ]; then
+    cp "$ROOTFS_DIR/usr/local/bin/nexa-preload" "$STAGE/bin/nexa-preload"
+fi
+
+# GPU firmware goes in archives of its own (below), so a boot loader can
+# load only the one this machine needs (the ISO's GRUB picks by CPU maker).
+FW_STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE" "$FW_STAGE"' EXIT
 for fwdir in i915 amdgpu; do
     if [ -d "$ROOTFS_DIR/lib/firmware/$fwdir" ]; then
-        mkdir -p "$STAGE/lib/firmware"
-        cp -a "$ROOTFS_DIR/lib/firmware/$fwdir" "$STAGE/lib/firmware/"
+        mkdir -p "$FW_STAGE/$fwdir/lib/firmware"
+        cp -a "$ROOTFS_DIR/lib/firmware/$fwdir" "$FW_STAGE/$fwdir/lib/firmware/"
     fi
 done
 # Same timing for the Wi-Fi regulatory database: cfg80211 is built in and
@@ -277,6 +287,11 @@ if [ -n "$LIVE_DEV" ] && [ -f /mnt/cdrom/nexa.img ]; then
                 ;;
         esac
     fi
+    # Read ahead what this boot will need (recorded on a reference boot by
+    # `make preload-map`), in the background while the system starts.
+    if [ -x /bin/nexa-preload ] && [ -f /mnt/cdrom/boot/nexa-preload.map ]; then
+        /bin/nexa-preload replay /mnt/cdrom/nexa.img /mnt/cdrom/boot/nexa-preload.map >/dev/null 2>&1 &
+    fi
     echo "[INIT] Setting up loop + overlay..."
     mkdir -p /mnt/lower /mnt/live
     # noload: nexa.img's ext4 journal may be "dirty" (not cleanly unmounted --
@@ -374,5 +389,15 @@ exec /bin/sh
 INIT_EOF
 chmod +x "$STAGE/init"
 
-( cd "$STAGE" && find . -print0 | cpio --null -ov --format=newc 2>/dev/null | gzip -9 ) > "$OUT"
-echo "[OK] initramfs: $(du -h "$OUT" | cut -f1)"
+# Three archives: the core (gzip), and Intel and AMD GPU firmware (already
+# zstd-compressed files, so stored as plain cpio). The kernel unpacks
+# archives laid end to end, so $OUT - the one installed systems and direct
+# QEMU boots use - is simply all three together.
+dir=$(dirname "$OUT")
+( cd "$STAGE" && find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 ) > "$dir/initramfs-core.cpio.gz"
+for fwdir in i915 amdgpu; do
+    mkdir -p "$FW_STAGE/$fwdir"
+    ( cd "$FW_STAGE/$fwdir" && find . -print0 | cpio --null -o --format=newc 2>/dev/null ) > "$dir/initramfs-$fwdir.cpio"
+done
+cat "$dir/initramfs-core.cpio.gz" "$dir/initramfs-i915.cpio" "$dir/initramfs-amdgpu.cpio" > "$OUT"
+echo "[OK] initramfs: core $(du -h "$dir/initramfs-core.cpio.gz" | cut -f1), Intel GPU firmware $(du -h "$dir/initramfs-i915.cpio" | cut -f1), AMD $(du -h "$dir/initramfs-amdgpu.cpio" | cut -f1); all together $(du -h "$OUT" | cut -f1)"

@@ -589,6 +589,32 @@ BROKER_EOF
     chmod +x "$MNT_DIR/etc/init.d/nexa-broker"
     ln -sf /etc/init.d/nexa-broker "$MNT_DIR/etc/runlevels/default/nexa-broker"
 
+    echo "[*] Generating the boot readahead recorder (nexa-preload)..."
+    # On a live boot without a readahead map (or with nexa.preload_record on
+    # the kernel command line) this records which parts of nexa.img the boot
+    # reads, for `make preload-map` to put on the ISO. Costs one mincore()
+    # call every half second for 75 s; does nothing on installed systems.
+    cat > "$MNT_DIR/etc/init.d/nexa-preload" << 'PRELOAD_EOF'
+#!/sbin/openrc-run
+description="Record what the live boot reads (boot readahead map)"
+
+depend() {
+    need localmount
+}
+
+start() {
+    img=/mnt/nexa-live/nexa.img
+    [ -f "$img" ] || return 0
+    if [ -f /mnt/nexa-live/boot/nexa-preload.map ] && ! grep -qw nexa.preload_record /proc/cmdline; then
+        return 0
+    fi
+    mkdir -p /run/nexa-preload
+    start-stop-daemon --start --background --exec /usr/local/bin/nexa-preload -- record "$img" /run/nexa-preload/boot.map 75
+}
+PRELOAD_EOF
+    chmod +x "$MNT_DIR/etc/init.d/nexa-preload"
+    ln -sf /etc/init.d/nexa-preload "$MNT_DIR/etc/runlevels/default/nexa-preload"
+
     echo "[*] Generating the kernel link for Nexa Mind (nexa-kerneld)..."
     # nexa-kerneld (Rust, tools/nexa-kerneld): pressure (PSI triggers),
     # crashes (netlink process connector), OOM kills (/dev/kmsg) and power
@@ -731,6 +757,9 @@ SYSCTL_EOF
     # cgroup v2 at /sys/fs/cgroup: nexa-kerneld gives the AI its own CPU share.
     [ -x "$MNT_DIR/etc/init.d/cgroups" ] && ln -sf /etc/init.d/cgroups "$MNT_DIR/etc/runlevels/boot/cgroups"
     [ -f "$MNT_DIR/etc/rc.conf" ] && sed -i 's/^#\?rc_cgroup_mode=.*/rc_cgroup_mode="unified"/' "$MNT_DIR/etc/rc.conf"
+    # Start services side by side (each still waits for what it needs): the
+    # desktop no longer waits behind Wi-Fi, Bluetooth, the firewall or the AI.
+    [ -f "$MNT_DIR/etc/rc.conf" ] && sed -i 's/^#\?rc_parallel=.*/rc_parallel="YES"/' "$MNT_DIR/etc/rc.conf"
 
     echo "[*] Enabling syslog and crond (sshd stays off)..."
     # All three are already installed (openssh/busybox-extras from
@@ -866,8 +895,13 @@ output * bg /usr/share/backgrounds/nexaos/wallpaper.png fill
 seat * xcursor_theme Adwaita 24
 
 # Laptop touchpads: tap to click, natural scrolling, ignore while typing.
+# Tap-and-drag (tap, then touch again and slide) moves windows and files;
+# drag lock keeps the drag going when the finger lifts at the touchpad's
+# edge, so a window crosses the screen on a small laptop touchpad.
 input type:touchpad {
     tap enabled
+    drag enabled
+    drag_lock enabled
     natural_scroll enabled
     dwt enabled
     middle_emulation enabled
@@ -1054,6 +1088,8 @@ input {
     touchpad {
         natural_scroll = true
         tap-to-click = true
+        tap-and-drag = true
+        drag_lock = 1
         disable_while_typing = true
     }
 }
@@ -1113,6 +1149,8 @@ bind = SUPER SHIFT, 3, movetoworkspace, 3
 bind = SUPER SHIFT, 4, movetoworkspace, 4
 bind = SUPER SHIFT, 5, movetoworkspace, 5
 bindm = SUPER, mouse:272, movewindow
+# Alt + drag anywhere in a window moves it too (needs no title bar).
+bindm = ALT, mouse:272, movewindow
 bindm = SUPER, mouse:273, resizewindow
 bindel = , XF86AudioRaiseVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
 bindel = , XF86AudioLowerVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-

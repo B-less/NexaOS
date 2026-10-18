@@ -19,12 +19,14 @@ pub struct Config {
     pub never_suggest: Vec<String>,
     /// "Hide for today": the card stays empty until this Unix time.
     pub hidden_until: u64,
+    /// Faster app starts: read likely apps into memory ahead of time.
+    pub preload: bool,
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config { enabled: false, desktop_card: true, card_position: "top-right".into(), excluded_apps: vec![],
-                 never_suggest: vec![], hidden_until: 0 }
+                 never_suggest: vec![], hidden_until: 0, preload: true }
     }
 }
 

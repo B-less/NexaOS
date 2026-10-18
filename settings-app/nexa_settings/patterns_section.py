@@ -36,6 +36,8 @@ class PatternsSection:
         self._building = True
         self.enabled = self._switch_row("Learn how I use NexaOS", lambda on: self._set(enabled=on))
         self.desktop = self._switch_row("Show suggestions on the desktop", lambda on: self._set(desktop_card=on))
+        self.preload = self._switch_row("Faster app starts (load the apps you'll likely open into free memory ahead of time)",
+                                        lambda on: self._set(preload=on))
         pos_row = Gtk.Box(spacing=10)
         pos_row.pack_start(_label("Where on the desktop", "nx-perm-label"), True, True, 0)
         self.position = Gtk.ComboBoxText()
@@ -83,6 +85,8 @@ class PatternsSection:
         self.enabled.set_active(cfg["enabled"])
         self.desktop.set_active(cfg["desktop_card"])
         self.desktop.set_sensitive(cfg["enabled"])
+        self.preload.set_active(cfg["preload"])
+        self.preload.set_sensitive(cfg["enabled"])
         self.position.set_active_id(cfg["card_position"] if cfg["card_position"] in patterns.POSITIONS else "top-right")
         self.position.set_sensitive(cfg["enabled"] and cfg["desktop_card"])
         self._building = False

@@ -46,6 +46,36 @@ if [ -f "$ROOTFS_DIR/usr/sbin/unix_chkpwd" ]; then
     chmod 2755 "$ROOTFS_DIR/usr/sbin/unix_chkpwd"
 fi
 
+# Boot caches, made once here instead of at every start: the live system
+# keeps its changes in RAM, so anything it caches for itself is gone at
+# shutdown and rebuilt (slowly, from the USB stick) at the next boot.
+# - Python bytecode for NexaOS's apps and the Python library (unchecked-hash:
+#   valid whatever the file times), so the bar, Dock and apps don't compile
+#   themselves each time they start;
+# - OpenRC's service dependency tree, which init.sh restores from
+#   /var/cache/rc instead of re-reading every init script;
+# - font, image-loader, GIO module, MIME, GSettings and icon caches.
+run_in_root() { chroot "$ROOTFS_DIR" "$@" >/dev/null 2>&1 || echo "WARN: boot cache step failed: $*"; }
+if [ -x "$ROOTFS_DIR/usr/bin/python3" ]; then
+    for d in "$ROOTFS_DIR"/usr/local/lib "$ROOTFS_DIR"/usr/lib/python3*; do
+        run_in_root /usr/bin/python3 -m compileall -q -j 1 --invalidation-mode unchecked-hash "${d#"$ROOTFS_DIR"}"
+    done
+fi
+mkdir -p "$ROOTFS_DIR/run/openrc" "$ROOTFS_DIR/var/cache/rc"
+run_in_root /usr/libexec/rc/bin/rc-depend -u
+for f in deptree depconfig; do
+    [ -f "$ROOTFS_DIR/run/openrc/$f" ] && mv "$ROOTFS_DIR/run/openrc/$f" "$ROOTFS_DIR/var/cache/rc/$f"
+done
+rm -rf "$ROOTFS_DIR/run/openrc"
+run_in_root /usr/bin/fc-cache -s
+run_in_root /usr/bin/gdk-pixbuf-query-loaders --update-cache
+[ -d "$ROOTFS_DIR/usr/lib/gio/modules" ] && run_in_root /usr/bin/gio-querymodules /usr/lib/gio/modules
+[ -d "$ROOTFS_DIR/usr/share/mime" ] && run_in_root /usr/bin/update-mime-database /usr/share/mime
+[ -d "$ROOTFS_DIR/usr/share/glib-2.0/schemas" ] && run_in_root /usr/bin/glib-compile-schemas /usr/share/glib-2.0/schemas
+for theme in "$ROOTFS_DIR"/usr/share/icons/*/; do
+    [ -f "$theme/index.theme" ] && run_in_root /usr/bin/gtk-update-icon-cache -q -t -f "${theme#"$ROOTFS_DIR"}"
+done
+
 rm -f "$IMG"
 # mke2fs creates the backing file itself when it doesn't exist yet, sized from
 # the trailing size argument (accepts K/M/G suffixes) — no qemu-img needed.

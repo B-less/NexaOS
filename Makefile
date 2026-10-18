@@ -27,7 +27,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card preload-map
 .SECONDARY:
 
 # ============================================================================
@@ -258,6 +258,14 @@ test-native:
 # in a headless Sway, against the real nexa-fileops engine.
 test-files-app: native
 	@sh scripts/test-files-app.sh
+
+# Boot readahead: boot the fresh ISO once, record which parts of nexa.img the
+# boot reads (nexa-preload), and repack the ISO with that map so every later
+# boot reads them ahead in large in-order pieces. Run after `make iso`/`refresh`.
+preload-map:
+	@rm -f $(DIST_DIR)/nexa-preload.map
+	@python3 scripts/test-live-boot.py --no-checks --shot $(DIST_DIR)/preload-boot.png --fetch /run/nexa-preload/boot.map $(DIST_DIR)/nexa-preload.map
+	@$(DOCKER_RUN) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
 
 # The desktop "For you" card and Nexus' Suggested row (Nexa Patterns) in a
 # headless Sway, against the real nexa-patternd with a synthetic month of use.

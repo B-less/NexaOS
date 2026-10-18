@@ -33,6 +33,10 @@ impl Drop for Session {
 
 impl Session {
     fn start(name: &str, seed_days: Option<u64>) -> Session {
+        Session::start_with(name, seed_days, &[])
+    }
+
+    fn start_with(name: &str, seed_days: Option<u64>, extra_env: &[(&str, &str)]) -> Session {
         let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("patterns-{name}"));
         let _ = fs::remove_dir_all(&root);
         for d in ["home/.config/nexa", "home/.local/share/nexa-patterns", "run", "sys/class/power_supply"] {
@@ -65,6 +69,7 @@ impl Session {
         let child = Command::new(env!("CARGO_BIN_EXE_nexa-patternd")).arg("serve")
             .env_clear().env("HOME", root.join("home")).env("XDG_RUNTIME_DIR", root.join("run")).env("SWAYSOCK", &sway)
             .env("NEXA_PATTERNS_SYS", root.join("sys")).env("NEXA_PATTERNS_DWELL_MS", "300").env("TZ", "UTC")
+            .envs(extra_env.iter().copied())
             .spawn().unwrap();
         for _ in 0..100 {
             if root.join("run/nexa-patterns.sock").exists() {
@@ -171,4 +176,51 @@ fn a_month_in_suggestions() {
     assert!(after < before, "{after} < {before}");
     let learned = s.ask(json!({"op": "apps"}));
     assert!(learned["apps"].as_array().unwrap().len() >= 6, "{learned}");
+}
+
+#[test]
+fn faster_starts() {
+    let s = Session::start("warm", None);
+    s.configure(json!({"enabled": true}));
+    // A real process in front: what it loaded is noted (system files only).
+    let mut app = Command::new("sleep").arg("30").spawn().unwrap();
+    s.use_app("nexa-calc", app.id() as i32, "Calculator");
+    let list = fs::read_to_string(s.root.join("home/.local/share/nexa-patterns/apps/nexa-calc.files")).unwrap_or_default();
+    assert!(!list.is_empty() && list.lines().all(|l| ["/usr/", "/lib/", "/bin/", "/sbin/", "/opt/"].iter().any(|p| l.starts_with(p))), "{list}");
+    let _ = app.kill();
+    let _ = app.wait();
+    let w = s.ask(json!({"op": "warm", "app": "nexa-calc"}));
+    assert!(w["done"].as_str().unwrap().starts_with("reading"), "{w}");
+    std::thread::sleep(Duration::from_millis(300));
+    let st = s.ask(json!({"op": "status"}));
+    assert!(st["warmed"].as_array().unwrap().iter().any(|x| x["app"] == "nexa-calc" && x["bytes"].as_u64().unwrap() > 0), "{st}");
+    // An app it knows nothing about: a clear answer, not a crash.
+    let mut sock = UnixStream::connect(s.root.join("run/nexa-patterns.sock")).unwrap();
+    writeln!(sock, "{}", json!({"op": "warm", "app": "never-seen"})).unwrap();
+    let mut line = String::new();
+    BufReader::new(sock).read_line(&mut line).unwrap();
+    assert!(line.contains("nothing known yet"), "{line}");
+}
+
+#[test]
+fn warming_the_assistant_loads_the_ai() {
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("patterns-mind");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    // A fake Nexa Mind that records the request.
+    let mind = root.join("mind.sock");
+    let listener = UnixListener::bind(&mind).unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let (c, _) = listener.accept().unwrap();
+        let mut line = String::new();
+        BufReader::new(&c).read_line(&mut line).unwrap();
+        (&c).write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n").unwrap();
+        tx.send(line).unwrap();
+    });
+    let s = Session::start_with("assistant", None, &[("NEXA_PATTERNS_MIND_SOCKET", mind.to_str().unwrap())]);
+    s.configure(json!({"enabled": true}));
+    let w = s.ask(json!({"op": "warm", "app": "nexa-ai"}));
+    assert_eq!(w["done"], "asked Nexa Mind to load its model");
+    assert!(rx.recv_timeout(Duration::from_secs(2)).unwrap().starts_with("POST /v1/warm "));
 }

@@ -1,0 +1,9 @@
+[package]
+name = "nexa-preload"
+version = "0.1.0"
+edition = "2021"
+description = "Boot readahead for the live system: records which parts of nexa.img a boot reads, and reads them ahead, in order, on later boots"
+
+[dependencies]
+libc = "0.2"
+nexa-sys = { path = "../nexa-sys" }

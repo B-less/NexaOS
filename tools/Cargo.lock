@@ -333,6 +333,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-preload"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+]
+
+[[package]]
 name = "nexa-run"
 version = "0.1.0"
 dependencies = [

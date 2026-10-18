@@ -256,3 +256,29 @@ private/excluded/flicked windows never recorded, titles never kept,
 forgetting deletes), `common/tests/test_patterns.py` (the client against the
 real daemon) and `make test-desktop-card` (the card and Nexus in a headless
 Sway, with screenshots).
+
+## 10. Phase 3: faster starts (built)
+
+- **What an app needs:** when an app has been in front for 5 s, the
+  daemon notes the system files it has loaded - its program and libraries
+  from `/proc/<pid>/maps`, and for NexaOS's Python apps their package plus
+  `nexa_common` and `gi` - in `~/.local/share/nexa-patterns/apps/<app>.files`
+  (system folders only, refreshed weekly). Landlock forbids a confined
+  process from reading other processes' maps, so a small helper started
+  before confinement (`nexa-patternd maps-helper`) answers only "pid ->
+  loaded system files".
+- **Getting ahead:** every minute, apps at least 30% likely to be next and
+  not already running are read into the page cache (readahead(2)), at most
+  once per half hour each, up to 300 MB per app - only with a quarter of RAM
+  left free, no memory pressure, and on mains or 30%+ battery. Settings >
+  Privacy > Patterns > "Faster app starts" switches it off.
+- **The assistant:** when it's likely next (and on mains or 50%+ battery),
+  `nexa-mindd` is asked to load the model (`POST /v1/warm`), saving the
+  5-10 s load; it unloads after the usual idle time if not used.
+- `nexa-patternd` `{"op": "warm", "app": ...}` does the same on demand;
+  `status` lists what was warmed and how much.
+
+Tests: `cargo test -p nexa-patternd` (a real process's files captured
+through the helper, system files only; warming reads them into memory; the
+assistant's warm-up reaches a fake Nexa Mind), and the unit tests of
+`nexa_sys::preload` (mincore/readahead, the memory guard).
