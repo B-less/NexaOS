@@ -88,7 +88,7 @@ dismissals of the same routine retire it.
 
 | Prediction | What you notice | Acts silently? |
 |---|---|---|
-| Next app (top 3) | a "Suggested" row in Launchpad, the Dock's first slot hint | yes (only arranges) |
+| Next app (top 3) | **on the desktop** (see 4a), a "Suggested" row in Launchpad, the Dock's first slot hint | yes (only arranges) |
 | Next app, high confidence | **the app opens faster**: its program and libraries are read into memory ahead of time (`readahead` / `posix_fadvise(WILLNEED)`, done as you, no root), and `nexa-kerneld` gives it the CPU floor the moment it starts | yes (only uses idle time and free memory; dropped under memory pressure) |
 | You usually ask the assistant now | the AI model is loaded into memory a minute before, unloaded when you usually stop (saves the 5–10 s load) | yes, only on mains power or above 50% battery |
 | Routine found | an offer: "Open Mail, Browser and Notes together at 9:00?" | no: becomes automatic only after "Yes" |
@@ -100,6 +100,42 @@ dismissals of the same routine retire it.
 
 Every suggestion has a **Why?** that shows the evidence, and a
 **Don't suggest this** that removes it.
+
+### 4a. Suggestions on the desktop
+
+A "For you" card on the desktop itself, drawn by the shell
+(`nexa_shell desktop`, GTK + gtk-layer-shell on the **bottom layer**: above
+the wallpaper, below every window, so it's there when the desktop is
+visible and never covers your work). Works the same in Sway and Hyprland.
+
+```
+ ┌ For you ───────────────────────── 08:42 ┐
+ │  ⬡ Mail     ⬡ Browser    ⬡ Notes         │   apps you'll likely open next
+ │  Weekday morning: open all three?  [Open]│   a routine (only once it's found)
+ │  📄 report-q3.odt (Documents)            │   the file you usually pick up now
+ │  🔋 Lasts until about 15:40               │   battery forecast, when unplugged
+ └──────────────────────────────────────────┘
+```
+
+- **Changes with the moment:** recomputed when you come back to the desktop,
+  every 15 minutes, and when the context changes (plugged in, another
+  network, morning → afternoon). It shows at most 3 apps, 1 routine, 1 file
+  and 1 forecast, only those above the confidence threshold. Nothing
+  confident to say: it shows nothing (no filler).
+- **Mouse:** click an app or file to open it; [Open] runs the routine;
+  hover for **Why?** ("opened at about this time on 9 of the last 10
+  weekdays"); right-click: Don't suggest this · Why? · Hide for today ·
+  Move the card (top-left, top-right, bottom-right, centre).
+- **Hexa design:** a translucent glass card in the theme's `@nexa_*`
+  colours (blurred on Hyprland), hexagon app badges, Inter, a soft fade
+  when it updates; follows light/dark and the accent colour.
+- **Costs nothing when hidden:** it asks `nexa-patternd` only when the
+  desktop is visible (a window-count check over the compositor's IPC) and
+  sleeps otherwise.
+- **Feedback:** clicks count as "used", right-click "Don't suggest" counts
+  as a negative example (section 3), so the card learns what's useful.
+- **Off switch:** Settings > Privacy > Patterns > "Show suggestions on the
+  desktop" (on by default once Patterns is on), plus the position.
 
 ---
 
@@ -118,7 +154,7 @@ Every suggestion has a **Why?** that shows the evidence, and a
                           predict(next_app | battery | routine | brightness), explain, feedback,
                           forget(app | since | all), export, pause
                                                           ▼
-           Launchpad / Dock · bar battery menu · Files · assistant tool `my_patterns` · Settings > Privacy > Patterns
+  desktop "For you" card · Launchpad / Dock · bar battery menu · Files · assistant tool `my_patterns` · Settings > Privacy > Patterns
 ```
 
 - **Per user, not root.** `nexa-patternd` runs as the person, Landlock-
@@ -141,7 +177,8 @@ Every suggestion has a **Why?** that shows the evidence, and a
   battery profile, learned brightness, each with its evidence.
 - Per app: "Don't learn from this app", "Forget this app".
 - Forget the last hour / day / everything; Export (JSON) to see the raw data.
-- Switches: Suggestions · Faster app starts (preloading) · Routines ·
+- Switches: Suggestions · Show suggestions on the desktop (and where) ·
+  Faster app starts (preloading) · Routines ·
   Learned brightness and volume · Quiet hours · Let the assistant use my
   patterns.
 - How well it's doing: "Suggestions were right 7 times in 10 this week".
@@ -156,10 +193,10 @@ rule, the ISO is built once for the whole batch.
 | Phase | Builds | Done when (tests) |
 |---|---|---|
 | **P1 — Journal and controls** | `nexa-patternd` (journal, decay, forget, export, pause); `nexa-kerneld` `subscribe` (own-uid events only); Settings > Privacy > Patterns (on/off, forget, export) | events recorded only when on; forget really deletes (journal and counts); private windows and excluded apps never recorded; another account's events never arrive |
-| **P2 — Next app** | time habits, Markov chains, the ranker; Launchpad "Suggested" row; Why? / Don't suggest | replaying a synthetic month of usage gives top-3 accuracy ≥ 60% on its last week; explanations match the counts |
+| **P2 — Next app, on the desktop** | time habits, Markov chains, the ranker; the desktop "For you" card (apps, then files) and Launchpad's "Suggested" row; Why? / Don't suggest / Hide for today | replaying a synthetic month of usage gives top-3 accuracy ≥ 60% on its last week; explanations match the counts; the card shows nothing below the threshold, sits under windows (headless Sway screenshot test), and a dismissed app doesn't come back |
 | **P3 — Faster starts** | preloader (readahead of predicted apps' executables and libraries, memory-pressure aware); AI model warm-up at usual assistant times | measured cold-start time of a predicted app drops (target −30% on the HP); preloading stops when memory PSI rises |
-| **P4 — Battery and brightness** | battery profile and forecast in the bar; learned brightness/volume curves, offered first | forecast error under 20 min on replayed real logs; brightness offer appears only after 10 consistent changes and turns off at the next manual change |
-| **P5 — Routines and the assistant** | routine mining when idle; routine offers; `my_patterns` assistant tool and the opt-in context summary | a planted daily routine in synthetic data is found within 5 days; three dismissals retire it; the summary contains no file names or window titles |
+| **P4 — Battery and brightness** | battery profile and forecast in the bar and on the desktop card; learned brightness/volume curves, offered first | forecast error under 20 min on replayed real logs; brightness offer appears only after 10 consistent changes and turns off at the next manual change |
+| **P5 — Routines and the assistant** | routine mining when idle; routine offers on the desktop card; `my_patterns` assistant tool and the opt-in context summary | a planted daily routine in synthetic data is found within 5 days; three dismissals retire it; the summary contains no file names or window titles |
 | **P6 — Wider view (optional)** | file-open patterns for every app (`FANOTIFY`), Files "Likely next" folders | needs a kernel option; done only if P1–P5 prove useful |
 
 **Evaluation tool:** `nexa-patternd replay <journal>` runs the models over
