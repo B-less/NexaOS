@@ -5,16 +5,17 @@
 //!   nexa-pack keygen <NAME>                 writes NAME.key (secret) and NAME.pub
 //!   nexa-pack verify <FILE> [--keys DIR] [--json]
 //!   nexa-pack extract <FILE> <DEST> [--keys DIR] [--json]
+//!   nexa-pack repo build <DIR> [--key FILE]   Nexa Store catalogue (index.json)
+//!   nexa-pack repo verify <DIR> [--keys DIR] [--json]
 //!
 //! The install helper runs `extract --json`: it verifies the package and
 //! writes the files from the same bytes it checked. Exit status: 0 valid,
 //! 1 invalid or failed, 2 usage error.
 
-mod manifest;
-mod package;
 mod project;
-mod sign;
 mod templates;
+
+use nexa_pack::{manifest, package, repo, sign};
 
 use std::fs;
 use std::io::Write;
@@ -28,7 +29,9 @@ const USAGE: &str = "usage:
   nexa-pack build [DIR] [--key FILE] [-o FILE] [--no-build]
   nexa-pack keygen <NAME>
   nexa-pack verify <FILE> [--keys DIR] [--json]
-  nexa-pack extract <FILE> <DEST> [--keys DIR] [--json]";
+  nexa-pack extract <FILE> <DEST> [--keys DIR] [--json]
+  nexa-pack repo build <DIR> [--key FILE]
+  nexa-pack repo verify <DIR> [--keys DIR] [--json]";
 
 struct Args {
     positional: Vec<String>,
@@ -177,6 +180,32 @@ fn main() {
             let v = verify_file(path, &args).unwrap_or_else(|e| fail_json(json, &e));
             package::extract(&v, Path::new(dest)).unwrap_or_else(|e| fail_json(json, &e));
             if json { println!("{}", report_json(&v)) } else { print_report(&v) }
+        }
+        "repo" => {
+            let (Some(sub), Some(dir)) = (args.positional.first(), args.positional.get(1)) else { die(USAGE, 2) };
+            let keys = PathBuf::from(args.get("--keys").unwrap_or(DEFAULT_KEYS));
+            let trust = keys.is_dir().then_some(keys.as_path());
+            match sub.as_str() {
+                "build" => {
+                    let key = args.get("--key").map(|k| sign::read_secret(Path::new(k)).unwrap_or_else(|e| die(&e, 1)));
+                    let index = repo::build(Path::new(dir), key.as_ref(), trust).unwrap_or_else(|e| die(&e, 1));
+                    println!("{}/index.json: {} apps{}", dir, index.apps.len(),
+                             key.map(|k| format!(", signed by {}", sign::key_id(&k.verifying_key()))).unwrap_or_else(|| ", NOT signed".into()));
+                }
+                "verify" => {
+                    let json = args.has("--json");
+                    match repo::verify_dir(Path::new(dir), trust) {
+                        Ok((index, t)) if json => println!("{}", serde_json::json!({"ok": true, "trust": t.label(), "publisher": t.publisher(), "apps": index.apps.len()})),
+                        Ok((index, t)) => println!("{} apps; catalogue {}", index.apps.len(), match &t {
+                            package::Trust::Trusted(id) => format!("signed by trusted publisher {id}"),
+                            package::Trust::UnknownPublisher(id) => format!("signed by {id}, which this system doesn't trust"),
+                            package::Trust::Unsigned => "NOT signed".into(),
+                        }),
+                        Err(e) => fail_json(json, &e),
+                    }
+                }
+                _ => die(USAGE, 2),
+            }
         }
         "-h" | "--help" | "help" => println!("{USAGE}"),
         _ => die(USAGE, 2),
