@@ -796,7 +796,17 @@ def _system_info():
         ("Architecture", u.machine),
         ("Memory", mem_total),
         ("Disk", f"{disk_free:.1f} GB free of {disk_total:.1f} GB"),
-    ]
+    ] + _security_info()
+
+
+def _security_info():
+    """The security chip (TPM 1.2 / 2.0) and Secure Boot, read by nexa-doctor (Rust)."""
+    try:
+        out = subprocess.run(["nexa-doctor", "security"], capture_output=True, text=True, timeout=3).stdout
+        r = json.loads(out)["result"]
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        return []
+    return [("Security chip", r["tpm"]["summary"]), ("Secure Boot", r["secure_boot"])]
 
 
 def main():

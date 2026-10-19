@@ -5,6 +5,7 @@
 //!   nexa-doctor check          what's wrong right now (JSON)
 //!   nexa-doctor fix ID         fix one finding (volume, brightness, wifi, restart:PART)
 //!   nexa-doctor log            what it did lately
+//!   nexa-doctor security       the security chip (TPM 1.2 / 2.0) and Secure Boot (JSON)
 //!
 //! Watchdog: the desktop's own parts (the bar, notifications, the Dock, the
 //! "For you" card, Nexa Patterns, the focus watcher, idle/screen-off,
@@ -211,6 +212,69 @@ fn wifi_hard_blocked(sys: &Path) -> bool {
     })
 }
 
+/// A TPM maker from the 4 ASCII letters TPM 1.2 reports ("Manufacturer: 0x49465800").
+fn tpm_maker(code: &str) -> Option<String> {
+    let n = u32::from_str_radix(code.trim().trim_start_matches("0x"), 16).ok()?;
+    let id: String = n.to_be_bytes().iter().filter(|b| b.is_ascii_alphanumeric()).map(|&b| b as char).collect();
+    let name = match id.as_str() {
+        "IFX" => "Infineon", "STM" => "STMicroelectronics", "NTC" => "Nuvoton", "ATML" => "Atmel",
+        "INTC" => "Intel", "BRCM" => "Broadcom", "AMD" => "AMD", "NSM" => "National Semiconductor",
+        "" => return None,
+        other => other,
+    };
+    Some(name.to_string())
+}
+
+/// The security chip (TPM) and Secure Boot, from sysfs. Both TPM 1.2 and
+/// 2.0 use the same kernel drivers: tpm_tis for a separate chip, tpm_crb for
+/// one built into the processor's firmware (Intel PTT, AMD fTPM).
+pub fn security(sys: &Path) -> Value {
+    let dev = sys.join("class/tpm/tpm0");
+    let tpm = if dev.exists() {
+        let caps = fs::read_to_string(dev.join("caps")).or_else(|_| fs::read_to_string(dev.join("device/caps"))).unwrap_or_default();
+        let field = |name: &str| caps.lines().find_map(|l| l.strip_prefix(name)).map(|v| v.trim().to_string());
+        let version = match fs::read_to_string(dev.join("tpm_version_major")).map(|v| v.trim().to_string()).as_deref() {
+            Ok("2") => "2.0".to_string(),
+            Ok("1") => field("TCG version:").unwrap_or_else(|| "1.2".into()),
+            _ => field("TCG version:").unwrap_or_else(|| "2.0".into()),
+        };
+        let driver = fs::read_link(dev.join("device/driver")).ok()
+            .and_then(|l| l.file_name().map(|n| n.to_string_lossy().into_owned())).unwrap_or_default();
+        let kind = if driver == "tpm_crb" { "built into the processor" } else { "separate chip" };
+        let maker = field("Manufacturer:").and_then(|m| tpm_maker(&m));
+        let firmware = field("Firmware version:");
+        let mut summary = format!("TPM {version} ({kind}");
+        if let Some(m) = &maker {
+            summary += &format!(", {m}");
+        }
+        summary.push(')');
+        json!({"present": true, "version": version, "kind": kind, "driver": driver, "maker": maker,
+               "firmware": firmware, "summary": summary})
+    } else {
+        // Firmware lists a TPM (ACPI MSFT0101 = 2.0, PNP0C31 = 1.2) but no driver took it.
+        let listed = fs::read_dir(sys.join("bus/acpi/devices")).into_iter().flatten().flatten()
+            .any(|e| { let n = e.file_name().to_string_lossy().into_owned(); n.starts_with("MSFT0101") || n.starts_with("PNP0C31") });
+        let summary = if listed {
+            "Found but not working (try switching it off and on in the BIOS)"
+        } else {
+            "None found (it may be switched off in the BIOS: Security > TPM)"
+        };
+        json!({"present": false, "listed_by_firmware": listed, "summary": summary})
+    };
+    let efi = sys.join("firmware/efi");
+    let secure_boot = if !efi.exists() {
+        "Not available (started in legacy BIOS mode)"
+    } else {
+        // efivars: 4 attribute bytes, then the value.
+        match fs::read(efi.join("efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c")).ok().and_then(|b| b.get(4).copied()) {
+            Some(1) => "On",
+            Some(_) => "Off",
+            None => "Off",
+        }
+    };
+    json!({"tpm": tpm, "secure_boot": secure_boot})
+}
+
 /// Free space on the home folder's filesystem, as a fraction.
 fn home_free() -> Option<f64> {
     let home = std::ffi::CString::new(std::env::var("HOME").ok()?).ok()?;
@@ -392,7 +456,8 @@ fn main() {
         },
         Some("log") => Ok(json!({"log": fs::read_to_string(state_dir().join("log.jsonl")).unwrap_or_default().lines()
             .rev().take(50).filter_map(|l| serde_json::from_str::<Value>(l).ok()).collect::<Vec<_>>()})),
-        _ => Err("usage: nexa-doctor watch | check | fix ID | log".into()),
+        Some("security") => Ok(security(&sys_root())),
+        _ => Err("usage: nexa-doctor watch | check | fix ID | log | security".into()),
     };
     match reply {
         Ok(v) => println!("{}", json!({"ok": true, "result": v})),
@@ -447,5 +512,40 @@ mod tests {
         fs::write(rf.join("type"), "wlan\n").unwrap();
         fs::write(rf.join("hard"), "1\n").unwrap();
         assert!(wifi_hard_blocked(&r));
+    }
+
+    #[test]
+    fn security_chip_on_a_fake_sys() {
+        let r = std::env::temp_dir().join(format!("nexa-doctor-tpm-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&r);
+        fs::create_dir_all(&r).unwrap();
+        let v = security(&r);
+        assert_eq!(v["tpm"]["present"], false);
+        assert!(v["tpm"]["summary"].as_str().unwrap().contains("BIOS"));
+        assert!(v["secure_boot"].as_str().unwrap().contains("legacy"));
+        // TPM 1.2, a separate Infineon chip; Secure Boot on.
+        let tpm = r.join("class/tpm/tpm0");
+        fs::create_dir_all(tpm.join("device")).unwrap();
+        fs::write(tpm.join("tpm_version_major"), "1\n").unwrap();
+        fs::write(tpm.join("device/caps"), "Manufacturer: 0x49465800\nTCG version: 1.2\nFirmware version: 6.43\n").unwrap();
+        fs::create_dir_all(r.join("drivers/tpm_tis")).unwrap();
+        std::os::unix::fs::symlink(r.join("drivers/tpm_tis"), tpm.join("device/driver")).unwrap();
+        fs::create_dir_all(r.join("firmware/efi/efivars")).unwrap();
+        fs::write(r.join("firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"), [6, 0, 0, 0, 1]).unwrap();
+        let v = security(&r);
+        assert_eq!(v["tpm"]["summary"], "TPM 1.2 (separate chip, Infineon)", "{v}");
+        assert_eq!(v["tpm"]["firmware"], "6.43");
+        assert_eq!(v["secure_boot"], "On");
+        // TPM 2.0 in the processor's firmware (Intel PTT): tpm_crb, no caps.
+        fs::write(tpm.join("tpm_version_major"), "2\n").unwrap();
+        fs::remove_file(tpm.join("device/caps")).unwrap();
+        fs::remove_file(tpm.join("device/driver")).unwrap();
+        fs::create_dir_all(r.join("drivers/tpm_crb")).unwrap();
+        std::os::unix::fs::symlink(r.join("drivers/tpm_crb"), tpm.join("device/driver")).unwrap();
+        assert_eq!(security(&r)["tpm"]["summary"], "TPM 2.0 (built into the processor)");
+        // Listed by the firmware, but no driver attached.
+        fs::remove_dir_all(r.join("class/tpm")).unwrap();
+        fs::create_dir_all(r.join("bus/acpi/devices/MSFT0101:00")).unwrap();
+        assert!(security(&r)["tpm"]["summary"].as_str().unwrap().starts_with("Found but not working"));
     }
 }

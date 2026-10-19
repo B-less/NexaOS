@@ -587,6 +587,10 @@ def fix_problem(args):
     return _doctor("fix", str(args.get("id", "")))
 
 
+def security_status(_args):
+    return _doctor("security")
+
+
 def system_pressure(_args):
     s = _kernel("status")
     return {"summary": s["pressure"]["summary"], "pressure": s["pressure"], "ai": s["ai"], "app_in_front": s["focus"],
@@ -951,6 +955,11 @@ TOOLS = {
         "description": "Fix one problem found by system_checkup, by its id (volume, brightness, wifi, or restart:...).",
         "input_schema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
     },
+    "security_status": {
+        "category": READ, "func": security_status,
+        "description": "The computer's security chip (TPM 1.2 or 2.0: present or not, separate chip or built into the processor, maker, firmware) and whether Secure Boot is on.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
     "system_pressure": {
         "category": READ, "func": system_pressure,
         "description": "Why the computer feels slow, from the kernel: how much programs are held up waiting for the processor, memory or the disk (PSI), which app is in front and boosted, and how much the AI itself is allowed to use.",
@@ -1157,6 +1166,8 @@ LOCAL_TOPICS = (
      ("kernel_events",)),
     (("problem", "broken", "not working", "doesn't work", "isn't working", "fix", "checkup", "check up", "diagnos", "wrong with", "repair"),
      ("system_checkup", "fix_problem")),
+    (("tpm", "security chip", "secure boot", "trusted platform"),
+     ("security_status",)),
     (("bright", "dim", "screen", "display"),
      ("set_brightness",)),
     (("time zone", "timezone", "wrong time"),

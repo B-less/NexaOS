@@ -79,8 +79,14 @@ Today Secure Boot must be off. Options:
    Add `SECURITY_LOCKDOWN_LSM` (integrity mode when booted securely) so root
    can't patch the running kernel either. Note that integrity lockdown turns
    off hibernation.
-3. **TPM** (`TCG_TPM`, `TCG_TIS`, CRB): later, for sealing a disk-encryption
-   key to the measured boot chain.
+3. **TPM** (`TCG_TPM`, `TCG_TIS`, `TCG_CRB`): the drivers are in the kernel
+   (2026-10-19). TPM 1.2 and 2.0 use the same drivers: `tpm_tis` for a
+   separate chip (Infineon, Nuvoton, STM...), `tpm_crb` for one built into
+   the processor's firmware (Intel PTT, AMD fTPM). `TCG_TPM2_HMAC` (bus
+   encryption) is off: it slows every boot and nothing uses it yet.
+   `nexa-doctor security` reports the chip and Secure Boot (Settings > About,
+   the assistant). Still to do: sealing a disk-encryption key to the
+   measured boot chain.
 
 ## Step 5 — disk encryption
 
