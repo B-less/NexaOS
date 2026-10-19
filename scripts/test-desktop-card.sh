@@ -24,7 +24,10 @@ for i in $(seq 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; s
 ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 || { tail -20 /tmp/sway.log; exit 1; }
 export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
 PYTHONPATH=/src/common python3 -c "from nexa_common import themes; themes.apply(reload=False)" >/dev/null 2>&1 || true
+python3 /src/shell/tests/test_nexus.py >/tmp/nexus.log 2>/tmp/err2.log; rc2=$?
+grep -v "^PASS" /tmp/nexus.log; grep -E "Traceback|Error" -A3 /tmp/err2.log | head -10
 python3 /src/shell/tests/test_desktop_card.py 2>/tmp/err.log; rc=$?
 grep -E "Traceback|Error|CRITICAL|Gtk-WARNING" -A3 /tmp/err.log | grep -v "xdg-toplevel-icon" | head -30
+[ $rc2 = 0 ] || exit $rc2
 exit $rc
 '

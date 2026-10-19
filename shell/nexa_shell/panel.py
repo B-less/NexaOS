@@ -38,7 +38,10 @@ def power(action):
     if action == "lock":
         spawn(["nexa-lock"])
         return
-    if action in ("suspend", "reboot", "poweroff"):
+    if action == "suspend":
+        # Lock first, so the laptop wakes up to the lock screen.
+        spawn(["sh", "-c", "nexa-lock; exec nexa-brokerd call suspend"])
+    elif action in ("reboot", "poweroff"):
         spawn(["nexa-brokerd", "call", action])
 
 

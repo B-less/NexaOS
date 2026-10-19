@@ -4,6 +4,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
 
+from nexa_common import compositor
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -38,7 +39,7 @@ class PowerWindow(Gtk.Window):
         super().__init__(title="Power")
         self.set_icon_name("nexa-power")
         attach_titlebar(self, "Power")
-        self.set_default_size(300, 340)
+        self.set_default_size(300, 390)
         self.set_resizable(False)
         self._armed = None
         self._armed_timer = None
@@ -57,6 +58,7 @@ class PowerWindow(Gtk.Window):
         self.buttons = {}
         for key, label, name in (
             ("lock", "Lock screen", "powerbtn"),
+            ("suspend", "Sleep", "powerbtn"),
             ("logout", "Log out", "powerbtn"),
             ("reboot", "Restart", "dangerbtn"),
             ("poweroff", "Shut down", "dangerbtn"),
@@ -101,6 +103,7 @@ class PowerWindow(Gtk.Window):
         return False
 
     def _on_action(self, _btn, key):
+        self.error_label.set_text("")
         if key in ("reboot", "poweroff"):
             # Two clicks: the first arms the button, the second within a few
             # seconds does it, so a stray click can't power the machine off.
@@ -119,8 +122,19 @@ class PowerWindow(Gtk.Window):
             return
         if key == "lock":
             subprocess.Popen(["nexa-lock"], start_new_session=True)
+        elif key == "suspend":
+            # Lock first, so the laptop wakes up to the lock screen.
+            subprocess.run(["nexa-lock"], check=False, timeout=10)
+            ok, error = _call_helper("suspend")
+            if not ok:
+                self.error_label.set_text(error or "That didn't work.")
+                return
         elif key == "logout":
-            subprocess.run(["swaymsg", "exit"], check=False)
+            # Hyprland or Sway, whichever is running (swaymsg alone did
+            # nothing on Hyprland, which real hardware runs).
+            if not compositor.logout():
+                self.error_label.set_text("Couldn't end the session.")
+                return
         self.close()
 
 

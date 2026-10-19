@@ -15,7 +15,11 @@ SETTINGS_PAGES = (
     ("vpn", "VPN", "wireguard private network tunnel"),
     ("system", "System", "hostname computer name live usb keep files persistence"),
     ("time", "Time & Keyboard", "clock date timezone time zone language keyboard layout"),
-    ("power", "Power", "battery sleep lock screen idle startup password"),
+    ("users", "Users", "accounts people account password administrator add person"),
+    ("updates", "Updates", "update upgrade software new version"),
+    ("startup", "Startup", "services boot start at startup background"),
+    ("power", "Power", "battery sleep lock screen idle password"),
+    ("privacy", "Privacy", "permissions apps camera microphone internet patterns suggestions learning"),
     ("assistant", "Assistant", "nexa ai claude api key model"),
     ("about", "About", "version system information hardware"),
 )

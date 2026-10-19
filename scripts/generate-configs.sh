@@ -621,6 +621,41 @@ BROKER_EOF
     chmod +x "$MNT_DIR/etc/init.d/nexa-broker"
     ln -sf /etc/init.d/nexa-broker "$MNT_DIR/etc/runlevels/default/nexa-broker"
 
+    echo "[*] Generating the volume/brightness key handler (nexa-media-key)..."
+    cat > "$MNT_DIR/usr/local/bin/nexa-media-key" << 'MEDIAKEY_EOF'
+#!/bin/sh
+# Volume and brightness keys: never past 100% volume, never below 5%
+# brightness (so the screen can't go black), and show the new level as a
+# notification with a bar that replaces the previous one.
+case "$1" in
+    volume-up)       wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ ;;
+    volume-down)     wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- ;;
+    mute)            wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+    brightness-up)   brightnessctl -q set 5%+ ;;
+    brightness-down) brightnessctl -q --min-value=5% set 5%- ;;
+    *) echo "usage: nexa-media-key volume-up|volume-down|mute|brightness-up|brightness-down" >&2; exit 2 ;;
+esac
+case "$1" in
+    volume*|mute)
+        out=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)
+        pct=$(echo "$out" | awk '{ printf "%d", $2 * 100 + 0.5 }')
+        case "$out" in
+            *MUTED*) label="Muted"; icon=audio-volume-muted ;;
+            *) label="Volume $pct%"; icon=audio-volume-high ;;
+        esac
+        tag=volume ;;
+    *)
+        pct=$(brightnessctl -m 2>/dev/null | cut -d, -f4 | tr -d %)
+        label="Brightness $pct%"; icon=display-brightness; tag=brightness ;;
+esac
+idf="${XDG_RUNTIME_DIR:-/tmp}/nexa-osd-$tag"
+id=$(cat "$idf" 2>/dev/null || echo 0)
+notify-send -a NexaOS -i "$icon" -t 1500 -p -r "$id" -h "int:value:${pct:-0}" "$label" > "$idf.new" 2>/dev/null \
+    && mv "$idf.new" "$idf"
+exit 0
+MEDIAKEY_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-media-key"
+
     echo "[*] Generating the boot readahead recorder (nexa-preload)..."
     # On a live boot without a readahead map (or with nexa.preload_record on
     # the kernel command line) this records which parts of nexa.img the boot
@@ -978,11 +1013,11 @@ bindsym $mod+Shift+r reload
 bindsym Print exec nexa-screenshot
 bindsym Shift+Print exec nexa-screenshot --select
 bindsym Ctrl+Shift+Escape exec nexa-pulse
-bindsym XF86AudioRaiseVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
-bindsym XF86AudioLowerVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
-bindsym XF86AudioMute exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
-bindsym --locked XF86MonBrightnessUp exec brightnessctl set 5%+
-bindsym --locked XF86MonBrightnessDown exec brightnessctl set 5%-
+bindsym --locked XF86AudioRaiseVolume exec nexa-media-key volume-up
+bindsym --locked XF86AudioLowerVolume exec nexa-media-key volume-down
+bindsym --locked XF86AudioMute exec nexa-media-key mute
+bindsym --locked XF86MonBrightnessUp exec nexa-media-key brightness-up
+bindsym --locked XF86MonBrightnessDown exec nexa-media-key brightness-down
 
 # Lock screen (see /usr/local/bin/nexa-lock)
 bindsym $mod+Shift+l exec nexa-lock
@@ -1191,11 +1226,11 @@ bindm = SUPER, mouse:272, movewindow
 # Alt + drag anywhere in a window moves it too (needs no title bar).
 bindm = ALT, mouse:272, movewindow
 bindm = SUPER, mouse:273, resizewindow
-bindel = , XF86AudioRaiseVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
-bindel = , XF86AudioLowerVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
-bindl = , XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
-bindel = , XF86MonBrightnessUp, exec, brightnessctl set 5%+
-bindel = , XF86MonBrightnessDown, exec, brightnessctl set 5%-
+bindel = , XF86AudioRaiseVolume, exec, nexa-media-key volume-up
+bindel = , XF86AudioLowerVolume, exec, nexa-media-key volume-down
+bindl = , XF86AudioMute, exec, nexa-media-key mute
+bindel = , XF86MonBrightnessUp, exec, nexa-media-key brightness-up
+bindel = , XF86MonBrightnessDown, exec, nexa-media-key brightness-down
 bindl = , switch:on:Lid Switch, exec, nexa-lid
 HYPR_EOF
 

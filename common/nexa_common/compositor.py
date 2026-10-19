@@ -149,3 +149,13 @@ def reload():
     if wm == "sway":
         return _sway("reload")
     return False
+
+
+def logout():
+    """End the desktop session (back to the login screen)."""
+    wm = which()
+    if wm == "hyprland":
+        return _hypr("exit")
+    if wm == "sway":
+        return _sway("exit")
+    return False

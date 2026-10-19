@@ -89,12 +89,38 @@ class HexTile(Gtk.Button):
         self.set_size_request(TILE_W, -1)
         self.add(box)
         self.area = area
-        self.connect("state-flags-changed", lambda *_a: area.queue_draw())
+        # Lit while the pointer is over it (tracked here: GTK's hover state
+        # could stay set after a fast exit from the layer surface) or while it
+        # has keyboard focus *and* you're moving around with the keyboard -
+        # never because it was the last thing clicked or tabbed to.
+        self._hover = False
+        self.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.connect("enter-notify-event", lambda *_a: self._set_hover(True))
+        self.connect("leave-notify-event", self._on_leave)
+        self.connect("focus-in-event", lambda *_a: area.queue_draw())
+        self.connect("focus-out-event", lambda *_a: area.queue_draw())
         self.connect("clicked", lambda *_a: on_click(app))
+
+    def _set_hover(self, on):
+        if self._hover != on:
+            self._hover = on
+            self.area.queue_draw()
+        return False
+
+    def _on_leave(self, _w, event):
+        # Moving onto the button's own child isn't leaving it.
+        if event.detail != Gdk.NotifyType.INFERIOR:
+            self._set_hover(False)
+        return False
+
+    def _hot(self):
+        window = self.get_toplevel()
+        keyboard = isinstance(window, Gtk.Window) and window.get_focus_visible() and self.is_focus()
+        return self._hover or keyboard
 
     def _draw_hex(self, area, cr):
         w, h = area.get_allocated_width(), area.get_allocated_height()
-        hot = bool(self.get_state_flags() & (Gtk.StateFlags.PRELIGHT | Gtk.StateFlags.FOCUSED))
+        hot = self._hot()
         pts = design.hex_points(w / 2, h / 2, min(w, h) / 2 - 2)
         cr.move_to(*pts[0])
         for p in pts[1:]:
@@ -172,6 +198,7 @@ class Nexus(Gtk.ApplicationWindow):
 
         self.connect("key-press-event", self._on_key)
         self._closing = False
+        self._armed, self._armed_label = None, None
         self.results = []
         self._refresh()
         self.body.set_opacity(0)
@@ -294,9 +321,28 @@ class Nexus(Gtk.ApplicationWindow):
             lbl.set_name("nx-sub")
             box.pack_start(lbl, False, False, 0)
             btn.add(box)
-            btn.connect("clicked", lambda _b, a=action: (power(a), self.close()))
+            btn.connect("clicked", self._on_power, action, lbl, label)
             bar.pack_start(btn, False, False, 0)
         return bar
+
+    def _on_power(self, _btn, action, lbl, label):
+        """Restart and Shut down need a second click within a few seconds,
+        so a stray click can't turn the computer off (as in Power)."""
+        if action in ("reboot", "poweroff") and self._armed != action:
+            if self._armed_label is not None:
+                self._armed_label[0].set_text(self._armed_label[1])
+            self._armed, self._armed_label = action, (lbl, label)
+            lbl.set_text("Click again")
+            GLib.timeout_add_seconds(4, self._disarm, action)
+            return
+        power(action)
+        self.close()
+
+    def _disarm(self, action):
+        if self._armed == action and self._armed_label is not None:
+            self._armed_label[0].set_text(self._armed_label[1])
+            self._armed, self._armed_label = None, None
+        return False
 
     # ---- actions ---------------------------------------------------------
 
