@@ -79,6 +79,22 @@ for fwdir in i915 amdgpu; do
         cp -a "$ROOTFS_DIR/lib/firmware/$fwdir" "$FW_STAGE/$fwdir/lib/firmware/"
     fi
 done
+# Intel Wi-Fi firmware too: iwlwifi is built into the kernel and looks for
+# its firmware the moment it finds the card, before the system disk is
+# there - without it here, Wi-Fi depended on re-probing the card later (a
+# race the faster boot lost). Only the newest firmware of each card model
+# (what the driver loads first) and the .pnvm calibration files: ~17 MB.
+mkdir -p "$FW_STAGE/iwlwifi/lib/firmware"
+for f in "$ROOTFS_DIR"/lib/firmware/iwlwifi-*.ucode*; do
+    [ -e "$f" ] || continue
+    n=$(basename "$f"); api=${n##*-}
+    echo "${n%-*} ${api%%.*} $n"
+done | sort -k1,1 -k2,2n | awk '{newest[$1] = $3} END {for (m in newest) print newest[m]}' | while read -r n; do
+    cp -L "$ROOTFS_DIR/lib/firmware/$n" "$FW_STAGE/iwlwifi/lib/firmware/$n"
+done
+for f in "$ROOTFS_DIR"/lib/firmware/iwlwifi-*.pnvm*; do
+    [ -e "$f" ] && cp -L "$f" "$FW_STAGE/iwlwifi/lib/firmware/"
+done
 # Same timing for the Wi-Fi regulatory database: cfg80211 is built in and
 # reads it at startup, so without it Wi-Fi falls back to the most
 # restrictive worldwide channel rules.
@@ -395,9 +411,9 @@ chmod +x "$STAGE/init"
 # QEMU boots use - is simply all three together.
 dir=$(dirname "$OUT")
 ( cd "$STAGE" && find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 ) > "$dir/initramfs-core.cpio.gz"
-for fwdir in i915 amdgpu; do
+for fwdir in i915 amdgpu iwlwifi; do
     mkdir -p "$FW_STAGE/$fwdir"
     ( cd "$FW_STAGE/$fwdir" && find . -print0 | cpio --null -o --format=newc 2>/dev/null ) > "$dir/initramfs-$fwdir.cpio"
 done
-cat "$dir/initramfs-core.cpio.gz" "$dir/initramfs-i915.cpio" "$dir/initramfs-amdgpu.cpio" > "$OUT"
-echo "[OK] initramfs: core $(du -h "$dir/initramfs-core.cpio.gz" | cut -f1), Intel GPU firmware $(du -h "$dir/initramfs-i915.cpio" | cut -f1), AMD $(du -h "$dir/initramfs-amdgpu.cpio" | cut -f1); all together $(du -h "$OUT" | cut -f1)"
+cat "$dir/initramfs-core.cpio.gz" "$dir/initramfs-i915.cpio" "$dir/initramfs-amdgpu.cpio" "$dir/initramfs-iwlwifi.cpio" > "$OUT"
+echo "[OK] initramfs: core $(du -h "$dir/initramfs-core.cpio.gz" | cut -f1), Intel GPU firmware $(du -h "$dir/initramfs-i915.cpio" | cut -f1), AMD $(du -h "$dir/initramfs-amdgpu.cpio" | cut -f1), Intel Wi-Fi $(du -h "$dir/initramfs-iwlwifi.cpio" | cut -f1); all together $(du -h "$OUT" | cut -f1)"
