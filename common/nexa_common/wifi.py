@@ -69,6 +69,8 @@ _bus_factory = lambda: Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
 
 
 def _friendly(err):
+    if "ServiceUnknown" in (err.message or "") or "was not provided by any .service" in (err.message or ""):
+        return "The Wi-Fi service isn't running. If this keeps happening, restart the computer."
     m = _REMOTE_ERROR_RE.search(err.message or "")
     if m:
         name, detail = m.group(1), m.group(2).strip()
@@ -79,8 +81,8 @@ def _friendly(err):
 def _bus():
     try:
         return _bus_factory()
-    except GLib.Error as e:
-        raise WifiError(_friendly(e))
+    except GLib.Error:
+        raise WifiError("Wi-Fi can't be reached right now (the system's message service isn't running). Restarting usually fixes it.")
 
 
 def _call(path, iface, method, params=None, reply_type=None, timeout_ms=10000, bus=None):

@@ -9,6 +9,7 @@ from gi.repository import Gtk, Gdk, GLib, Poppler
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
+#emptyhint { color: @nexa_muted; font-size: 11pt; }
 window { background-image: none; background-color: @nexa_bg; }
 #toolbar { background-image: none; background-color: @nexa_surface; }
 #toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
@@ -17,6 +18,36 @@ window { background-image: none; background-color: @nexa_bg; }
 #pagelabel { color: @nexa_muted; font-size: 9pt; }
 #viewport { background-image: none; background-color: @nexa_bg_deep; }
 """
+
+
+def _empty_state(text, on_open):
+    """What an empty window shows: what it's for, and a way to start."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+    box.set_valign(Gtk.Align.CENTER)
+    box.set_halign(Gtk.Align.CENTER)
+    label = Gtk.Label(label=text)
+    label.set_name("emptyhint")
+    label.set_justify(Gtk.Justification.CENTER)
+    box.pack_start(label, False, False, 0)
+    btn = Gtk.Button(label="Open…")
+    btn.set_name("toolbtn")
+    btn.set_halign(Gtk.Align.CENTER)
+    btn.connect("clicked", lambda _b: on_open(None))
+    box.pack_start(btn, False, False, 0)
+    return box
+
+
+def _choose_file(parent, title, patterns):
+    dialog = Gtk.FileChooserDialog(title=title, transient_for=parent, action=Gtk.FileChooserAction.OPEN)
+    dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK)
+    filt = Gtk.FileFilter()
+    filt.set_name(title)
+    for p in patterns:
+        filt.add_pattern(p)
+    dialog.add_filter(filt)
+    path = dialog.get_filename() if dialog.run() == Gtk.ResponseType.OK else None
+    dialog.destroy()
+    return path
 
 
 class PdfWindow(Gtk.Window):
@@ -41,6 +72,9 @@ class PdfWindow(Gtk.Window):
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         toolbar.set_name("toolbar")
         toolbar.set_border_width(8)
+        open_btn = self._toolbtn("Open…", self._on_open)
+        open_btn.set_tooltip_text("Open a PDF (Ctrl+O)")
+        toolbar.pack_start(open_btn, False, False, 0)
         self.prev_btn = self._toolbtn("◀", self._on_prev)
         self.next_btn = self._toolbtn("▶", self._on_next)
         zoom_out_btn = self._toolbtn("−", self._on_zoom_out)
@@ -59,7 +93,12 @@ class PdfWindow(Gtk.Window):
         self.drawing = Gtk.DrawingArea()
         self.drawing.connect("draw", self._on_draw)
         scroller.add(self.drawing)
-        root.pack_start(scroller, True, True, 0)
+        self.pages = Gtk.Stack()
+        self.pages.add_named(_empty_state("Open a PDF to read it.\nCtrl+O, or open one from Files.", self._on_open), "empty")
+        self.pages.add_named(scroller, "doc")
+        self.pages.show_all()  # so a file opened at start can switch to its page
+        root.pack_start(self.pages, True, True, 0)
+        self.connect("key-press-event", self._on_key)
 
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
@@ -83,7 +122,19 @@ class PdfWindow(Gtk.Window):
             return
         self.page_index = 0
         self.set_title(os.path.basename(path))
+        self.pages.set_visible_child_name("doc")
         self._render()
+
+    def _on_open(self, _btn):
+        path = _choose_file(self, "PDF documents", ["*.pdf", "*.PDF"])
+        if path:
+            self._load(path)
+
+    def _on_key(self, _w, event):
+        if event.state & Gdk.ModifierType.CONTROL_MASK and Gdk.keyval_to_lower(event.keyval) == Gdk.KEY_o:
+            self._on_open(None)
+            return True
+        return False
 
     def _current_page(self):
         if not self.doc:

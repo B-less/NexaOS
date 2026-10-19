@@ -19,15 +19,17 @@ def check(label, cond, detail=""):
 seen = []
 answer = {"fn": lambda req: {"ok": True, "result": {}}}
 
+# Listening before the thread starts: the socket file appears at bind(), a
+# moment before listen(), and a connect in between was refused (flaky test).
+srv = socket.socket(socket.AF_UNIX); srv.bind(sock_path); srv.listen(8)
+
 def serve():
-    srv = socket.socket(socket.AF_UNIX); srv.bind(sock_path); srv.listen(8)
     while True:
         c, _ = srv.accept()
         req = json.loads(c.makefile().readline())
         seen.append(req)
         c.sendall((json.dumps(answer["fn"](req)) + "\n").encode()); c.close()
 threading.Thread(target=serve, daemon=True).start()
-while not os.path.exists(sock_path): pass
 
 # ---- drives
 answer["fn"] = lambda req: {"ok": True, "result": {"drives": [{"name": "sdb1", "label": "PHOTOS", "size_bytes": 8000000000, "mountpoint": None, "fstype": "vfat"}]}}

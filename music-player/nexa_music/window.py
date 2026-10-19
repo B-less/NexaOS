@@ -101,15 +101,17 @@ class MusicWindow(Gtk.Window):
 
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         controls.set_halign(Gtk.Align.CENTER)
-        self.prev_btn = self._transport_btn("⏮", self._on_prev)
-        self.play_btn = self._transport_btn("▶", self._on_play_pause, playbtn=True)
-        self.stop_btn = self._transport_btn("⏹", self._on_stop)
-        self.next_btn = self._transport_btn("⏭", self._on_next)
+        # Icons from the icon theme, not characters like "⏮": those depend on
+        # the font and showed up as empty boxes.
+        self.prev_btn = self._transport_btn("media-skip-backward-symbolic", "Previous", self._on_prev)
+        self.play_btn = self._transport_btn("media-playback-start-symbolic", "Play", self._on_play_pause, playbtn=True)
+        self.stop_btn = self._transport_btn("media-playback-stop-symbolic", "Stop", self._on_stop)
+        self.next_btn = self._transport_btn("media-skip-forward-symbolic", "Next", self._on_next)
         for b in (self.prev_btn, self.play_btn, self.stop_btn, self.next_btn):
             controls.pack_start(b, False, False, 0)
 
         vol_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        vol_label = Gtk.Label(label="🔊")
+        vol_label = Gtk.Image.new_from_icon_name("audio-volume-high-symbolic", Gtk.IconSize.BUTTON)
         self.volume = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
         self.volume.set_value(80)
         self.volume.set_draw_value(False)
@@ -133,11 +135,18 @@ class MusicWindow(Gtk.Window):
             Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
 
-    def _transport_btn(self, label, handler, playbtn=False):
-        btn = Gtk.Button(label=label)
+    def _transport_btn(self, icon, tooltip, handler, playbtn=False):
+        btn = Gtk.Button()
+        btn.set_image(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR if playbtn else Gtk.IconSize.BUTTON))
+        btn.set_tooltip_text(tooltip)
         btn.set_name("playbtn" if playbtn else "transport")
         btn.connect("clicked", handler)
         return btn
+
+    def _show_playing(self, playing):
+        icon = "media-playback-pause-symbolic" if playing else "media-playback-start-symbolic"
+        self.play_btn.set_image(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR))
+        self.play_btn.set_tooltip_text("Pause" if playing else "Play")
 
     def _add_path(self, path):
         if os.path.isdir(path):
@@ -179,7 +188,7 @@ class MusicWindow(Gtk.Window):
         self.store.clear()
         self.current_index = -1
         self.now_playing.set_text("Nothing playing")
-        self.play_btn.set_label("▶")
+        self._show_playing(False)
 
     def _on_row_activated(self, _view, tree_path, _column):
         self._play_index(tree_path.get_indices()[0])
@@ -207,7 +216,7 @@ class MusicWindow(Gtk.Window):
 
     def _on_stop(self, _btn):
         self.player.stop()
-        self.play_btn.set_label("▶")
+        self._show_playing(False)
 
     def _on_prev(self, _btn):
         if self.current_index > 0:
@@ -233,7 +242,7 @@ class MusicWindow(Gtk.Window):
         GLib.idle_add(self._apply_player_state, state)
 
     def _apply_player_state(self, state):
-        self.play_btn.set_label("⏸" if state == Gst.State.PLAYING else "▶")
+        self._show_playing(state == Gst.State.PLAYING)
         return False
 
     def _on_eos(self):

@@ -153,6 +153,41 @@ pub fn perform(a: &Action, root: &Path, caller: &Caller) -> Result<Value, String
             }
             Ok(json!({"done": if found { "Bluetooth radio is on" } else { "No Bluetooth radio was blocked" }}))
         }
+        Action::RepairWifi => {
+            // The radio: on, unless a key or switch holds it off.
+            let mut hard = false;
+            for e in fs::read_dir(root.join("sys/class/rfkill")).into_iter().flatten().flatten() {
+                let d = e.path();
+                if read(&d.join("type")).as_deref() == Some("wlan") {
+                    let _ = fs::write(d.join("soft"), "0");
+                    hard |= read(&d.join("hard")).as_deref() == Some("1");
+                }
+            }
+            // Network adapters without an interface: attach the driver again
+            // (its firmware is on the system disk, which wasn't there yet
+            // when the kernel first looked).
+            let pci = root.join("sys/bus/pci");
+            let mut reattached = Vec::new();
+            for e in fs::read_dir(pci.join("devices")).into_iter().flatten().flatten() {
+                let d = e.path();
+                let class = read(&d.join("class")).unwrap_or_default();
+                if !class.starts_with("0x02") || d.join("net").exists() || d.join("ieee80211").exists() {
+                    continue;
+                }
+                let id = e.file_name().to_string_lossy().into_owned();
+                if d.join("driver").exists() {
+                    let _ = fs::write(d.join("driver/unbind"), &id);
+                }
+                let _ = fs::write(pci.join("drivers_probe"), &id);
+                reattached.push(id);
+            }
+            if hard {
+                return Err("Wi-Fi is switched off by the keyboard's Wi-Fi key or a switch - press it once.".into());
+            }
+            Ok(json!({"done": if reattached.is_empty() { "The Wi-Fi radio is on".to_string() }
+                              else { format!("Restarted the Wi-Fi adapter ({})", reattached.join(", ")) },
+                      "reattached": reattached}))
+        }
         Action::WriteAiConfig(data) => {
             let path = root.join("etc/nexa-ai/config.json");
             let mut cur: serde_json::Map<String, Value> = fs::read(&path).ok()
@@ -296,6 +331,33 @@ mod tests {
         assert_eq!(read(&rf.join("soft")).unwrap(), "0");
         fs::write(rf.join("hard"), "1\n").unwrap();
         assert!(perform(&Action::BluetoothUnblock, &r, &me()).unwrap_err().contains("hardware switch"));
+    }
+
+    #[test]
+    fn wifi_repair() {
+        let r = fake_root("wifi");
+        let rf = r.join("sys/class/rfkill/rfkill1");
+        fs::create_dir_all(&rf).unwrap();
+        fs::write(rf.join("type"), "wlan\n").unwrap();
+        fs::write(rf.join("soft"), "1\n").unwrap();
+        fs::write(rf.join("hard"), "0\n").unwrap();
+        let pci = r.join("sys/bus/pci");
+        // A Wi-Fi card stuck with a firmware-less driver, a working Ethernet card, a GPU.
+        for (id, class, net) in [("0000:00:14.3", "0x028000", false), ("0000:00:1f.6", "0x020000", true), ("0000:00:02.0", "0x030000", false)] {
+            let d = pci.join("devices").join(id);
+            fs::create_dir_all(d.join("driver")).unwrap();
+            fs::write(d.join("class"), format!("{class}\n")).unwrap();
+            if net {
+                fs::create_dir_all(d.join("net")).unwrap();
+            }
+        }
+        let out = perform(&Action::RepairWifi, &r, &me()).unwrap();
+        assert_eq!(out["reattached"], json!(["0000:00:14.3"]), "{out}");
+        assert_eq!(read(&rf.join("soft")).unwrap(), "0", "radio switched on");
+        assert_eq!(read(&pci.join("drivers_probe")).unwrap(), "0000:00:14.3");
+        assert_eq!(read(&pci.join("devices/0000:00:14.3/driver/unbind")).unwrap(), "0000:00:14.3");
+        fs::write(rf.join("hard"), "1\n").unwrap();
+        assert!(perform(&Action::RepairWifi, &r, &me()).unwrap_err().contains("Wi-Fi key"));
     }
 
     fn fake_root(name: &str) -> PathBuf {

@@ -994,6 +994,8 @@ exec nexa-kerneld focus-watch
 # Nexa Patterns (off until switched on in Settings > Privacy) and its desktop card.
 exec nexa-patternd serve
 exec nexa-foryou
+# Nexa Doctor: restarts desktop parts that stop, fixes common problems.
+exec nexa-doctor watch
 
 # Keybindings
 bindsym $mod+Return exec $term
@@ -1106,6 +1108,7 @@ exec-once = nexa-battery-watch
 exec-once = nexa-kerneld focus-watch
 exec-once = nexa-patternd serve
 exec-once = nexa-foryou
+exec-once = nexa-doctor watch
 exec-once = nexa-keyboard-layout
 
 general {

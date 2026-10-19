@@ -45,7 +45,7 @@ def request(action, args=None, password=None, timeout=1900):
                     break
                 data += chunk
     except (FileNotFoundError, ConnectionRefusedError):
-        raise BrokerError("the system broker isn't running (rc-service nexa-broker start)")
+        raise BrokerError("NexaOS's system service isn't running, so this can't be done right now. Restarting the computer usually fixes it.")
     except socket.timeout:
         raise BrokerError("the system broker didn't answer in time")
     try:

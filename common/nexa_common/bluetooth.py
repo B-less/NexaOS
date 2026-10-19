@@ -74,7 +74,7 @@ def _bus():
     try:
         return _bus_factory()
     except GLib.Error as e:
-        raise BluetoothError(f"Can't reach the system bus: {e.message}")
+        raise BluetoothError("Bluetooth can't be reached right now (the system's message service isn't running). Restarting usually fixes it.")
 
 
 def _call(path, iface, method, params=None, timeout_ms=10000, bus=None):

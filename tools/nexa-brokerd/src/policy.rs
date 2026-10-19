@@ -32,6 +32,8 @@ pub enum Action {
     SetTimezone(String),
     SetHostname(String),
     BluetoothUnblock,
+    /// Wi-Fi radio on and the adapter's driver re-attached (Nexa Doctor's fix).
+    RepairWifi,
     WriteAiConfig(serde_json::Map<String, Value>),
     // services
     Service { verb: String, name: String },
@@ -240,6 +242,7 @@ pub fn parse(action: &str, args: &Value, root: &Path) -> Result<Action, String> 
             Action::SetHostname(n)
         }
         "bluetooth_unblock" => Action::BluetoothUnblock,
+        "repair_wifi" => Action::RepairWifi,
         "write_ai_config" => Action::WriteAiConfig(ai_config(args)?),
         "start_service" | "stop_service" | "restart_service" | "enable_service" | "disable_service" => {
             let name = str_arg(args, "name")?;
@@ -345,6 +348,7 @@ impl Action {
             SetGovernor(_) => a(true, vec!["/sys/devices/system/cpu"], false, vec![], 10),
             SetBrightness(_) => a(true, vec!["/sys/devices", "/sys/class/backlight"], false, vec![], 10),
             BluetoothUnblock => a(true, vec!["/sys/devices", "/sys/class/rfkill"], false, vec![], 10),
+            RepairWifi => a(true, vec!["/sys/devices", "/sys/class/rfkill", "/sys/bus/pci"], false, vec![], 30),
             SetTimezone(_) => a(true, vec!["/etc"], false, vec![], 10),
             SetHostname(_) => a(true, vec!["/etc", "/proc/sys/kernel"], true, vec![], 10),
             WriteAiConfig(_) => a(true, vec!["/etc/nexa-ai"], false, vec![], 10),
@@ -377,6 +381,7 @@ impl Action {
             SetTimezone(z) => format!("Set the time zone to {z}"),
             SetHostname(n) => format!("Rename this computer to {n}"),
             BluetoothUnblock => "Turn the Bluetooth radio on".into(),
+            RepairWifi => "Repair the Wi-Fi adapter".into(),
             WriteAiConfig(d) => format!("Change the assistant settings ({})", d.keys().cloned().collect::<Vec<_>>().join(", ")),
             Service { verb, name } => format!("{} the {name} service", capitalise(verb)),
             ServiceAtBoot { name, enable } => format!("{} {name} at startup", if *enable { "Start" } else { "Don't start" }),

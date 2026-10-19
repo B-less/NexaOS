@@ -65,7 +65,7 @@ run pulse-perf   pulse           nexa_pulse --performance
 run software     software-center nexa_software
 run editor       text-editor     nexa_edit
 run volume       volume-mixer    nexa_volume
-for page in personalization bluetooth vpn system time power assistant about; do
+for page in personalization bluetooth vpn system users updates startup time power privacy assistant about; do
     run settings-$page settings-app nexa_settings $page
 done
 for panel in nexus control dock; do

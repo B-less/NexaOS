@@ -565,6 +565,28 @@ def _kernel(op, **args):
         raise ToolError(str(e))
 
 
+# Nexa Doctor (Rust, tools/nexa-doctor): finds and fixes common problems.
+def _doctor(*args):
+    try:
+        out = subprocess.run(["nexa-doctor", *args], capture_output=True, text=True, timeout=60).stdout
+        reply = json.loads(out.strip().splitlines()[-1])
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError) as e:
+        raise ToolError(f"Nexa Doctor isn't available: {e}")
+    if not reply.get("ok"):
+        raise ToolError(reply.get("error") or "Nexa Doctor couldn't do that")
+    return reply["result"]
+
+
+def system_checkup(_args):
+    found = _doctor("check")["findings"]
+    return {"findings": found, "summary": "Nothing wrong found." if not found
+            else f"{len(found)} problem(s): " + "; ".join(f["title"] for f in found)}
+
+
+def fix_problem(args):
+    return _doctor("fix", str(args.get("id", "")))
+
+
 def system_pressure(_args):
     s = _kernel("status")
     return {"summary": s["pressure"]["summary"], "pressure": s["pressure"], "ai": s["ai"], "app_in_front": s["focus"],
@@ -919,6 +941,16 @@ TOOLS = {
         "description": "Today's date, the time, time zone and week number on this computer.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    "system_checkup": {
+        "category": READ, "func": system_checkup,
+        "description": "Check the computer for common problems: volume above 100%, a black (0%) screen, a Wi-Fi adapter that isn't working or switched off, a nearly full disk, low memory, parts of the desktop that stopped. Each finding has an id and says whether fix_problem can fix it.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "fix_problem": {
+        "category": ACTION, "func": fix_problem,
+        "description": "Fix one problem found by system_checkup, by its id (volume, brightness, wifi, or restart:...).",
+        "input_schema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
     "system_pressure": {
         "category": READ, "func": system_pressure,
         "description": "Why the computer feels slow, from the kernel: how much programs are held up waiting for the processor, memory or the disk (PSI), which app is in front and boosted, and how much the AI itself is allowed to use.",
@@ -1123,6 +1155,8 @@ LOCAL_TOPICS = (
      ("get_battery", "energy_users")),
     (("crash", "crashed", "closed by itself", "disappeared", "quit by itself", "killed", "out of memory", "kernel"),
      ("kernel_events",)),
+    (("problem", "broken", "not working", "doesn't work", "isn't working", "fix", "checkup", "check up", "diagnos", "wrong with", "repair"),
+     ("system_checkup", "fix_problem")),
     (("bright", "dim", "screen", "display"),
      ("set_brightness",)),
     (("time zone", "timezone", "wrong time"),

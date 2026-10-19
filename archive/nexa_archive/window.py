@@ -9,6 +9,7 @@ from . import archiveops
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
+#emptyhint { color: @nexa_muted; font-size: 11pt; }
 window { background-image: none; background-color: @nexa_bg; }
 #toolbar { background-image: none; background-color: @nexa_surface; }
 #toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
@@ -21,6 +22,36 @@ treeview header button { background-image: none; background-color: @nexa_surface
 """
 
 COL_ICON, COL_NAME, COL_SIZE = range(3)
+
+
+def _empty_state(text, on_open):
+    """What an empty window shows: what it's for, and a way to start."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+    box.set_valign(Gtk.Align.CENTER)
+    box.set_halign(Gtk.Align.CENTER)
+    label = Gtk.Label(label=text)
+    label.set_name("emptyhint")
+    label.set_justify(Gtk.Justification.CENTER)
+    box.pack_start(label, False, False, 0)
+    btn = Gtk.Button(label="Open…")
+    btn.set_name("toolbtn")
+    btn.set_halign(Gtk.Align.CENTER)
+    btn.connect("clicked", lambda _b: on_open(None))
+    box.pack_start(btn, False, False, 0)
+    return box
+
+
+def _choose_file(parent, title, patterns):
+    dialog = Gtk.FileChooserDialog(title=title, transient_for=parent, action=Gtk.FileChooserAction.OPEN)
+    dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK)
+    filt = Gtk.FileFilter()
+    filt.set_name(title)
+    for p in patterns:
+        filt.add_pattern(p)
+    dialog.add_filter(filt)
+    path = dialog.get_filename() if dialog.run() == Gtk.ResponseType.OK else None
+    dialog.destroy()
+    return path
 
 
 class ArchiveWindow(Gtk.Window):
@@ -42,6 +73,9 @@ class ArchiveWindow(Gtk.Window):
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         toolbar.set_name("toolbar")
         toolbar.set_border_width(8)
+        open_btn = self._toolbtn("Open…", self._on_open)
+        open_btn.set_tooltip_text("Open an archive (Ctrl+O)")
+        toolbar.pack_start(open_btn, False, False, 0)
         self.extract_btn = self._toolbtn("Extract All…", self._on_extract_all)
         self.extract_btn.set_sensitive(False)
         toolbar.pack_start(self.extract_btn, False, False, 0)
@@ -70,7 +104,13 @@ class ArchiveWindow(Gtk.Window):
         self.view.append_column(size_col)
 
         scroller.add(self.view)
-        root.pack_start(scroller, True, True, 0)
+        self.pages = Gtk.Stack()
+        self.pages.add_named(_empty_state("Open a zip or tar archive to see what's inside.\nCtrl+O, or open one from Files.",
+                                          self._on_open), "empty")
+        self.pages.add_named(scroller, "list")
+        self.pages.show_all()  # so a file opened at start can switch to its page
+        root.pack_start(self.pages, True, True, 0)
+        self.connect("key-press-event", self._on_key)
 
         self.status = Gtk.Label(label="")
         self.status.set_name("statusbar")
@@ -106,6 +146,7 @@ class ArchiveWindow(Gtk.Window):
             self.store.append([icon, e["name"], size])
         self.status.set_text(f"{len(entries)} entries")
         self.extract_btn.set_sensitive(True)
+        self.pages.set_visible_child_name("list")
 
     def _on_extract_all(self, _btn):
         if not self.path:
@@ -132,6 +173,18 @@ class ArchiveWindow(Gtk.Window):
         dest = dialog.get_filename() if response == Gtk.ResponseType.OK else None
         dialog.destroy()
         return dest
+
+    def _on_open(self, _btn):
+        path = _choose_file(self, "Archives", ["*.zip", "*.tar", "*.tar.gz", "*.tgz", "*.tar.xz", "*.txz", "*.tar.bz2", "*.tbz2"])
+        if path:
+            self.path = os.path.abspath(path)
+            self._load()
+
+    def _on_key(self, _w, event):
+        if event.state & Gdk.ModifierType.CONTROL_MASK and Gdk.keyval_to_lower(event.keyval) == Gdk.KEY_o:
+            self._on_open(None)
+            return True
+        return False
 
     def _error(self, text):
         dialog = Gtk.MessageDialog(
