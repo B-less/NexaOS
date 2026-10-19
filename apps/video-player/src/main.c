@@ -695,7 +695,15 @@ static const char *CSS =
     ".time { font-family: \"JetBrains Mono\", monospace; color: @nexa_text; }"
     "scale trough { background-color: alpha(@nexa_text, 0.14); border-radius: 3px; min-height: 5px; }"
     "scale highlight { background-color: @nexa_accent; border-radius: 3px; }"
-    "scale slider { background-color: @nexa_text_strong; border-radius: 50%; min-width: 14px; min-height: 14px; border: none; box-shadow: none; }";
+    "scale slider { background-color: @nexa_text_strong; border-radius: 50%; min-width: 14px; min-height: 14px; border: none; box-shadow: none; }"
+    /* Its own title bar: Hyprland draws none, so minimize/maximize/close live here. */
+    "headerbar { background-image: none; background-color: @nexa_surface; color: @nexa_text_strong;"
+    "  border-bottom: 1px solid @nexa_border; box-shadow: none; min-height: 38px; padding: 0 8px; }"
+    "headerbar .title { font-weight: 600; color: @nexa_text_strong; }"
+    "headerbar button.titlebutton { background-image: none; background-color: transparent; color: @nexa_text;"
+    "  border: none; border-radius: 50%; box-shadow: none; min-width: 26px; min-height: 26px; padding: 0; }"
+    "headerbar button.titlebutton:hover { background-color: @nexa_hover; }"
+    "headerbar button.titlebutton.close:hover { background-color: #e5484d; color: #ffffff; }";
 
 /* ---- build the window ----------------------------------------------- */
 
@@ -844,6 +852,14 @@ int main(int argc, char **argv)
     gtk_window_set_title(GTK_WINDOW(app.win), "Video Player");
     gtk_window_set_default_size(GTK_WINDOW(app.win), 960, 600);
     gtk_window_set_icon_name(GTK_WINDOW(app.win), APP_ID);
+    /* Client-side title bar with minimize/maximize/close (Hyprland draws no
+     * title bars, and Sway's has no buttons); it shows the window title, so
+     * the playing video's name appears here. Hidden in fullscreen. */
+    GtkWidget *bar = gtk_header_bar_new();
+    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(bar), TRUE);
+    gtk_header_bar_set_decoration_layout(GTK_HEADER_BAR(bar), "icon:minimize,maximize,close");
+    gtk_window_set_titlebar(GTK_WINDOW(app.win), bar);
+    gtk_window_set_title(GTK_WINDOW(app.win), "Video Player"); /* reaches the bar now it's attached */
     app.stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(app.stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_add_named(GTK_STACK(app.stack), build_library(), "library");
