@@ -348,7 +348,7 @@ impl Action {
             SetGovernor(_) => a(true, vec!["/sys/devices/system/cpu"], false, vec![], 10),
             SetBrightness(_) => a(true, vec!["/sys/devices", "/sys/class/backlight"], false, vec![], 10),
             BluetoothUnblock => a(true, vec!["/sys/devices", "/sys/class/rfkill"], false, vec![], 10),
-            RepairWifi => a(true, vec!["/sys/devices", "/sys/class/rfkill", "/sys/bus/pci"], false, vec![], 30),
+            RepairWifi => a(true, vec!["/sys/devices", "/sys/class/rfkill", "/sys/bus/pci", "/sys/bus/sdio", "/sys/bus/usb"], false, vec![], 30),
             SetTimezone(_) => a(true, vec!["/etc"], false, vec![], 10),
             SetHostname(_) => a(true, vec!["/etc", "/proc/sys/kernel"], true, vec![], 10),
             WriteAiConfig(_) => a(true, vec!["/etc/nexa-ai"], false, vec![], 10),

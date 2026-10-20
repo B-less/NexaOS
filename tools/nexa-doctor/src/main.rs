@@ -6,6 +6,8 @@
 //!   nexa-doctor fix ID         fix one finding (volume, brightness, wifi, restart:PART)
 //!   nexa-doctor log            what it did lately
 //!   nexa-doctor security       the security chip (TPM 1.2 / 2.0) and Secure Boot (JSON)
+//!   nexa-doctor hardware [--text]  the computer's parts and which have no driver
+//!                              (the text is also saved to ~/nexa-hardware-report.txt)
 //!
 //! Watchdog: the desktop's own parts (the bar, notifications, the Dock, the
 //! "For you" card, Nexa Patterns, the focus watcher, idle/screen-off,
@@ -22,6 +24,8 @@
 //! It runs as you with no extra rights and is deliberately not confined: the
 //! parts it restarts must not inherit a sandbox. Anything needing root goes
 //! through nexa-brokerd, which checks and logs it.
+
+mod hardware;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -457,7 +461,22 @@ fn main() {
         Some("log") => Ok(json!({"log": fs::read_to_string(state_dir().join("log.jsonl")).unwrap_or_default().lines()
             .rev().take(50).filter_map(|l| serde_json::from_str::<Value>(l).ok()).collect::<Vec<_>>()})),
         Some("security") => Ok(security(&sys_root())),
-        _ => Err("usage: nexa-doctor watch | check | fix ID | log | security".into()),
+        Some("hardware") => {
+            let kmsg = std::env::var_os("NEXA_DOCTOR_KMSG").map(PathBuf::from).unwrap_or_else(|| "/dev/kmsg".into());
+            let r = hardware::report(&sys_root(), &proc_root(), &kmsg);
+            let text = hardware::text(&r);
+            let saved = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("nexa-hardware-report.txt"))
+                .filter(|p| fs::write(p, &text).is_ok());
+            if args.iter().any(|a| a == "--text") {
+                print!("{text}");
+                if let Some(p) = saved {
+                    println!("\n(saved to {})", p.display());
+                }
+                return;
+            }
+            Ok(r)
+        }
+        _ => Err("usage: nexa-doctor watch | check | fix ID | log | security | hardware [--text]".into()),
     };
     match reply {
         Ok(v) => println!("{}", json!({"ok": true, "result": v})),

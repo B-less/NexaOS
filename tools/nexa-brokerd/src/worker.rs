@@ -181,6 +181,24 @@ pub fn perform(a: &Action, root: &Path, caller: &Caller) -> Result<Value, String
                 let _ = fs::write(pci.join("drivers_probe"), &id);
                 reattached.push(id);
             }
+            // Wi-Fi on the SD bus (Celeron/Atom laptops) and USB Wi-Fi: a
+            // driver that found no firmware lets go, so offer unbound ones
+            // again (USB: vendor-specific or wireless interfaces only).
+            for bus in ["sdio", "usb"] {
+                let b = root.join("sys/bus").join(bus);
+                for e in fs::read_dir(b.join("devices")).into_iter().flatten().flatten() {
+                    let d = e.path();
+                    let id = e.file_name().to_string_lossy().into_owned();
+                    if d.join("driver").exists() || (bus == "usb" && !id.contains(':')) {
+                        continue;
+                    }
+                    if bus == "usb" && !matches!(read(&d.join("bInterfaceClass")).as_deref(), Some("ff" | "e0")) {
+                        continue;
+                    }
+                    let _ = fs::write(b.join("drivers_probe"), &id);
+                    reattached.push(id);
+                }
+            }
             if hard {
                 return Err("Wi-Fi is switched off by the keyboard's Wi-Fi key or a switch - press it once.".into());
             }
@@ -351,8 +369,19 @@ mod tests {
                 fs::create_dir_all(d.join("net")).unwrap();
             }
         }
+        // SD-bus Wi-Fi left unbound; USB: a vendor interface (Wi-Fi dongle)
+        // unbound, a keyboard interface unbound, a whole device (no ':').
+        fs::create_dir_all(r.join("sys/bus/sdio/devices/mmc1:0001:1")).unwrap();
+        fs::create_dir_all(r.join("sys/bus/sdio/devices/mmc1:0001:2/driver")).unwrap();
+        for (id, class) in [("1-2:1.0", "ff"), ("1-3:1.0", "03"), ("1-2", "00")] {
+            let d = r.join("sys/bus/usb/devices").join(id);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("bInterfaceClass"), format!("{class}\n")).unwrap();
+        }
         let out = perform(&Action::RepairWifi, &r, &me()).unwrap();
-        assert_eq!(out["reattached"], json!(["0000:00:14.3"]), "{out}");
+        assert_eq!(out["reattached"], json!(["0000:00:14.3", "mmc1:0001:1", "1-2:1.0"]), "{out}");
+        assert_eq!(read(&r.join("sys/bus/sdio/drivers_probe")).unwrap(), "mmc1:0001:1");
+        assert_eq!(read(&r.join("sys/bus/usb/drivers_probe")).unwrap(), "1-2:1.0");
         assert_eq!(read(&rf.join("soft")).unwrap(), "0", "radio switched on");
         assert_eq!(read(&pci.join("drivers_probe")).unwrap(), "0000:00:14.3");
         assert_eq!(read(&pci.join("devices/0000:00:14.3/driver/unbind")).unwrap(), "0000:00:14.3");

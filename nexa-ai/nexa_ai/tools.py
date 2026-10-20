@@ -591,6 +591,14 @@ def security_status(_args):
     return _doctor("security")
 
 
+def hardware_report(_args):
+    r = _doctor("hardware")
+    # The full device lists are long; the model needs the problems and the parts in question.
+    return {k: r.get(k) for k in ("computer", "problems", "i2c_touchpads", "sdio", "firmware_errors")} | {
+        "pci": [d for d in r.get("pci", []) if not str(d.get("class", "")).startswith("06")],
+        "saved_to": "~/nexa-hardware-report.txt"}
+
+
 def system_pressure(_args):
     s = _kernel("status")
     return {"summary": s["pressure"]["summary"], "pressure": s["pressure"], "ai": s["ai"], "app_in_front": s["focus"],
@@ -960,6 +968,11 @@ TOOLS = {
         "description": "The computer's security chip (TPM 1.2 or 2.0: present or not, separate chip or built into the processor, maker, firmware) and whether Secure Boot is on.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    "hardware_report": {
+        "category": READ, "func": hardware_report,
+        "description": "What this computer is made of (maker, model, processor, PCI/USB/SD-bus devices with IDs) and which parts have no driver: the touchpad, Wi-Fi, sound and so on. Also saves a text report to ~/nexa-hardware-report.txt to send to NexaOS's developers.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
     "system_pressure": {
         "category": READ, "func": system_pressure,
         "description": "Why the computer feels slow, from the kernel: how much programs are held up waiting for the processor, memory or the disk (PSI), which app is in front and boosted, and how much the AI itself is allowed to use.",
@@ -1168,6 +1181,8 @@ LOCAL_TOPICS = (
      ("system_checkup", "fix_problem")),
     (("tpm", "security chip", "secure boot", "trusted platform"),
      ("security_status",)),
+    (("driver", "touchpad", "trackpad", "mouse", "hardware", "wi-fi adapter", "wifi adapter", "not detected", "no wifi", "device"),
+     ("hardware_report", "system_checkup")),
     (("bright", "dim", "screen", "display"),
      ("set_brightness",)),
     (("time zone", "timezone", "wrong time"),

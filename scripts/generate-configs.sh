@@ -492,7 +492,7 @@ depend() {
 }
 
 attach_loop() {
-    local i=0 dev id done_ids=" " missing
+    local i=0 dev id bus done_ids=" " missing
     while [ $i -lt 20 ]; do
         missing=0
         for dev in /sys/bus/pci/devices/*; do
@@ -509,6 +509,20 @@ attach_loop() {
                 echo "$id" > /sys/bus/pci/drivers_probe 2>/dev/null
                 done_ids="$done_ids$id "
             fi
+        done
+        # Wi-Fi on the SD bus (Celeron/Atom laptops) and USB Wi-Fi: a built-in
+        # driver that found no firmware lets go, so offer an unbound one again.
+        for dev in /sys/bus/sdio/devices/* /sys/bus/usb/devices/*:*; do
+            [ -e "$dev" ] && [ ! -e "$dev/driver" ] || continue
+            case "$dev" in
+                */usb/*) case "$(cat "$dev/bInterfaceClass" 2>/dev/null)" in ff|e0) ;; *) continue ;; esac ;;
+            esac
+            id=${dev##*/}
+            case "$done_ids" in *" $id "*) continue ;; esac
+            bus=${dev#/sys/bus/}; bus=${bus%%/*}
+            echo "$id" > "/sys/bus/$bus/drivers_probe" 2>/dev/null
+            done_ids="$done_ids$id "
+            missing=1
         done
         [ $missing = 0 ] && break
         sleep 1
