@@ -244,6 +244,75 @@ pub fn unmount(t: &Tree, k: &str) -> Result<Value, String> {
     Ok(json!({"unmounted": mp, "done": format!("Closed {mp}")}))
 }
 
+/// The SCSI pass-through request (struct sg_io_hdr, <scsi/sg.h>).
+#[repr(C)]
+struct SgIoHdr {
+    interface_id: libc::c_int,
+    dxfer_direction: libc::c_int,
+    cmd_len: u8,
+    mx_sb_len: u8,
+    iovec_count: u16,
+    dxfer_len: u32,
+    dxferp: *mut libc::c_void,
+    cmdp: *const u8,
+    sbp: *mut u8,
+    timeout: u32,
+    flags: u32,
+    pack_id: libc::c_int,
+    usr_ptr: *mut libc::c_void,
+    status: u8,
+    masked_status: u8,
+    msg_status: u8,
+    sb_len_wr: u8,
+    host_status: u16,
+    driver_status: u16,
+    resid: libc::c_int,
+    duration: u32,
+    info: u32,
+}
+
+const SG_IO: libc::c_ulong = 0x2285;
+const SG_DXFER_NONE: libc::c_int = -1;
+
+/// Send one data-less SCSI command; true if the drive accepted it.
+fn scsi(fd: libc::c_int, cdb: &[u8], timeout_ms: u32) -> bool {
+    let mut sense = [0u8; 32];
+    let mut h = SgIoHdr {
+        interface_id: b'S' as libc::c_int, dxfer_direction: SG_DXFER_NONE, cmd_len: cdb.len() as u8,
+        mx_sb_len: sense.len() as u8, iovec_count: 0, dxfer_len: 0, dxferp: std::ptr::null_mut(),
+        cmdp: cdb.as_ptr(), sbp: sense.as_mut_ptr(), timeout: timeout_ms, flags: 0, pack_id: 0,
+        usr_ptr: std::ptr::null_mut(), status: 0, masked_status: 0, msg_status: 0, sb_len_wr: 0,
+        host_status: 0, driver_status: 0, resid: 0, duration: 0, info: 0,
+    };
+    // SAFETY: h points at a valid sg_io_hdr whose cdb and sense buffers
+    // outlive the call; no data is transferred.
+    let r = unsafe { libc::ioctl(fd, SG_IO as _, &mut h as *mut SgIoHdr) };
+    r == 0 && h.status == 0 && h.host_status == 0 && h.driver_status == 0
+}
+
+/// Let a USB stick finish before it is detached. Linux only sends a cache
+/// flush to drives that say they have a write cache, and many cheap sticks
+/// say they don't while still buffering writes and their own bookkeeping in
+/// RAM - unplugged during that, a weak controller can lose its firmware
+/// tables. So: flush the device, SYNCHRONIZE CACHE regardless, STOP UNIT
+/// (controllers commit everything before they stop), and a moment to settle.
+fn settle(dev: &Path) -> String {
+    use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+    use std::os::unix::io::AsRawFd;
+    if !fs::metadata(dev).map(|m| m.file_type().is_block_device()).unwrap_or(false) {
+        return "not a block device".into();
+    }
+    let Ok(f) = fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(dev) else {
+        return "couldn't open the device".into();
+    };
+    let flushed = f.sync_all().is_ok();
+    let synced = scsi(f.as_raw_fd(), &[0x35, 0, 0, 0, 0, 0, 0, 0, 0, 0], 60_000); // SYNCHRONIZE CACHE(10)
+    let stopped = scsi(f.as_raw_fd(), &[0x1B, 0, 0, 0, 0, 0], 30_000); // START STOP UNIT: stop
+    drop(f);
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    format!("flush {flushed}, synchronize cache {synced}, stop {stopped}")
+}
+
 pub fn eject(t: &Tree, k: &str) -> Result<Value, String> {
     if let Some(why) = t.refusal(k) {
         return Err(why.into());
@@ -256,6 +325,8 @@ pub fn eject(t: &Tree, k: &str) -> Result<Value, String> {
     }
     // SAFETY: sync(2) has no failure mode.
     unsafe { libc::sync() };
+    let settled = settle(&t.dev.join(&disk));
+    log(t, &format!("ejecting {disk}: {settled}"));
     let dir = t.real_dir(&disk);
     let delete = dir.join("device/delete");
     if dir.to_string_lossy().contains("/usb") && delete.exists() {
@@ -511,6 +582,25 @@ mod tests {
         assert!(eject(&t, "sdc").unwrap_err().contains("using this drive itself"));
         fs::write(r.join("proc/swaps"), "Filename Type Size Used Priority\n").unwrap();
         assert!(eject(&t, "sdc").is_ok());
+    }
+
+    #[test]
+    fn settling_only_touches_block_devices() {
+        let (_t, r) = fake("settle");
+        let f = r.join("not-a-disk");
+        fs::write(&f, "x").unwrap();
+        assert_eq!(settle(&f), "not a block device");
+        assert_eq!(settle(&r.join("missing")), "not a block device");
+        assert_eq!(std::mem::size_of::<SgIoHdr>(), if cfg!(target_pointer_width = "64") { 88 } else { 64 }, "matches <scsi/sg.h>");
+    }
+
+    /// `NEXA_SETTLE_DEV=/dev/sdX cargo test -- --ignored settle_a_real_device`
+    /// (root): runs the eject-time flush and stop against a real disk.
+    #[test]
+    #[ignore]
+    fn settle_a_real_device() {
+        let dev = std::env::var("NEXA_SETTLE_DEV").expect("NEXA_SETTLE_DEV");
+        println!("{}", settle(Path::new(&dev)));
     }
 
     #[test]
