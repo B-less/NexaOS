@@ -48,13 +48,13 @@ window {{ background-color: {backdrop}; background-image: none; }}
     caret-color: {t['accent']}; border: 1px solid {themes._rgba(themes._rgb_of(t['accent']), 0.5)};
     border-radius: 22px; padding: 10px 18px; font-size: 13pt; box-shadow: none; min-width: 520px;
 }}
-#nx-tile {{ background: none; border: none; box-shadow: none; padding: 0; }}
+#nx-tile {{ background: none; border: none; box-shadow: none; padding: 0; color: {pal['text_strong']}; }}
 #nx-name {{ color: {pal['text']}; font-size: {design.TYPE_SCALE['body']}pt; }}
 #nx-row {{ background: none; border: none; box-shadow: none; border-radius: {design.RADIUS['medium']}px; padding: 8px 14px; }}
 #nx-row:hover, #nx-row:focus {{ background-color: {hover}; }}
 #nx-title {{ color: {pal['text_strong']}; font-size: 11pt; }}
 #nx-sub {{ color: {pal['muted']}; font-size: 9pt; }}
-#nx-power {{ background: none; border: none; box-shadow: none; padding: 0; }}
+#nx-power {{ background: none; border: none; box-shadow: none; padding: 0; color: {pal['text']}; }}
 #nx-user {{ color: {pal['muted']}; font-size: 9pt; }}
 scrolledwindow, viewport {{ background: none; }}
 """
