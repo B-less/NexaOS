@@ -34,6 +34,33 @@ pub fn evaluate(records: &[Record], test_days: u64) -> Score {
     Score { predictions: n, top1: pct(hit1), top3: pct(hit3) }
 }
 
+/// How fast it learns: for each day from the first, how often the app
+/// opened next was on the card (top 3) - counting the days before it is
+/// ready, or an app it doesn't know yet, as misses, since then the card
+/// showed nothing useful.
+pub fn curve(records: &[Record], days: u64) -> Vec<f64> {
+    let Some(first) = records.first().map(|r| r.ts / 86400 * 86400) else { return vec![] };
+    let mut m = Model::default();
+    let mut hits = vec![0usize; days as usize];
+    let mut all = vec![0usize; days as usize];
+    for r in records {
+        let d = ((r.ts - first) / 86400) as usize;
+        if d >= days as usize {
+            break;
+        }
+        if r.kind.is_open() && m.previous() != Some(r.app.as_str()) {
+            all[d] += 1;
+            if m.ready() {
+                let (slot, weekend, _) = context::local(r.ts);
+                let p = m.predict(&Ctx { slot, weekend, place: r.place, plugged: r.plugged }, r.ts, 3, &[]);
+                hits[d] += p.iter().any(|x| x.app == r.app) as usize;
+            }
+        }
+        m.apply(r);
+    }
+    hits.iter().zip(&all).map(|(h, n)| (*h as f64 / (*n).max(1) as f64 * 1000.0).round() / 10.0).collect()
+}
+
 /// A small deterministic random generator (xorshift64*).
 struct Rng(u64);
 
@@ -98,6 +125,22 @@ mod tests {
         assert!(s.predictions > 50, "a week of switches: {s:?}");
         assert!(s.top3 >= 60.0, "top-3 accuracy on the last week: {s:?}");
         assert!(s.top1 >= 30.0, "{s:?}");
+    }
+
+    /// `cargo test -p nexa-patternd -- --ignored --nocapture curve_report`:
+    /// the learning curve averaged over 20 synthetic people.
+    #[test]
+    #[ignore]
+    fn curve_report() {
+        let mut sum = vec![0.0; 14];
+        for seed in 1..=20 {
+            for (s, v) in sum.iter_mut().zip(curve(&synthetic(14, seed), 14)) {
+                *s += v / 20.0;
+            }
+        }
+        let week: Vec<f64> = (1..=20).map(|seed| evaluate(&synthetic(35, seed), 7).top3).collect();
+        println!("curve {:?}", sum.iter().map(|v| v.round() as i64).collect::<Vec<_>>());
+        println!("month top3 avg {:.1}", week.iter().sum::<f64>() / 20.0);
     }
 
     #[test]

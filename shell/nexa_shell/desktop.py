@@ -160,7 +160,7 @@ class DesktopCard(Gtk.Window):
         head.pack_end(clock, False, False, 0)
         self.card.pack_start(head, False, False, 0)
         if learning and not apps:
-            note = Gtk.Label(label="Learning how you use NexaOS.\nSuggestions appear here in a few days.", xalign=0)
+            note = Gtk.Label(label="Learning how you use NexaOS.\nSuggestions appear here after an hour or two of use.", xalign=0)
             note.get_style_context().add_class("nx-sugg-note")
             self.card.pack_start(note, False, False, 0)
         if apps:

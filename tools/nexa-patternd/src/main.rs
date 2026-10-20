@@ -524,7 +524,10 @@ fn main() {
                 (Some(file), _) => journal::read(Path::new(file)),
                 _ => journal::read(&data_dir(&home()).join("journal.bin")),
             };
-            println!("{}", serde_json::to_string_pretty(&replay::evaluate(&records, 7)).unwrap_or_default());
+            println!("{}", serde_json::to_string_pretty(&json!({
+                "last_week": replay::evaluate(&records, 7),
+                "learning_curve_top3_by_day": replay::curve(&records, 14),
+            })).unwrap_or_default());
             return;
         }
         Some("synthetic") => {

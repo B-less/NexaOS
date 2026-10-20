@@ -102,7 +102,7 @@ class PatternsSection:
             self.status.set_text("Off: nothing is being learned." + (f" {len(learned)} apps are still remembered - "
                                  "Forget everything to clear them." if learned else ""))
         elif not st["ready"]:
-            self.status.set_text("Learning: suggestions start after a few days of use.")
+            self.status.set_text("Learning: suggestions start after an hour or two of use.")
         else:
             self.status.set_text(f"Learning for {st['days']} days · {st['apps']} apps known.")
         apps = desktopapps.load_apps()

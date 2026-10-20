@@ -18,11 +18,16 @@ use std::collections::HashMap;
 
 pub const HALF_LIFE: f64 = 14.0 * 86400.0;
 /// An app is suggested only after it has been opened this many times...
-pub const MIN_SEEN: u32 = 5;
-/// ...and only once there are this many days of history.
-pub const MIN_DAYS: u64 = 3;
+pub const MIN_SEEN: u32 = 2;
+/// ...and only once this many app switches have been seen (an hour or two
+/// of use; what it can't yet be sure of stays under the card's threshold).
+pub const MIN_OPENS: u64 = 12;
 pub const FEATURES: usize = 7;
+/// The ranker learns fast at first and settles: LEARNING_RATE * (1 + EARLY / (1 + steps / 100)).
 const LEARNING_RATE: f64 = 0.05;
+const EARLY: f64 = 4.0;
+/// The ranker starts learning after this many switches.
+const TRAIN_AFTER: u64 = 6;
 
 /// A count that halves every HALF_LIFE seconds.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
@@ -65,6 +70,8 @@ pub struct Model {
     history: Vec<String>,
     pending_used: Option<(String, u64)>,
     opens: u64,
+    #[serde(default)]
+    steps: u64,
 }
 
 impl Default for Model {
@@ -76,7 +83,7 @@ impl Default for Model {
             // Sensible priors, refined by learning: time and sequence matter most.
             weights: [4.0, 2.0, 4.0, 2.0, 1.5, 2.0, 3.0],
             bias: -3.0,
-            history: Vec::new(), pending_used: None, opens: 0,
+            history: Vec::new(), pending_used: None, opens: 0, steps: 0,
         }
     }
 }
@@ -95,11 +102,15 @@ fn sigmoid(z: f64) -> f64 {
 impl Model {
     /// Opens of `app` near `slot` (neighbouring half-hours count half).
     fn time_count(&self, app: &str, ctx: &Ctx, any_place: bool, now: u64) -> (f64, f64) {
+        self.time_count_on(app, ctx, ctx.weekend, any_place, now)
+    }
+
+    fn time_count_on(&self, app: &str, ctx: &Ctx, weekend: bool, any_place: bool, now: u64) -> (f64, f64) {
         let mut hits = 0.0;
         let mut total = 0.0;
         for (offset, w) in [(-1i16, 0.5), (0, 1.0), (1, 0.5)] {
             let slot = ((ctx.slot as i16 + offset).rem_euclid(SLOTS as i16)) as u8;
-            let (s, we) = (slot.to_string(), ctx.weekend.to_string());
+            let (s, we) = (slot.to_string(), weekend.to_string());
             if any_place {
                 hits += w * self.time.get(&key(&[app, &s, &we, "*"])).map_or(0.0, |d| d.at(now));
                 total += w * self.ctx_total.get(&key(&[&s, &we, "*"])).map_or(0.0, |d| d.at(now));
@@ -146,7 +157,7 @@ impl Model {
 
     /// Has it watched long enough to say anything?
     pub fn ready(&self) -> bool {
-        self.last_ts.saturating_sub(self.first_ts) >= MIN_DAYS * 86400
+        self.opens >= MIN_OPENS
     }
 
     /// The likeliest next apps, best first (only apps seen MIN_SEEN times).
@@ -169,12 +180,14 @@ impl Model {
         }
         let examples: Vec<([f64; FEATURES], f64)> = candidates.iter()
             .map(|a| (self.features(a, ctx, now), if a == actual { 1.0 } else { 0.0 })).collect();
+        let rate = LEARNING_RATE * (1.0 + EARLY / (1.0 + self.steps as f64 / 100.0));
+        self.steps += 1;
         for (f, y) in examples {
             let err = self.score(&f) - y;
             for (w, x) in self.weights.iter_mut().zip(f.iter()) {
-                *w -= LEARNING_RATE * (err * x + 0.0005 * *w);
+                *w -= rate * (err * x + 0.0005 * *w);
             }
-            self.bias -= LEARNING_RATE * err;
+            self.bias -= rate * err;
         }
     }
 
@@ -194,7 +207,7 @@ impl Model {
                     return;
                 }
                 self.opens += 1;
-                if self.opens > 20 {
+                if self.opens > TRAIN_AFTER {
                     self.train(&ctx, now, &r.app);
                 }
                 // Opened from a suggestion: counts half (no self-fulfilling loop).
@@ -326,15 +339,19 @@ mod tests {
     fn sequences_and_cold_start() {
         let mut m = Model::default();
         let mut t = 1_700_000_000;
-        for _ in 0..8 {
-            for app in ["foot", "nexa-files", "nexa-edit"] {
+        for app in ["foot", "nexa-files", "nexa-edit"].iter().cycle().take(MIN_OPENS as usize - 1) {
+            m.apply(&open(t, app));
+            t += 600;
+        }
+        assert!(!m.ready(), "fewer than MIN_OPENS switches");
+        for _ in 0..4 {
+            for app in ["nexa-edit", "foot", "nexa-files"] {
                 m.apply(&open(t, app));
                 t += 600;
             }
         }
-        assert!(!m.ready(), "less than 3 days of history");
+        assert!(m.ready(), "ready within the first hours of use, not days");
         m.apply(&open(t + 4 * 86400, "foot"));
-        assert!(m.ready());
         let ctx = Ctx { place: 1, ..Default::default() };
         let p = m.predict(&ctx, t + 4 * 86400, 3, &[]);
         assert_eq!(p[0].app, "nexa-files", "after foot comes files: {p:?}");

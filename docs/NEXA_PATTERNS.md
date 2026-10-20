@@ -76,8 +76,14 @@ exponential decay so recent weeks count more than old ones.
 | **Preferences** | the brightness / volume you choose in each context | per-context piecewise-linear curves fitted to your manual changes (like phones' adaptive brightness) | learned brightness and volume, offered first |
 | **Focus time** | when you work long uninterrupted stretches | session lengths by hour | quiet hours for notifications, background work scheduled outside them |
 
-**Cold start:** no predictions for the first 3 days, or until an app has
-been seen 5 times. **Confidence:** every prediction carries a probability.
+**Cold start:** predictions start after 12 app switches (an hour or two of
+use), for apps opened at least twice; the ranker learns fast at first and
+then settles. Measured with `nexa-patternd replay --synthetic 14` (and
+averaged over 20 synthetic people by the `curve_report` test), the share of
+app switches where the app opened was on the card, by day of use:
+day 1: 0%, day 2: 48%, day 4: 76%, day 8: 82% (before 2026-10-20, with a
+3-day wait and 5 opens per app: 0%, 0%, 19%, 77%). The month-end accuracy
+is unchanged (81%). **Confidence:** every prediction carries a probability.
 Below 0.35 it isn't shown; below 0.6 it only arranges things (no offers).
 **Feedback:** a dismissed suggestion counts as a negative example; three
 dismissals of the same routine retire it.
