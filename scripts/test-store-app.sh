@@ -39,7 +39,7 @@ mkapp hexes "Hexes" 0.3.0 "Game;" "" community unsigned "A puzzle of sliding hex
 cp /src/apps/video-player/dist/video-player-1.0.4.nexa $W/trusted/packages/
 $P repo build $W/trusted --key $W/tester.key >/dev/null
 $P repo build $W/community >/dev/null
-printf "{\"catalogues\": [{\"name\": \"NexaOS\", \"url\": \"file://$W/trusted\"}, {\"name\": \"Community\", \"url\": \"file://$W/community\"}]}" > $W/store.conf
+printf "{\"catalogues\": [{\"name\": \"NexaOS\", \"url\": \"file://$W/trusted\"}, {\"name\": \"Community\", \"url\": \"file://$W/community\"}, {\"name\": \"Online\", \"url\": \"https://nexa-apps.invalid\"}]}" > $W/store.conf
 # Installed already: Notes Pro 1.0.0 (an update waits) and Clock.
 printf "{\"id\":\"notes-pro\",\"version\":\"1.0.0\",\"trust\":\"trusted\",\"permissions\":[\"files.documents\"],\"paths\":[]}" > $W/registry/notes-pro.json
 printf "{\"id\":\"clock\",\"version\":\"1.0.0\",\"trust\":\"trusted\",\"permissions\":[],\"paths\":[]}" > $W/registry/clock.json

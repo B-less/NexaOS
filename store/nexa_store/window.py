@@ -273,25 +273,29 @@ class StoreWindow(Gtk.Window):
         self._status("Checking the catalogues…" if refresh else "Loading…")
 
         def work():
-            error = None
+            error = note = None
             try:
                 listing = engine.list_apps()
                 old = not listing.get("fetched") or listing.get("now", 0) - listing["fetched"] > REFRESH_AFTER
                 if refresh or (refresh_if_old and old):
                     GLib.idle_add(self._status, "Checking the catalogues…")
                     result = engine.refresh()
-                    bad = [c for c in result.get("catalogues", []) if not c.get("ok")]
-                    if bad:
+                    cats = result.get("catalogues", [])
+                    bad = [c for c in cats if not c.get("ok")]
+                    if bad and len(bad) == len(cats):
                         error = f"Couldn't read {bad[0]['name']}: {bad[0].get('error', '')}"
+                    elif bad:
+                        # Usually just no internet: the others still work.
+                        note = f"Couldn't reach {', '.join(c['name'] for c in bad)} right now - showing the other catalogues."
                     listing = engine.list_apps()
                 inst = engine.installed()
             except engine.StoreError as e:
                 listing, inst, error = {"apps": []}, [], str(e)
-            GLib.idle_add(self._loaded, listing, inst, error)
+            GLib.idle_add(self._loaded, listing, inst, error, note)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _loaded(self, listing, inst, error):
+    def _loaded(self, listing, inst, error, note=None):
         self.busy = False
         self.refresh_btn.set_sensitive(True)
         self.apps = listing.get("apps", [])
@@ -308,7 +312,7 @@ class StoreWindow(Gtk.Window):
                 self._show_list()
         else:
             self._show_list()
-        self._status(error or "", error=bool(error))
+        self._status(error or note or "", error=bool(error))
         return False
 
     def _find(self, app_id):

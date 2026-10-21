@@ -164,6 +164,9 @@ check("first start fetches the catalogues", wait(lambda: not win.busy and win.ap
 check("every app from both catalogues", sorted(a["id"] for a in win.apps) == ["chat", "clock", "hexes", "notes-pro", "sketch", "video-player"],
       str([a["id"] for a in win.apps]))
 check("Discover shows them as cards", len(cards()) == 6, str(card_names()))
+check("an unreachable online catalogue is a quiet note, not an error",
+      "Couldn't reach Online right now" in win.status.get_text() and not win.status.get_style_context().has_class("error"),
+      win.status.get_text())
 rows = [getattr(r, "key", None) for r in win.side.get_children()]
 check("categories come from the apps", {"Games", "Graphics", "Internet", "Music & video", "Office", "Utilities"} <= set(rows), str(rows))
 check("Updates says how many", any("Updates (1)" in (r.get_child().get_text() if isinstance(r.get_child(), Gtk.Label) else "") for r in win.side.get_children()))

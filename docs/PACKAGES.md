@@ -81,6 +81,15 @@ to `/etc/nexa/store.conf`:
                 {"name": "Example", "url": "https://example.org/nexa-repo"}]}
 ```
 
+The online catalogue is the public repository B-less/nexa-apps, served by
+GitHub Pages at https://b-less.github.io/nexa-apps/ and listed in the image's
+store.conf as "NexaOS online": `make publish-store` builds and signs the
+catalogue on the build machine, refuses to publish one that doesn't verify
+against `assets/keys` or that contains a `.key` file, and pushes only the
+packages, icons and signed index. New apps and updates reach installed
+systems without a new ISO; when it can't be reached (no internet), the
+Store says so quietly and shows the built-in catalogue.
+
 The work is done by `nexa-store` (Rust, Landlock-confined, network only on
 port 443): an index whose signature doesn't match is refused, one signed by
 an unknown key is shown as "Not verified", and a download must match the

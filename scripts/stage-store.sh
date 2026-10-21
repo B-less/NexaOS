@@ -30,12 +30,17 @@ else
     echo "warning: no build/store-repo (run make nexa-apps): the Store starts empty"
 fi
 
-# The catalogues the Store reads: the built-in one; more can be added here
-# (HTTPS or local folders; unsigned ones are shown as not verified).
-if [ ! -f "$rootfs/etc/nexa/store.conf" ]; then
-    printf '%s\n' '{"catalogues": [{"name": "NexaOS", "url": "file:///usr/share/nexa-store/repo"}]}' \
-        > "$rootfs/etc/nexa/store.conf"
-fi
+# The catalogues the Store reads: the built-in one (works offline) and the
+# online one (B-less/nexa-apps on GitHub Pages, published with
+# `make publish-store`: new apps and updates without a new ISO). Both are
+# signed with the NexaOS release key. More can be added (HTTPS or local
+# folders; unsigned ones are shown as not verified).
+cat > "$rootfs/etc/nexa/store.conf" << 'CONF_EOF'
+{"catalogues": [
+  {"name": "NexaOS", "url": "file:///usr/share/nexa-store/repo"},
+  {"name": "NexaOS online", "url": "https://b-less.github.io/nexa-apps"}
+]}
+CONF_EOF
 chmod 0644 "$rootfs/etc/nexa/store.conf"
 
 cat > "$rootfs/usr/share/applications/nexa-store.desktop" << 'DESKTOP_EOF'
