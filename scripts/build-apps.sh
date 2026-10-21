@@ -24,4 +24,11 @@ for app in /src/apps/*/nexa.toml; do
     (cd "$dir" && rm -rf build dist && /src/build/native/nexa-pack build $key | tail -1)
     chown -R "$OWNER" "$dir/build" "$dir/dist"
 done
+# The Nexa Store'"'"'s built-in catalogue: every app above, signed like them
+# (nexa-pack repo build); shipped in the image as /usr/share/nexa-store/repo.
+rm -rf /src/build/store-repo
+mkdir -p /src/build/store-repo/packages
+cp /src/apps/*/dist/*.nexa /src/build/store-repo/packages/
+/src/build/native/nexa-pack repo build /src/build/store-repo $key --keys /src/assets/keys
+chown -R "$OWNER" /src/build/store-repo
 '

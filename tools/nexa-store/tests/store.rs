@@ -109,6 +109,20 @@ fn browse_and_download() {
     assert_eq!(w.ok(&["updates"])["apps"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["notes"]);
     assert_eq!(w.ok(&["info", "chat"])["name"], "Chat");
 
+    // Installed: Notes (an update waits), Clock, and an app no catalogue
+    // has, named by its own menu entry.
+    fs::write(w.p("registry/nexa-sketch.desktop"), "[Desktop Entry]\nName=Sketch\nComment=Draw things\n[Desktop Action x]\nName=Wrong\n").unwrap();
+    fs::write(w.p("registry/sketch.json"), serde_json::json!({"id": "sketch", "version": "0.9", "trust": "unknown-publisher",
+        "paths": [w.p("registry/nexa-sketch.desktop")], "permissions": ["files.pictures"]}).to_string()).unwrap();
+    fs::write(w.p("registry/bad name.json"), "{}").unwrap();
+    let inst = w.ok(&["installed"]);
+    let names: Vec<&str> = inst["apps"].as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["Clock", "Notes", "Sketch"], "{inst}");
+    let sketch = by_id(&inst, "sketch");
+    assert_eq!((sketch["description"].as_str(), sketch["verified"].as_bool(), sketch["catalogue"].is_null()), (Some("Draw things"), Some(false), true));
+    assert_eq!((by_id(&inst, "notes")["state"].as_str(), by_id(&inst, "notes")["version"].as_str(), by_id(&inst, "notes")["installed"].as_str()),
+               (Some("update"), Some("1.2.0"), Some("1.0.0")));
+
     let (progress, r) = w.run(&["download", "chat"]);
     assert_eq!(r["ok"], true, "{r}");
     let path = PathBuf::from(r["result"]["path"].as_str().unwrap());

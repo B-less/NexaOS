@@ -20,7 +20,7 @@ from .panel import spawn
 # Desktop-file ids, in order; a tuple lists names the same app has had in
 # different Alpine releases (foot: org.codeberg.dnkl.foot in 3.19, foot in 3.24).
 PINNED_CHOICES = ["nexa-nexus", "nexa-files", "nexa-browser", ("foot", "org.codeberg.dnkl.foot"), "nexa-settings",
-                  "nexa-software", "nexa-ai", "nexa-notes", "nexa-music"]
+                  "nexa-store", "nexa-ai", "nexa-notes", "nexa-music"]
 # Window app_id -> desktop-file id, where they differ.
 ALIASES = {"foot": "org.codeberg.dnkl.foot"}
 PINNED = []  # resolved against the installed apps when the Dock starts

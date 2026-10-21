@@ -5,6 +5,7 @@
 //!   nexa-store info ID
 //!   nexa-store updates
 //!   nexa-store download ID             fetch the package, check it, print its path
+//!   nexa-store installed               installed apps (from any source), with updates
 //!
 //! Catalogues come from /etc/nexa/store.conf - local folders (file://) or
 //! HTTPS only - and are signed (nexa-pack repo build). An index whose
@@ -220,6 +221,66 @@ fn describe(l: &Loaded, e: &Entry, registry: &Path) -> Value {
     })
 }
 
+/// One line of a .desktop file's [Desktop Entry] ("Name", "Comment").
+fn desktop_field(text: &str, key: &str) -> Option<String> {
+    let mut in_entry = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_entry = line == "[Desktop Entry]";
+        } else if in_entry {
+            if let Some(v) = line.strip_prefix(key).and_then(|r| r.strip_prefix('=')) {
+                return Some(v.trim().chars().take(200).collect());
+            }
+        }
+    }
+    None
+}
+
+/// Every app the broker installed (its registry), whether or not a
+/// catalogue has it: name, description and icon from its own menu entry,
+/// and the catalogue's newer version when there is one.
+fn installed(loaded: &[Loaded], registry: &Path) -> Vec<Value> {
+    let apps = merged(loaded);
+    let mut out: Vec<Value> = fs::read_dir(registry).into_iter().flatten().flatten().filter_map(|e| {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let id = name.strip_suffix(".json")?.to_string();
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            return None;
+        }
+        let meta = fs::metadata(e.path()).ok()?;
+        if !meta.is_file() || meta.len() > 1 << 20 {
+            return None;
+        }
+        let rec: Value = serde_json::from_slice(&fs::read(e.path()).ok()?).ok()?;
+        let paths: Vec<PathBuf> = rec["paths"].as_array().into_iter().flatten().filter_map(|p| p.as_str()).map(PathBuf::from).collect();
+        let desktop = paths.iter().find(|p| p.extension().is_some_and(|x| x == "desktop"))
+            .and_then(|p| fs::read(p).ok().filter(|b| b.len() < 64 << 10)).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+        let icon = paths.iter().find(|p| p.extension().is_some_and(|x| x == "svg" || x == "png")).filter(|p| p.is_file());
+        let version = rec["version"].as_str().unwrap_or("").to_string();
+        let mut v = json!({
+            "id": id, "name": desktop_field(&desktop, "Name").unwrap_or_else(|| id.clone()),
+            "description": desktop_field(&desktop, "Comment").unwrap_or_default(),
+            "version": version, "installed": version, "state": "installed", "icon": icon,
+            "permissions": rec["permissions"], "verified": rec["trust"] == "trusted",
+            "publisher": rec["publisher"], "catalogue": Value::Null,
+        });
+        if let Some((l, entry)) = apps.get(&id) {
+            let c = describe(l, entry, registry);
+            for k in ["name", "description", "categories", "size", "depends", "catalogue", "state"] {
+                v[k] = c[k].clone();
+            }
+            v["version"] = c["version"].clone();
+            if v["icon"].is_null() {
+                v["icon"] = c["icon"].clone();
+            }
+        }
+        Some(v)
+    }).collect();
+    out.sort_by_key(|a| a["name"].as_str().unwrap_or("").to_lowercase());
+    out
+}
+
 fn refresh(conf: &Conf, keys: &Path) -> Value {
     let mut out = Vec::new();
     for cat in &conf.catalogues {
@@ -345,7 +406,8 @@ fn run(args: &[String]) -> Result<Value, String> {
             merged(&loaded).get(id.as_str()).map(|(l, e)| describe(l, e, &registry)).ok_or_else(|| format!("{id} isn't in any catalogue"))
         }
         Some("download") => download(&conf, &keys, args.get(1).ok_or("usage: nexa-store download ID")?),
-        _ => Err("usage: nexa-store refresh | list [--search Q] [--category C] | info ID | updates | download ID".into()),
+        Some("installed") => Ok(json!({"apps": installed(&load(&conf, &keys), &registry)})),
+        _ => Err("usage: nexa-store refresh | list [--search Q] [--category C] | info ID | updates | download ID | installed".into()),
     }
 }
 

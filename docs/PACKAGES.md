@@ -66,6 +66,30 @@ byte-identical package.
    helper or another component, and records exactly what it installed so
    uninstalling is clean.
 
+## The Nexa Store
+
+The Store app (`nexa-store-app`, store/nexa_store) browses catalogues and
+installs from them. A catalogue is a folder (local, or HTTPS) made with
+`nexa-pack repo build DIR --key KEY`: `packages/*.nexa`, `icons/`, and an
+`index.json` listing each app's id, version, size and SHA-256, signed in
+`index.sig`. The image ships one with NexaOS's own apps
+(`/usr/share/nexa-store/repo`, built by `make nexa-apps`); others are added
+to `/etc/nexa/store.conf`:
+
+```json
+{"catalogues": [{"name": "NexaOS", "url": "file:///usr/share/nexa-store/repo"},
+                {"name": "Example", "url": "https://example.org/nexa-repo"}]}
+```
+
+The work is done by `nexa-store` (Rust, Landlock-confined, network only on
+port 443): an index whose signature doesn't match is refused, one signed by
+an unknown key is shown as "Not verified", and a download must match the
+index's size and SHA-256 before the broker's `install_app` (which checks the
+package's own signature again) installs it. `nexa-store installed` lists
+what is installed from any source, with updates. Tested by
+`make test-store-app` (real engine and signed catalogues, a stand-in broker,
+screenshots in dist/store-test).
+
 ## Keys
 
 The NexaOS publisher key is `assets/keys/7003a4c26d287fdf.pub` (installed

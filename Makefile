@@ -27,7 +27,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar preload-map
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app preload-map
 .SECONDARY:
 
 # ============================================================================
@@ -272,6 +272,10 @@ preload-map:
 # headless Sway, against the real nexa-patternd with a synthetic month of use.
 test-desktop-card: native
 	@sh scripts/test-desktop-card.sh
+
+# The Nexa Store window against the real engine and signed catalogues.
+test-store-app: native nexa-apps
+	@sh scripts/test-store-app.sh
 
 # The window buttons (minimize / maximize / close) of NexaOS apps and of the
 # Video Player clicked with a virtual mouse in a headless Sway.
