@@ -65,6 +65,7 @@ fn a_files_session() {
     let (progress, r) = h.run(json!({"op": "copy", "sources": [s(&h.p("video.bin")), s(&h.p("Documents"))], "dest_dir": s(&h.p("Documents (2)"))}));
     assert_eq!(r["result"]["done"], "Copied 2 items");
     assert!(progress.iter().all(|p| p["progress"]["total"] == (5 << 20) + 17), "{progress:?}");
+    assert_eq!(progress.last().unwrap()["progress"]["finishing"], true, "\"Copied\" only after it is written to the drive");
     assert_eq!(fs::read_to_string(h.p("Documents (2)/Documents/notes.txt")).unwrap(), "remember the milk");
     let undo_copy = r["result"]["undo"].clone();
 

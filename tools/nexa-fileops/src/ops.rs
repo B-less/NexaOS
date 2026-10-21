@@ -60,6 +60,30 @@ impl Progress {
     }
 }
 
+impl Progress {
+    /// Everything is copied; now waiting for it to reach the drive.
+    pub fn finishing(&mut self) {
+        if !self.quiet {
+            let mut out = io::stdout().lock();
+            let _ = writeln!(out, "{}", json!({"progress": {"done": self.done, "total": self.total, "current": "", "finishing": true}}));
+            let _ = out.flush();
+        }
+    }
+}
+
+/// Write everything waiting for the filesystem holding `p` to the drive
+/// (syncfs). Until this returns, a copy may exist only in memory: pulling a
+/// USB stick then loses it - and with a move, the original is already gone.
+/// A drive that failed to store it reports the error here.
+pub fn flush_fs(p: &Path) -> io::Result<()> {
+    let f = fs::File::open(p)?;
+    // SAFETY: f is an open file descriptor.
+    if unsafe { libc::syncfs(f.as_raw_fd()) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 /// An error in words a person understands.
 pub fn say(e: &io::Error) -> String {
     match e.raw_os_error() {
@@ -284,6 +308,12 @@ pub fn move_item(src: &Path, dst: &Path, prog: &mut Progress) -> io::Result<()> 
                 let _ = remove(dst);
                 return Err(io::Error::other(format!("couldn't copy {} ({why}), so nothing was moved", p.display())));
             }
+            // The original goes only once the copy is really on the drive.
+            prog.finishing();
+            if let Err(e) = flush_fs(dst) {
+                let _ = remove(dst);
+                return Err(io::Error::other(format!("the drive couldn't store it ({}), so nothing was moved", say(&e))));
+            }
             remove(src).map_err(inner)
         }
         other => other,
@@ -363,6 +393,26 @@ mod tests {
         assert_eq!(c("v1.2 folder", 1, false, true), "v1.2 folder (2)");
         assert!(check_name("a/b").is_err() && check_name("..").is_err() && check_name(" ").is_err());
         assert!(check_name("Holiday photos").is_ok());
+    }
+
+    #[test]
+    fn moving_to_another_drive_flushes_before_deleting() {
+        // /dev/shm (tmpfs) and the temp folder are different filesystems here.
+        let shm = Path::new("/dev/shm");
+        let dir = std::env::temp_dir().join(format!("fileops-across-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        if !shm.is_dir() || device(shm) == device(&dir) {
+            return;
+        }
+        let src = shm.join(format!("fileops-across-{}", std::process::id()));
+        fs::write(&src, b"holiday photos").unwrap();
+        assert!(flush_fs(&dir).is_ok());
+        assert!(flush_fs(&dir.join("missing")).is_err());
+        move_item(&src, &dir.join("photos"), &mut quiet()).unwrap();
+        assert!(!src.exists(), "the original goes once the copy is stored");
+        assert_eq!(fs::read(dir.join("photos")).unwrap(), b"holiday photos");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

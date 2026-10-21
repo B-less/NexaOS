@@ -405,6 +405,21 @@ fn copy_into(pairs: Vec<(PathBuf, PathBuf)>) -> Result<Value, String> {
         }
         failed.extend(inside);
     }
+    // "Copied" only once it is on the drive, not just in memory.
+    if !created.is_empty() {
+        prog.finishing();
+    }
+    let mut flushed: Vec<PathBuf> = Vec::new();
+    for t in &created {
+        let dir = parent(t);
+        if flushed.contains(&dir) {
+            continue;
+        }
+        if let Err(e) = ops::flush_fs(&dir) {
+            failed.push((t.clone(), format!("the drive couldn't store it ({})", ops::say(&e))));
+        }
+        flushed.push(dir);
+    }
     let n = created.len();
     outcome(format!("Copied {}", items(n)), n, &failed, json!({"created": created, "undo": undo}))
 }

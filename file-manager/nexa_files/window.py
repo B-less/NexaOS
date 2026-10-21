@@ -1183,6 +1183,10 @@ class FileManagerWindow(Gtk.Window):
         self.progress.show()
         self.cancel_btn.show()
         self.progress.set_fraction(min(1.0, p["done"] / total) if total else 0)
+        if p.get("finishing"):
+            self.progress.set_fraction(1.0)
+            self.status.set_text(f"{label}: finishing writing to the drive...")
+            return False
         done_s = fileops.human_size(p["done"], False)
         total_s = fileops.human_size(total, False)
         self.status.set_text(f"{label}: {p.get('current', '')} - {done_s} of {total_s}")
