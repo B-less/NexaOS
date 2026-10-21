@@ -21,7 +21,18 @@ DNS_SECONDARY=$8
 echo "[*] apk update"
 # One fresh package list (~3 MB); the installs below reuse it. (With
 # --no-cache each of them downloaded the list again: ~12 MB per build.)
-apk update --root "$ROOTFS_DIR"
+# A DNS or mirror hiccup is common and passes: try a few times before
+# giving up (it used to stop the whole refresh at the first one).
+tries=0
+until apk update --root "$ROOTFS_DIR"; do
+    tries=$((tries + 1))
+    if [ $tries -ge 4 ]; then
+        echo "ERROR: couldn't reach the Alpine package mirror after 4 tries - check the internet connection and run the build again." >&2
+        exit 1
+    fi
+    echo "[*] the package mirror didn't answer; trying again in $((tries * 10)) s"
+    sleep $((tries * 10))
+done
 
 echo "[*] installing core packages"
 apk add --root "$ROOTFS_DIR" --no-scripts $PKG_CORE

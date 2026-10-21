@@ -93,8 +93,13 @@ kernel: setup
 		echo "ERROR: Kernel source not found. Please extract kernel first."; \
 		exit 1; \
 	fi
+	@# Through tee for the log, but a failed build must stop here: /bin/sh
+	@# has no pipefail, so the build's own exit status goes through a file
+	@# (it used to say "Kernel built" and copy the old bzImage).
 	@cd $(KERNEL_DIR)/linux-$(KERNEL_VERSION) && \
-		$(MAKE) -j$(PARALLEL_JOBS) bzImage 2>&1 | tee -a $(BUILD_LOG)
+		{ $(MAKE) -j$(PARALLEL_JOBS) bzImage 2>&1; echo $$? > $(BUILD_DIR)/.kernel-status; } | tee -a $(BUILD_LOG); \
+		status=$$(cat $(BUILD_DIR)/.kernel-status); rm -f $(BUILD_DIR)/.kernel-status; \
+		if [ "$$status" != 0 ]; then echo "$(COLOR_RED)✗ Kernel build failed (see above)$(COLOR_RESET)"; exit 1; fi
 	@cp $(KERNEL_DIR)/linux-$(KERNEL_VERSION)/arch/x86/boot/bzImage $(DIST_DIR)/bzImage
 	@echo "$(COLOR_GREEN)✓ Kernel built: $(DIST_DIR)/bzImage$(COLOR_RESET)"
 
@@ -147,7 +152,8 @@ $(BUILD_DIR)/bootsplash_bin: $(BASE_DIR)/bootsplash.c $(BASE_DIR)/font8x8.h | $(
 kernel-module: kernel
 	@echo "$(COLOR_BLUE)[2/5] Building nexa_proc kernel module...$(COLOR_RESET)"
 	@cd $(BASE_DIR)/nexa_proc && \
-		$(MAKE) -j$(PARALLEL_JOBS) 2>&1 | tee -a $(BUILD_LOG)
+		{ $(MAKE) -j$(PARALLEL_JOBS) 2>&1; echo $$? > $(BUILD_DIR)/.module-status; } | tee -a $(BUILD_LOG); \
+		status=$$(cat $(BUILD_DIR)/.module-status); rm -f $(BUILD_DIR)/.module-status; [ "$$status" = 0 ]
 	@mkdir -p $(ROOTFS_DIR)/lib/modules
 	@cp $(BASE_DIR)/nexa_proc/nexa_proc.ko $(ROOTFS_DIR)/lib/modules/
 	@echo "$(COLOR_GREEN)✓ Kernel module built$(COLOR_RESET)"
