@@ -359,6 +359,16 @@ fn confine(conf: &Conf, registry: &Path) -> Result<(), String> {
         ("/dev/null".to_string(), sandbox::READ_WRITE), ("/dev/urandom".to_string(), sandbox::READ),
         (s(registry), sandbox::READ), (s(&cache), sandbox::READ_WRITE),
     ];
+    // DNS settings are often a link out of /etc (systemd-resolved, VPNs, WSL:
+    // /etc/resolv.conf -> /run/... or /mnt/...); Landlock follows the link,
+    // so curl couldn't look any name up. Allow where it really is.
+    for f in ["/etc/resolv.conf", "/etc/hosts", "/etc/ssl/certs/ca-certificates.crt"] {
+        if let Ok(real) = fs::canonicalize(f) {
+            if !real.starts_with("/etc") {
+                rules.push((s(&real), sandbox::READ));
+            }
+        }
+    }
     let mut https = false;
     for c in &conf.catalogues {
         match source(&c.url) {
