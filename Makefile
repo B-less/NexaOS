@@ -27,7 +27,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card preload-map
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar preload-map
 .SECONDARY:
 
 # ============================================================================
@@ -272,6 +272,11 @@ preload-map:
 # headless Sway, against the real nexa-patternd with a synthetic month of use.
 test-desktop-card: native
 	@sh scripts/test-desktop-card.sh
+
+# The window buttons (minimize / maximize / close) of NexaOS apps and of the
+# Video Player clicked with a virtual mouse in a headless Sway.
+test-titlebar: nexa-apps
+	@sh scripts/test-titlebar.sh
 
 gui-apps:
 	@echo "$(COLOR_BLUE)Building Nexa framebuffer desktop and GUI apps...$(COLOR_RESET)"

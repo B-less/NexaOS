@@ -155,7 +155,14 @@ def _toggle_maximize(window):
             window.unmaximize() if window.is_maximized() else window.maximize()
         return
     saved = getattr(window, "_nexa_restore_size", None)
-    window._nexa_restore_size = None if saved else window.get_size()
+    if saved:
+        window._nexa_restore_size = None
+    else:
+        # The whole window, title bar included (get_size leaves it out, so
+        # each maximize-and-back used to shrink the window by its height).
+        w, h = window.get_size()
+        bar = window.get_titlebar()
+        window._nexa_restore_size = (w, h + (bar.get_allocated_height() if bar else 0))
     if not compositor.toggle_maximize(os.getpid(), restore_size=saved):
         window._nexa_restore_size = None
         window.unmaximize() if saved else window.maximize()

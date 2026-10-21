@@ -19,6 +19,7 @@
 #include <gtk/gtk.h>
 #include <math.h>
 #include <string.h>
+#include <unistd.h>
 
 #define APP_ID "video-player"
 #define HIDE_AFTER_MS 2500
@@ -37,6 +38,7 @@ typedef struct {
     char *uri;
     guint hide_id, tick_id;
     GKeyFile *positions;
+    int restore_w, restore_h; /* size before Maximize on Sway; 0 = not maximized */
 } App;
 
 static App app;
@@ -354,6 +356,98 @@ static void on_full_clicked(GtkButton *b, gpointer d)
     toggle_fullscreen();
 }
 
+/* ---- window buttons --------------------------------------------------
+ * Wayland compositors ignore a window's own "minimize" request, and Sway
+ * ignores "maximize" from floating windows (every NexaOS window floats), so
+ * GTK's built-in buttons did nothing there. Like the other NexaOS apps, ask
+ * the compositor directly: hyprctl on Hyprland, swaymsg on Sway (argv only,
+ * no shell; the only text passed is this process's id). */
+
+static gboolean wm_run(const char *const *argv)
+{
+    char *out = NULL;
+    int status = 0;
+    gboolean ok = g_spawn_sync(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
+                               NULL, NULL, &out, NULL, &status, NULL)
+                  && g_spawn_check_wait_status(status, NULL) && out
+                  && (strstr(out, "ok") || strstr(out, "\"success\": true"));
+    g_free(out);
+    return ok;
+}
+
+static void on_minimize_clicked(GtkButton *b, gpointer d)
+{
+    (void)b; (void)d;
+    char sel[64];
+    gboolean done = FALSE;
+    if (g_getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
+        g_snprintf(sel, sizeof sel, "special:minimized,pid:%d", (int)getpid());
+        const char *argv[] = {"hyprctl", "dispatch", "movetoworkspacesilent", sel, NULL};
+        done = wm_run(argv);
+    } else if (g_getenv("SWAYSOCK")) {
+        g_snprintf(sel, sizeof sel, "[pid=%d] move scratchpad", (int)getpid());
+        const char *argv[] = {"swaymsg", sel, NULL};
+        done = wm_run(argv);
+    }
+    if (!done)
+        gtk_window_iconify(GTK_WINDOW(app.win));
+}
+
+static void on_maximize_clicked(GtkButton *b, gpointer d)
+{
+    (void)b; (void)d;
+    char sel[160];
+    gboolean done = FALSE;
+    if (g_getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
+        g_snprintf(sel, sizeof sel, "pid:%d", (int)getpid());
+        const char *focus[] = {"hyprctl", "dispatch", "focuswindow", sel, NULL};
+        const char *max[] = {"hyprctl", "dispatch", "fullscreen", "1", NULL};
+        done = wm_run(focus) && wm_run(max);
+    } else if (g_getenv("SWAYSOCK")) {
+        if (app.restore_w > 0) {
+            g_snprintf(sel, sizeof sel, "[pid=%d] resize set width %d px height %d px, move position center",
+                       (int)getpid(), app.restore_w, app.restore_h);
+        } else {
+            /* The whole window, title bar included (get_size leaves it out). */
+            int w, h;
+            gtk_window_get_size(GTK_WINDOW(app.win), &w, &h);
+            GtkWidget *bar = gtk_window_get_titlebar(GTK_WINDOW(app.win));
+            app.restore_w = w;
+            app.restore_h = h + (bar ? gtk_widget_get_allocated_height(bar) : 0);
+            g_snprintf(sel, sizeof sel, "[pid=%d] resize set width 100 ppt height 100 ppt, move position 0 0", (int)getpid());
+        }
+        const char *argv[] = {"swaymsg", sel, NULL};
+        done = wm_run(argv);
+        if (strstr(sel, "center") || !done)
+            app.restore_w = app.restore_h = 0;
+    }
+    if (!done) {
+        if (gtk_window_is_maximized(GTK_WINDOW(app.win)))
+            gtk_window_unmaximize(GTK_WINDOW(app.win));
+        else
+            gtk_window_maximize(GTK_WINDOW(app.win));
+    }
+}
+
+static void on_close_clicked(GtkButton *b, gpointer d)
+{
+    (void)b; (void)d;
+    gtk_window_close(GTK_WINDOW(app.win));
+}
+
+static GtkWidget *title_button(const char *icon, const char *tip, const char *role, GCallback cb)
+{
+    GtkWidget *btn = gtk_button_new_from_icon_name(icon, GTK_ICON_SIZE_MENU);
+    gtk_widget_set_tooltip_text(btn, tip);
+    gtk_widget_set_can_focus(btn, FALSE);
+    gtk_widget_set_valign(btn, GTK_ALIGN_CENTER);
+    GtkStyleContext *sc = gtk_widget_get_style_context(btn);
+    gtk_style_context_add_class(sc, "titlebutton");
+    gtk_style_context_add_class(sc, role);
+    g_signal_connect(btn, "clicked", cb, NULL);
+    return btn;
+}
+
 /* ---- playback ------------------------------------------------------- */
 
 static void stop_playback(void)
@@ -620,6 +714,10 @@ static gboolean on_key(GtkWidget *w, GdkEventKey *e, gpointer d)
         open_dialog();
         return TRUE;
     }
+    if (e->keyval == GDK_KEY_q && (e->state & GDK_CONTROL_MASK)) {
+        gtk_window_close(GTK_WINDOW(app.win));
+        return TRUE;
+    }
     if (!in_player)
         return FALSE;
     double vol = gtk_scale_button_get_value(GTK_SCALE_BUTTON(app.volume));
@@ -703,7 +801,7 @@ static const char *CSS =
     "headerbar button.titlebutton { background-image: none; background-color: transparent; color: @nexa_text;"
     "  border: none; border-radius: 50%; box-shadow: none; min-width: 26px; min-height: 26px; padding: 0; }"
     "headerbar button.titlebutton:hover { background-color: @nexa_hover; }"
-    "headerbar button.titlebutton.close:hover { background-color: #e5484d; color: #ffffff; }";
+    "headerbar button.titlebutton.close:hover { background-color: @nexa_crit; color: @nexa_on_accent; }";
 
 /* ---- build the window ----------------------------------------------- */
 
@@ -856,8 +954,10 @@ int main(int argc, char **argv)
      * title bars, and Sway's has no buttons); it shows the window title, so
      * the playing video's name appears here. Hidden in fullscreen. */
     GtkWidget *bar = gtk_header_bar_new();
-    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(bar), TRUE);
-    gtk_header_bar_set_decoration_layout(GTK_HEADER_BAR(bar), "icon:minimize,maximize,close");
+    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(bar), FALSE);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(bar), title_button("window-close-symbolic", "Close (Ctrl+Q)", "close", G_CALLBACK(on_close_clicked)));
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(bar), title_button("window-maximize-symbolic", "Maximize", "maximize", G_CALLBACK(on_maximize_clicked)));
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(bar), title_button("window-minimize-symbolic", "Minimize", "minimize", G_CALLBACK(on_minimize_clicked)));
     gtk_window_set_titlebar(GTK_WINDOW(app.win), bar);
     gtk_window_set_title(GTK_WINDOW(app.win), "Video Player"); /* reaches the bar now it's attached */
     app.stack = gtk_stack_new();
