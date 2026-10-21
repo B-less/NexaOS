@@ -671,8 +671,8 @@ MEDIAKEY_EOF
     chmod +x "$MNT_DIR/usr/local/bin/nexa-media-key"
 
     echo "[*] Generating the boot readahead recorder (nexa-preload)..."
-    # On a live boot without a readahead map (or with nexa.preload_record on
-    # the kernel command line) this records which parts of nexa.img the boot
+    # On a live boot without a readahead map for this image (or with
+    # nexa.preload_record on the kernel command line) this records which parts of nexa.img the boot
     # reads, for `make preload-map` to put on the ISO. Costs one mincore()
     # call every half second for 75 s; does nothing on installed systems.
     cat > "$MNT_DIR/etc/init.d/nexa-preload" << 'PRELOAD_EOF'
@@ -686,7 +686,10 @@ depend() {
 start() {
     img=/mnt/nexa-live/nexa.img
     [ -f "$img" ] || return 0
-    if [ -f /mnt/nexa-live/boot/nexa-preload.map ] && ! grep -qw nexa.preload_record /proc/cmdline; then
+    # A map made for this very image: nothing to record. One from an older
+    # build (or none) means this is the reference boot of make preload-map.
+    if /usr/local/bin/nexa-preload matches "$img" /mnt/nexa-live/boot/nexa-preload.map 2>/dev/null \
+            && ! grep -qw nexa.preload_record /proc/cmdline; then
         return 0
     fi
     mkdir -p /run/nexa-preload

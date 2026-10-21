@@ -272,6 +272,8 @@ test-files-app: native
 preload-map:
 	@rm -f $(DIST_DIR)/nexa-preload.map
 	@python3 scripts/test-live-boot.py --no-checks --shot $(DIST_DIR)/preload-boot.png --fetch /run/nexa-preload/boot.map $(DIST_DIR)/nexa-preload.map
+	@# Only a real map goes on the ISO.
+	@$(BUILD_DIR)/native/nexa-preload show $(DIST_DIR)/nexa-preload.map || { rm -f $(DIST_DIR)/nexa-preload.map; echo "$(COLOR_RED)✗ No usable boot map was recorded$(COLOR_RESET)"; exit 1; }
 	@$(DOCKER_RUN) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
 
 # The desktop "For you" card and Nexus' Suggested row (Nexa Patterns) in a

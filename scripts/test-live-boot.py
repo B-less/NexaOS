@@ -184,14 +184,18 @@ def main(argv):
         if fetch:
             remote, local = fetch
             buf = b""
-            s.sendall(f'while [ $(cut -d. -f1 /proc/uptime) -lt 85 ]; do sleep 1; done; echo FETCH_BEGIN; '
-                      f'base64 {remote} | tr -d "\\n"; echo; echo FETCH_END\n'.encode())
-            end = time.time() + 150
+            # From 85 s of uptime, and until the file is there (a recording
+            # finishes 75 s after its service starts), at most until 200 s.
+            # A file that never appears is a failure, not data: once the
+            # error message "base64: ... No such file" was saved as the map.
+            s.sendall(f'while [ $(cut -d. -f1 /proc/uptime) -lt 85 ] || {{ [ ! -f {remote} ] && [ $(cut -d. -f1 /proc/uptime) -lt 200 ]; }}; do sleep 1; done; '
+                      f'echo FETCH_BEGIN; if [ -f {remote} ]; then base64 {remote} | tr -d "\\n"; else echo FETCH_MISSING; fi; echo; echo FETCH_END\n'.encode())
+            end = time.time() + 260
             while time.time() < end and buf.count(b"FETCH_END") < 2:
                 pump(1)
             text = buf.decode(errors="replace").replace("\r", "")
             data = "".join(text.split("FETCH_BEGIN")[-1].split("FETCH_END")[0].split()) if text.count("FETCH_END") >= 2 else ""
-            if not data:
+            if not data or data == "FETCH_MISSING":
                 print(f"FAIL: couldn't fetch {remote}")
                 return 1
             with open(local, "wb") as f:

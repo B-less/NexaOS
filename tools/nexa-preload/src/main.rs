@@ -16,6 +16,9 @@
 //!       Stops early if memory gets tight; does nothing if MAP was made for
 //!       a different image.
 //!   nexa-preload show MAP          what a map holds
+//!   nexa-preload matches IMAGE MAP exit 0 if MAP was made for this IMAGE
+//!       (the live boot records a new map when it wasn't: an ISO carries the
+//!       previous build's map until `make preload-map` replaces it)
 //!
 //! The map is plain text: a header with the image's size and fingerprint, then
 //! "order first_page pages" lines.
@@ -135,6 +138,12 @@ fn record(image: &Path, map: &Path, seconds: u64) -> Result<(), String> {
     Ok(())
 }
 
+/// Was `map` made for this very image (size and fingerprint)?
+fn matches(image: &Path, map: &Path) -> Result<(), String> {
+    let (id, _) = read_map(map).ok_or("not a nexa-preload map")?;
+    if identity(image) == Some(id) { Ok(()) } else { Err("the map was made for a different image".into()) }
+}
+
 fn replay(image: &Path, map: &Path) -> Result<(), String> {
     let (id, ext) = read_map(map).ok_or("no usable map")?;
     if identity(image) != Some(id) {
@@ -162,6 +171,7 @@ fn main() {
     let result = match (a(1), a(2), a(3)) {
         (Some("record"), Some(img), Some(map)) => record(Path::new(img), Path::new(map), a(4).and_then(|s| s.parse().ok()).unwrap_or(75)),
         (Some("replay"), Some(img), Some(map)) => replay(Path::new(img), Path::new(map)),
+        (Some("matches"), Some(img), Some(map)) => matches(Path::new(img), Path::new(map)),
         (Some("show"), Some(map), _) => match read_map(Path::new(map)) {
             Some(((size, print), ext)) => {
                 let pages: u64 = ext.iter().map(|e| e.pages).sum();
@@ -171,7 +181,7 @@ fn main() {
             }
             None => Err("not a nexa-preload map".into()),
         },
-        _ => Err("usage: nexa-preload record IMAGE MAP [SECONDS] | replay IMAGE MAP | show MAP".into()),
+        _ => Err("usage: nexa-preload record IMAGE MAP [SECONDS] | replay IMAGE MAP | show MAP | matches IMAGE MAP".into()),
     };
     if let Err(e) = result {
         eprintln!("nexa-preload: {e}");
@@ -216,9 +226,14 @@ mod tests {
         replay(&img, &map).unwrap();
         let r = preload::resident(&f).unwrap();
         assert!(r[8..24].iter().all(|x| *x), "the mapped range is now in memory");
+        assert!(matches(&img, &map).is_ok());
         // A different image (another build): the map is ignored.
         fs::write(&img, vec![1u8; 300 * 1024]).unwrap();
         assert!(replay(&img, &map).unwrap_err().contains("different image"));
+        assert!(matches(&img, &map).is_err(), "the live boot records a new one");
+        // Not a map at all (an error message saved as one, as once happened).
+        fs::write(&map, "base64: /run/nexa-preload/boot.map: No such file or directory").unwrap();
+        assert!(matches(&img, &map).unwrap_err().contains("not a nexa-preload map"));
     }
 
     #[test]
