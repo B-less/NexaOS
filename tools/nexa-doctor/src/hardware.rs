@@ -174,7 +174,12 @@ fn firmware_errors(kmsg: &Path) -> Option<Vec<String>> {
                 let rec = String::from_utf8_lossy(&buf[..n]);
                 let msg = rec.split_once(';').map(|(_, m)| m).unwrap_or(&rec).lines().next().unwrap_or("").to_string();
                 let l = msg.to_lowercase();
-                if l.contains("firmware") && (l.contains("fail") || l.contains("error") || l.contains("-2") || l.contains("not found")) {
+                // Firmware problems, and Wi-Fi drivers' own errors (they often
+                // don't say "firmware": "iwlwifi ...: Failed to start RT ucode").
+                let wifi_driver = ["iwlwifi", "rtw88", "rtw89", "rtl8", "mt76", "mt79", "ath9k", "ath10k", "ath11k", "ath12k", "brcmf", "mwifiex"]
+                    .iter().any(|d| l.contains(d));
+                let bad = l.contains("fail") || l.contains("error") || l.contains("-2") || l.contains("not found") || l.contains("timeout");
+                if (l.contains("firmware") || wifi_driver) && bad {
                     out.push(msg);
                 }
             }
@@ -184,6 +189,28 @@ fn firmware_errors(kmsg: &Path) -> Option<Vec<String>> {
     }
     out.dedup();
     Some(out)
+}
+
+/// Wi-Fi beyond the card itself: the radio's on/off switches (rfkill: the
+/// keyboard's Wi-Fi key or a switch is "hard", settings are "soft"), the
+/// network interfaces and their drivers, and whether iwd (which runs Wi-Fi)
+/// is running.
+fn wifi(sys: &Path, proc_root: &Path) -> Value {
+    let radios: Vec<Value> = fs::read_dir(sys.join("class/rfkill")).into_iter().flatten().flatten().filter_map(|e| {
+        let d = e.path();
+        let kind = read(&d.join("type"))?;
+        Some(json!({"name": read(&d.join("name")), "type": kind,
+                    "soft": read(&d.join("soft")).as_deref() == Some("1"), "hard": read(&d.join("hard")).as_deref() == Some("1")}))
+    }).collect();
+    let interfaces: Vec<Value> = fs::read_dir(sys.join("class/net")).into_iter().flatten().flatten().filter(|e| {
+        e.path().join("wireless").exists() || e.path().join("phy80211").exists()
+    }).map(|e| {
+        let d = e.path();
+        json!({"name": e.file_name().to_string_lossy(), "state": read(&d.join("operstate")), "driver": driver(&d.join("device"))})
+    }).collect();
+    let iwd = fs::read_dir(proc_root).into_iter().flatten().flatten()
+        .any(|e| read(&e.path().join("comm")).as_deref() == Some("iwd"));
+    json!({"radios": radios, "interfaces": interfaces, "iwd": iwd})
 }
 
 fn cpu(proc_root: &Path) -> Option<String> {
@@ -231,6 +258,24 @@ pub fn report(sys: &Path, proc_root: &Path, kmsg: &Path) -> Value {
     {
         problems.push("No working Wi-Fi adapter".into());
     }
+    let wifi = wifi(sys, proc_root);
+    let wlan = |key: &str| wifi["radios"].as_array().into_iter().flatten().any(|r| r["type"] == "wlan" && r[key] == true);
+    if wlan("hard") {
+        problems.push("Wi-Fi is switched off by the keyboard's Wi-Fi key or a switch (press it; on some laptops it's Fn + a key with an aeroplane or antenna)".into());
+    } else if wlan("soft") {
+        problems.push("Wi-Fi is switched off in software (Settings, or aeroplane mode)".into());
+    }
+    for d in &pci {
+        let slot = d["slot"].as_str().unwrap_or("");
+        let dev = sys.join("bus/pci/devices").join(slot);
+        if d["kind"] == "Wi-Fi" && !d["driver"].is_null() && !dev.join("net").exists() && !dev.join("ieee80211").exists() {
+            problems.push(format!("The Wi-Fi card has its driver ({}) but no network interface: its firmware didn't load (see the errors below)",
+                                  d["driver"].as_str().unwrap_or("")));
+        }
+    }
+    if wifi["interfaces"].as_array().map_or(false, |i| !i.is_empty()) && wifi["iwd"] == false {
+        problems.push("The Wi-Fi service (iwd) isn't running".into());
+    }
 
     json!({
         "computer": {
@@ -241,7 +286,7 @@ pub fn report(sys: &Path, proc_root: &Path, kmsg: &Path) -> Value {
         "problems": problems,
         "pci": pci, "usb": usb, "sdio": sdio,
         "acpi_without_driver": acpi_unbound, "i2c_touchpads": i2c_touchpads,
-        "input": inputs,
+        "input": inputs, "wifi": wifi,
         "firmware_errors": firmware_errors(kmsg),
     })
 }
@@ -280,14 +325,23 @@ pub fn text(r: &Value) -> String {
     }
     let input: Vec<String> = r["input"].as_array().into_iter().flatten().filter(|i| i["kind"] != "other").map(|i| format!("{} ({})", s(&i["name"]), s(&i["kind"]))).collect();
     t += &format!("Input: {}\n", if input.is_empty() { "none".to_string() } else { input.join("; ") });
+    let w = &r["wifi"];
+    let radios: Vec<String> = w["radios"].as_array().into_iter().flatten().filter(|x| x["type"] == "wlan")
+        .map(|x| format!("{} {}", s(&x["name"]), if x["hard"] == true { "OFF (key/switch)" } else if x["soft"] == true { "off (software)" } else { "on" })).collect();
+    let ifaces: Vec<String> = w["interfaces"].as_array().into_iter().flatten()
+        .map(|x| format!("{} {} ({})", s(&x["name"]), s(&x["state"]), x["driver"].as_str().unwrap_or("?"))).collect();
+    t += &format!("Wi-Fi: radio {}; interface {}; iwd {}\n",
+                  if radios.is_empty() { "none".into() } else { radios.join(", ") },
+                  if ifaces.is_empty() { "none".into() } else { ifaces.join(", ") },
+                  if w["iwd"] == true { "running" } else { "NOT running" });
     match r["firmware_errors"].as_array() {
         Some(e) if !e.is_empty() => {
-            t += "Firmware errors:\n";
+            t += "Firmware / Wi-Fi errors:\n";
             for l in e.iter().take(15) {
                 t += &format!("  {}\n", s(l));
             }
         }
-        Some(_) => t += "Firmware errors: none\n",
+        Some(_) => t += "Firmware / Wi-Fi errors: none\n",
         None => t += "Firmware errors: kernel log not readable (run with doas for this part)\n",
     }
     t
@@ -343,6 +397,14 @@ mod tests {
         put(&proc_root, "cpuinfo", "processor\t: 0\nmodel name\t: Intel(R) Celeron(R) N4020 CPU @ 1.10GHz\n");
         put(&proc_root, "bus/input/devices", "I: Bus=0011\nN: Name=\"AT Translated Set 2 keyboard\"\nH: Handlers=sysrq kbd event0\n\nI: Bus=0019\nN: Name=\"Power Button\"\nH: Handlers=kbd event1\n");
 
+        put(&sys, "class/rfkill/rfkill0/type", "wlan\n");
+        put(&sys, "class/rfkill/rfkill0/name", "phy0\n");
+        put(&sys, "class/rfkill/rfkill0/soft", "0\n");
+        put(&sys, "class/rfkill/rfkill0/hard", "1\n");
+        let v = report(&sys, &proc_root, &r.join("no-kmsg"));
+        assert!(v["problems"].as_array().unwrap().iter().any(|p| p.as_str().unwrap().contains("keyboard's Wi-Fi key")), "{}", v["problems"]);
+        assert!(text(&v).contains("Wi-Fi: radio phy0 OFF (key/switch); interface none; iwd NOT running"), "{}", text(&v));
+        put(&sys, "class/rfkill/rfkill0/hard", "0\n");
         let v = report(&sys, &proc_root, &r.join("no-kmsg"));
         assert_eq!(v["computer"]["model"], "TM1");
         assert!(v["computer"]["processor"].as_str().unwrap().contains("N4020"));
@@ -360,14 +422,22 @@ mod tests {
         assert!(t.contains("KA Tech TM1") && t.contains("10ec:c821  Wi-Fi  -> NO DRIVER") && t.contains("kernel log not readable"), "{t}");
         assert!(!t.contains("0000:00:00.0"), "bridges left out of the text");
 
-        // With the driver attached and a touchpad present: those problems go.
+        // The driver attached but no interface: the firmware didn't load.
         bind(&sys, "bus/pci/devices/0000:01:00.0", "rtw88_8821ce");
+        let v = report(&sys, &proc_root, &r.join("no-kmsg"));
+        assert!(v["problems"].as_array().unwrap().iter().any(|p| p.as_str().unwrap().contains("rtw88_8821ce) but no network interface")), "{}", v["problems"]);
+        // With an interface, a touchpad and iwd: those problems go.
+        fs::create_dir_all(sys.join("bus/pci/devices/0000:01:00.0/net/wlan0")).unwrap();
+        put(&sys, "class/net/wlan0/operstate", "up\n");
+        fs::create_dir_all(sys.join("class/net/wlan0/wireless")).unwrap();
+        put(&proc_root, "42/comm", "iwd\n");
         fs::create_dir_all(sys.join("class/ieee80211/phy0")).unwrap();
         bind(&sys, "bus/acpi/devices/ELAN0001:00", "i2c_hid_acpi");
         put(&proc_root, "bus/input/devices", "N: Name=\"ELAN0001:00 04F3:3140 Touchpad\"\nH: Handlers=mouse0 event5\n");
         let v = report(&sys, &proc_root, &r.join("no-kmsg"));
         let problems: Vec<&str> = v["problems"].as_array().unwrap().iter().map(|p| p.as_str().unwrap()).collect();
-        assert!(!problems.iter().any(|p| p.contains("Wi-Fi") || p.contains("touchpad") || p.contains("ELAN")), "{problems:?}");
+        assert!(!problems.iter().any(|p| p.contains("Wi-Fi") || p.contains("touchpad") || p.contains("ELAN") || p.contains("iwd")), "{problems:?}");
+        assert!(text(&v).contains("interface wlan0 up"), "{}", text(&v));
         assert_eq!(v["input"][0]["kind"], "touchpad");
     }
 }
