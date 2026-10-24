@@ -209,6 +209,19 @@ fn broken_wifi(sys: &Path) -> Vec<String> {
     }).map(|e| e.file_name().to_string_lossy().into_owned()).collect()
 }
 
+/// Is there a Wi-Fi card at all (a PCI network controller or any radio)?
+fn has_wifi(sys: &Path) -> bool {
+    fs::read_dir(sys.join("class/ieee80211")).map_or(false, |mut r| r.next().is_some())
+        || fs::read_dir(sys.join("bus/pci/devices")).into_iter().flatten().flatten()
+            .any(|e| fs::read_to_string(e.path().join("class")).map_or(false, |c| c.trim().starts_with("0x0280")))
+}
+
+/// Is iwd (which runs Wi-Fi) running? Any user can see process names.
+fn iwd_running(proc_root: &Path) -> bool {
+    fs::read_dir(proc_root).into_iter().flatten().flatten()
+        .any(|e| fs::read_to_string(e.path().join("comm")).map_or(false, |c| c.trim() == "iwd"))
+}
+
 fn wifi_hard_blocked(sys: &Path) -> bool {
     fs::read_dir(sys.join("class/rfkill")).into_iter().flatten().flatten().any(|e| {
         fs::read_to_string(e.path().join("type")).map(|t| t.trim() == "wlan").unwrap_or(false)
@@ -316,6 +329,10 @@ pub fn check() -> Vec<Finding> {
         out.push(Finding { id: "wifi".into(), title: "The Wi-Fi adapter isn't working".into(),
                            detail: format!("The card ({}) has no network interface.", wifi.join(", ")), fixable: true });
     }
+    if has_wifi(&sys) && !iwd_running(&proc_root()) {
+        out.push(Finding { id: "wifi-service".into(), title: "Wi-Fi's service isn't running".into(),
+                           detail: "iwd, which runs Wi-Fi, has stopped, so no network can be found or joined.".into(), fixable: true });
+    }
     if let Some(free) = home_free() {
         if free < 0.05 {
             out.push(Finding { id: "disk".into(), title: format!("The disk is almost full ({:.0}% free)", free * 100.0),
@@ -359,6 +376,7 @@ pub fn fix(id: &str) -> Result<String, String> {
             .ok_or_else(|| "couldn't change the volume".into()),
         "brightness" => broker("set_brightness", json!({"percent": 30})).map(|_| "Screen brightness set to 30%".to_string()),
         "wifi" => broker("repair_wifi", json!({})).map(|v| v["done"].as_str().unwrap_or("Wi-Fi repaired").to_string()),
+        "wifi-service" => broker("restart_service", json!({"name": "iwd"})).map(|_| "Wi-Fi's service started again".to_string()),
         other => {
             let key = other.strip_prefix("restart:").ok_or_else(|| format!("unknown problem '{other}'"))?;
             let p = parts().into_iter().find(|p| p.matches.join(" ") == key && (p.session.is_empty() || p.session == session()))
@@ -378,6 +396,7 @@ fn watch() -> ! {
     let mut restarts: HashMap<String, Vec<Instant>> = HashMap::new();
     let mut gave_up: HashMap<String, bool> = HashMap::new();
     let mut last_health = Instant::now() - health_every;
+    let mut iwd_restarted: Option<Instant> = None;
     let mut told: HashMap<&'static str, Instant> = HashMap::new();
     let mut wifi_repaired = false;
     log("watching");
@@ -414,6 +433,16 @@ fn watch() -> ! {
             }
             if !dark_backlights(&sys).is_empty() && fix("brightness").is_ok() {
                 log("the screen was at brightness 0; set to 30%");
+            }
+            // Wi-Fi's service (iwd) stopped: start it again, at most once
+            // every 2 minutes (it once quit at every boot; see conf.d/dbus).
+            if has_wifi(&sys) && !iwd_running(&proc_root())
+                && iwd_restarted.map_or(true, |t: Instant| t.elapsed() > Duration::from_secs(120)) {
+                iwd_restarted = Some(Instant::now());
+                match fix("wifi-service") {
+                    Ok(done) => log(&format!("iwd wasn't running: {done}")),
+                    Err(e) => log(&format!("iwd wasn't running and couldn't be started: {e}")),
+                }
             }
             // Wi-Fi: one automatic repair per session, once the boot has settled.
             if !wifi_repaired && started.elapsed() > Duration::from_secs(45) && !broken_wifi(&sys).is_empty() && !wifi_hard_blocked(&sys) {
@@ -538,6 +567,14 @@ mod tests {
         fs::write(rf.join("type"), "wlan\n").unwrap();
         fs::write(rf.join("hard"), "1\n").unwrap();
         assert!(wifi_hard_blocked(&r));
+        assert!(has_wifi(&r), "a 0x0280 card");
+        let p = r.join("proc");
+        fs::create_dir_all(p.join("7")).unwrap();
+        fs::write(p.join("7/comm"), "sway\n").unwrap();
+        assert!(!iwd_running(&p));
+        fs::create_dir_all(p.join("9")).unwrap();
+        fs::write(p.join("9/comm"), "iwd\n").unwrap();
+        assert!(iwd_running(&p));
     }
 
     #[test]

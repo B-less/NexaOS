@@ -844,6 +844,36 @@ SYSCTL_EOF
     # Start services side by side (each still waits for what it needs): the
     # desktop no longer waits behind Wi-Fi, Bluetooth, the firewall or the AI.
     [ -f "$MNT_DIR/etc/rc.conf" ] && sed -i 's/^#\?rc_parallel=.*/rc_parallel="YES"/' "$MNT_DIR/etc/rc.conf"
+    # ...but D-Bus runs in the foreground under OpenRC (--nofork plus
+    # command_background), so it counted as "started" the moment it was
+    # launched, before its socket existed. Started side by side, iwd came
+    # up in that gap, failed with "Failed to initialize D-Bus" and quit:
+    # no Wi-Fi on any PC, and the desktop's requests to it were refused
+    # ("Permission denied"). D-Bus is now started only once its socket is
+    # there, and iwd is kept running by supervise-daemon (restarted if it
+    # ever stops). conf.d is read before the service scripts, which stay
+    # Alpine's own.
+    mkdir -p "$MNT_DIR/etc/conf.d"
+    cat > "$MNT_DIR/etc/conf.d/dbus" << 'DBUSCONF_EOF'
+# NexaOS: dependants (iwd, bluetoothd, nexa-brokerd...) start only once the
+# system bus accepts connections.
+start_post() {
+	i=0
+	while [ ! -S /run/dbus/system_bus_socket ] && [ $i -lt 100 ]; do
+		sleep 0.05
+		i=$((i + 1))
+	done
+	[ -S /run/dbus/system_bus_socket ] || ewarn "the system bus socket didn't appear"
+	return 0
+}
+DBUSCONF_EOF
+    cat > "$MNT_DIR/etc/conf.d/iwd" << 'IWDCONF_EOF'
+# NexaOS: keep Wi-Fi's daemon running; if it stops (it once quit at boot
+# when D-Bus wasn't ready), it is started again 2 s later.
+supervisor=supervise-daemon
+respawn_delay=2
+respawn_max=0
+IWDCONF_EOF
 
     echo "[*] Enabling syslog and crond (sshd stays off)..."
     # All three are already installed (openssh/busybox-extras from
