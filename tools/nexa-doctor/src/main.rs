@@ -463,7 +463,14 @@ fn main() {
         Some("security") => Ok(security(&sys_root())),
         Some("hardware") => {
             let kmsg = std::env::var_os("NEXA_DOCTOR_KMSG").map(PathBuf::from).unwrap_or_else(|| "/dev/kmsg".into());
-            let r = hardware::report(&sys_root(), &proc_root(), &kmsg);
+            let mut r = hardware::report(&sys_root(), &proc_root(), &kmsg);
+            // The kernel log needs root, which people don't have: the system
+            // broker hands out just its hardware lines (Wi-Fi, firmware, radios).
+            if r["firmware_errors"].is_null() {
+                if let Ok(v) = broker("hardware_log", json!({})) {
+                    r["firmware_errors"] = v["lines"].clone();
+                }
+            }
             let text = hardware::text(&r);
             let saved = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("nexa-hardware-report.txt"))
                 .filter(|p| fs::write(p, &text).is_ok());

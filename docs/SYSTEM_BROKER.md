@@ -43,6 +43,8 @@ USB/SD drives (re-checked against sysfs), only under `/media`.
 | `set_governor` | `governor` | | performance, powersave, ondemand, ... |
 | `set_brightness` | `percent` | | never fully dark (1% minimum) |
 | `set_timezone` | `zone` | | must exist in /usr/share/zoneinfo |
+| `repair_wifi` | | | radio on (unless the key/switch blocks it), Wi-Fi card's driver re-attached (PCI, SD bus, USB) |
+| `hardware_log` | | | read only: the kernel log's lines about firmware, Wi-Fi/Bluetooth drivers, radios and touchpads that failed (at most 60), never the rest |
 | `set_hostname` | `name` | yes | RFC 1123; /etc/hosts kept in step |
 | `bluetooth_unblock` | | | can't override a hardware switch |
 | `write_ai_config` | `data` | | only the assistant's own fields |

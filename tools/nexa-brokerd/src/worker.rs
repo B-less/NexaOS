@@ -17,6 +17,43 @@ fn sh(prog: &str, args: &[&str]) -> Result<String, String> {
     if out.status.success() { Ok(text) } else { Err(text.trim().lines().last().unwrap_or("failed").to_string()) }
 }
 
+/// Is this kernel log line about why hardware doesn't work?
+pub fn hardware_line(line: &str) -> bool {
+    let l = line.to_lowercase();
+    let topic = ["firmware", "iwlwifi", "rtw88", "rtw89", "rtl8", "mt76", "mt79", "ath9k", "ath10k", "ath11k", "ath12k",
+                 "brcmf", "mwifiex", "rfkill", "wlan", "bluetooth", "i2c_hid", "i2c-hid", "elan", "synaptics", "pinctrl"]
+        .iter().any(|t| l.contains(t));
+    let bad = ["fail", "error", "-2", "not found", "timeout", "unable", "can't", "cannot", "invalid", "blocked"]
+        .iter().any(|t| l.contains(t));
+    topic && bad
+}
+
+/// The kernel log's hardware lines (see hardware_line), oldest first, at
+/// most 60 of 300 characters. Reads what is there and stops.
+fn hardware_log(kmsg: &Path) -> Vec<String> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    let Ok(mut f) = fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(kmsg) else { return vec![] };
+    let mut out: Vec<String> = Vec::new();
+    let mut buf = vec![0u8; 8192];
+    for _ in 0..50000 {
+        match f.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                let rec = String::from_utf8_lossy(&buf[..n]);
+                let msg = rec.split_once(';').map(|(_, m)| m).unwrap_or(&rec).lines().next().unwrap_or("").to_string();
+                if hardware_line(&msg) && out.last() != Some(&msg) {
+                    out.push(msg.chars().take(300).collect());
+                }
+            }
+            Err(e) if e.raw_os_error() == Some(libc::EPIPE) => continue,
+            Err(_) => break,
+        }
+    }
+    let skip = out.len().saturating_sub(60);
+    out.split_off(skip)
+}
+
 fn read(p: &Path) -> Option<String> {
     fs::read_to_string(p).ok().map(|s| s.trim().to_string())
 }
@@ -152,6 +189,12 @@ pub fn perform(a: &Action, root: &Path, caller: &Caller) -> Result<Value, String
                 return Err("Bluetooth is turned off by a hardware switch or key.".into());
             }
             Ok(json!({"done": if found { "Bluetooth radio is on" } else { "No Bluetooth radio was blocked" }}))
+        }
+        Action::HardwareLog => {
+            // Only lines about firmware, Wi-Fi/Bluetooth drivers, radios and
+            // input devices (why a card or touchpad doesn't work), never the
+            // rest of the kernel log: people have no root, but need this.
+            Ok(json!({"lines": hardware_log(&root.join("dev/kmsg"))}))
         }
         Action::RepairWifi => {
             // The radio: on, unless a key or switch holds it off.
@@ -349,6 +392,21 @@ mod tests {
         assert_eq!(read(&rf.join("soft")).unwrap(), "0");
         fs::write(rf.join("hard"), "1\n").unwrap();
         assert!(perform(&Action::BluetoothUnblock, &r, &me()).unwrap_err().contains("hardware switch"));
+    }
+
+    #[test]
+    fn hardware_log_lines() {
+        assert!(hardware_line("iwlwifi 0000:00:14.3: Direct firmware load for iwlwifi-9000-pu-b0-jf-b0-46.ucode failed with error -2"));
+        assert!(hardware_line("ath10k_pci 0000:02:00.0: failed to fetch board file: -2"));
+        assert!(hardware_line("i2c_hid_acpi i2c-ELAN0001:00: can't add hid device: -110"));
+        assert!(!hardware_line("usb 1-2: new high-speed USB device number 3 using xhci_hcd"), "only problems");
+        assert!(!hardware_line("EXT4-fs error (device sda1): something private"), "nothing outside hardware");
+        // A kmsg-like file: records "prio,seq,time,-;message".
+        let r = fake_root("hwlog");
+        fs::create_dir_all(r.join("dev")).unwrap();
+        fs::write(r.join("dev/kmsg"), "6,1,100,-;iwlwifi 0000:00:14.3: Direct firmware load for x failed with error -2\n").unwrap();
+        let out = perform(&Action::HardwareLog, &r, &me()).unwrap();
+        assert_eq!(out["lines"][0], "iwlwifi 0000:00:14.3: Direct firmware load for x failed with error -2", "{out}");
     }
 
     #[test]

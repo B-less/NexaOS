@@ -342,7 +342,7 @@ pub fn text(r: &Value) -> String {
             }
         }
         Some(_) => t += "Firmware / Wi-Fi errors: none\n",
-        None => t += "Firmware errors: kernel log not readable (run with doas for this part)\n",
+        None => t += "Firmware / Wi-Fi errors: kernel log not readable (the system service isn't running)\n",
     }
     t
 }

@@ -34,6 +34,7 @@ pub enum Action {
     BluetoothUnblock,
     /// Wi-Fi radio on and the adapter's driver re-attached (Nexa Doctor's fix).
     RepairWifi,
+    HardwareLog,
     WriteAiConfig(serde_json::Map<String, Value>),
     // services
     Service { verb: String, name: String },
@@ -243,6 +244,7 @@ pub fn parse(action: &str, args: &Value, root: &Path) -> Result<Action, String> 
         }
         "bluetooth_unblock" => Action::BluetoothUnblock,
         "repair_wifi" => Action::RepairWifi,
+        "hardware_log" => Action::HardwareLog,
         "write_ai_config" => Action::WriteAiConfig(ai_config(args)?),
         "start_service" | "stop_service" | "restart_service" | "enable_service" | "disable_service" => {
             let name = str_arg(args, "name")?;
@@ -349,6 +351,7 @@ impl Action {
             SetBrightness(_) => a(true, vec!["/sys/devices", "/sys/class/backlight"], false, vec![], 10),
             BluetoothUnblock => a(true, vec!["/sys/devices", "/sys/class/rfkill"], false, vec![], 10),
             RepairWifi => a(true, vec!["/sys/devices", "/sys/class/rfkill", "/sys/bus/pci", "/sys/bus/sdio", "/sys/bus/usb"], false, vec![], 30),
+            HardwareLog => a(true, vec![], false, vec![], 10),
             SetTimezone(_) => a(true, vec!["/etc"], false, vec![], 10),
             SetHostname(_) => a(true, vec!["/etc", "/proc/sys/kernel"], true, vec![], 10),
             WriteAiConfig(_) => a(true, vec!["/etc/nexa-ai"], false, vec![], 10),
@@ -382,6 +385,7 @@ impl Action {
             SetHostname(n) => format!("Rename this computer to {n}"),
             BluetoothUnblock => "Turn the Bluetooth radio on".into(),
             RepairWifi => "Repair the Wi-Fi adapter".into(),
+            HardwareLog => "Read the kernel's Wi-Fi, firmware and driver messages".into(),
             WriteAiConfig(d) => format!("Change the assistant settings ({})", d.keys().cloned().collect::<Vec<_>>().join(", ")),
             Service { verb, name } => format!("{} the {name} service", capitalise(verb)),
             ServiceAtBoot { name, enable } => format!("{} {name} at startup", if *enable { "Start" } else { "Don't start" }),
