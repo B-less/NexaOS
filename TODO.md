@@ -26,6 +26,15 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [x] BIOS + UEFI install tests pass on Alpine 3.24 with username "nexa" + password (UEFI re-run on the 3.2.0 ISO: PASS) (BIOS boot in QEMU takes ~95 s: SeaBIOS reads the 37 MB initramfs slowly; harness wait raised to 240 s)
 - [x] Choose your own username during install (account renamed everywhere, uid stays 1000; system no longer depends on the name "user"); install test now uses "nexa"
 - [ ] Install to a real disk and boot it *(needs you)*
+- [ ] New installer, macOS-style flow in Hexa (research and plan: docs/INSTALLER_PLAN.md, 2026-10-24) - **last, per AGENTS.md**:
+  - [ ] I1 Rust engine `nexa-installd` behind a broker action (replaces the Python root helper): disks, a layout shown before anything is erased, image copy with SHA-256 check, GRUB BIOS+UEFI; ESP + system A + system B + data
+  - [ ] I2 Installer window: language, choose disk (typed confirmation), optional encryption, progress with time left, restart
+  - [ ] I3 First-boot setup after the restart (language, keyboard, Wi-Fi, time zone, account, privacy, theme); accounts leave the installer
+  - [ ] I4 Recovery boot entry: reinstall keeping your files, disk tool, roll back
+  - [ ] I5 Disk encryption (LUKS2), later TPM unlock
+  - [ ] I6 A/B system updates with rollback (signed images)
+  - [ ] I7 Secure Boot: signed UKI + own keys; shim only via shim-review
+  - [ ] I8 Install next to Windows (NTFS shrink), only after I1-I4 are proven
 
 ## 4. Features
 - [x] Private browsing over Tor: `nexadark` (or Tor window button / start menu) opens a private window through a per-user Tor on 127.0.0.1:9150; verified check.torproject.org says "configured to use Tor" with normal DNS switched off. Honest note in the window: not Tor Browser (fingerprinting)
