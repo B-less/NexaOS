@@ -283,17 +283,28 @@ fi
 
 /usr/local/bin/nexa-wayland-check || true
 
-if command -v dbus-daemon >/dev/null 2>&1 && ! pidof dbus-daemon >/dev/null 2>&1; then
+# D-Bus and seatd come from OpenRC, which may still be starting them (the
+# boot starts services side by side). Wait for their sockets first; only if
+# they never appear start a copy here. Starting one at once raced OpenRC's
+# own and left two seatds (or two buses) fighting over one socket.
+wait_for_socket() {
+    i=0
+    while [ ! -S "$1" ] && [ $i -lt 50 ]; do
+        sleep 0.1
+        i=$((i + 1))
+    done
+    [ -S "$1" ]
+}
+
+if command -v dbus-daemon >/dev/null 2>&1 && ! wait_for_socket /run/dbus/system_bus_socket \
+        && ! pidof dbus-daemon >/dev/null 2>&1; then
     dbus-daemon --system --fork >/var/log/dbus.log 2>&1 || true
 fi
 
 if command -v seatd >/dev/null 2>&1; then
-    if [ ! -S /run/seatd.sock ]; then
+    if ! wait_for_socket /run/seatd.sock && ! pidof seatd >/dev/null 2>&1; then
         seatd -g seat >/var/log/seatd.log 2>&1 &
-        for i in 1 2 3 4 5 6 7 8 9 10; do
-            [ -S /run/seatd.sock ] && break
-            sleep 0.2
-        done
+        wait_for_socket /run/seatd.sock || true
     fi
     export LIBSEAT_BACKEND=seatd
 fi
@@ -867,6 +878,19 @@ start_post() {
 	return 0
 }
 DBUSCONF_EOF
+    cat > "$MNT_DIR/etc/conf.d/seatd" << 'SEATDCONF_EOF'
+# NexaOS: the desktop starts only once seatd accepts connections (the same
+# race as D-Bus, see conf.d/dbus).
+start_post() {
+	i=0
+	while [ ! -S /run/seatd.sock ] && [ $i -lt 100 ]; do
+		sleep 0.05
+		i=$((i + 1))
+	done
+	[ -S /run/seatd.sock ] || ewarn "seatd's socket didn't appear"
+	return 0
+}
+SEATDCONF_EOF
     cat > "$MNT_DIR/etc/conf.d/iwd" << 'IWDCONF_EOF'
 # NexaOS: keep Wi-Fi's daemon running; if it stops (it once quit at boot
 # when D-Bus wasn't ready), it is started again 2 s later.

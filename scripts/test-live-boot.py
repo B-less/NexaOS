@@ -42,6 +42,9 @@ CHECKS = (
     'echo BLUETOOTHD=$(rc-service bluetooth status 2>&1 | grep -o "started\\|stopped\\|crashed")',
     # Wi-Fi's daemon must be up and answer the desktop user (it once quit at
     # every boot, racing D-Bus: "Permission denied" for the user).
+    # One seatd and one system bus, from OpenRC (the session once started
+    # its own copies when it came up before them).
+    'echo SEATD=$(rc-service seatd status 2>&1 | grep -o "started\\|stopped\\|crashed"),$(pgrep -x seatd | wc -l),dbus:$(pgrep -x dbus-daemon | wc -l)',
     'echo IWD=$(rc-service iwd status 2>&1 | grep -o "started\\|stopped\\|crashed"),$(su user -c "iwctl device list" >/dev/null 2>&1 && echo user-ok || echo user-refused)',
     'echo WIREGUARD=$(ip link add nexatest type wireguard 2>&1 && ip link del nexatest && echo ok)',
     'echo POLICY_ROUTING=$(ip rule show | grep -c .)',
@@ -177,7 +180,7 @@ def main(argv):
         text = buf.decode(errors="replace").replace("\r", "")
         report = [l for l in text.rsplit(marker, 1)[0].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
-                                   "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=", "IWD=",
+                                   "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=", "IWD=", "SEATD=",
                                    "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "FILEOPS=", "KERNELD=", "SESSIONS=", "CONSOLE="))] if text.count(marker) >= 2 else []
         if not no_checks:
             print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
