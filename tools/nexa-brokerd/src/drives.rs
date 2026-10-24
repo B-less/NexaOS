@@ -187,7 +187,9 @@ fn safe_name(label: Option<&str>, k: &str) -> String {
 fn options(fstype: &str) -> String {
     let base = "nosuid,nodev,noexec,noatime";
     match fstype {
-        "vfat" => format!("{base},uid=1000,gid=1000,umask=022,flush"),
+        // utf8: names in any script (Twi's ɛ and ɔ, accents, emoji); the
+        // default iso8859-1 refused them ("that isn't possible here").
+        "vfat" => format!("{base},uid=1000,gid=1000,umask=022,flush,utf8,shortname=mixed"),
         "exfat" | "ntfs3" => format!("{base},uid=1000,gid=1000,umask=022"),
         _ => base.into(),
     }
@@ -490,7 +492,7 @@ mod tests {
         let m = mount(&t, "sdb1").unwrap();
         let mp = t.media.join("MY_DRIVE");
         assert_eq!((m["mountpoint"].as_str().unwrap(), m["fstype"].as_str().unwrap()), (mp.to_str().unwrap(), "vfat"), "detected fs first");
-        assert!(calls(&r).contains("-o nosuid,nodev,noexec,noatime,uid=1000,gid=1000,umask=022,flush"), "{}", calls(&r));
+        assert!(calls(&r).contains("-o nosuid,nodev,noexec,noatime,uid=1000,gid=1000,umask=022,flush,utf8,shortname=mixed"), "{}", calls(&r));
         assert!(mp.is_dir());
         assert_eq!(mount(&t, "sdb1").unwrap()["mountpoint"], m["mountpoint"], "idempotent");
         assert!(calls(&r).matches("mount -t").count() == 1, "no second mount");

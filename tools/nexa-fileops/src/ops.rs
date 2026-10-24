@@ -96,7 +96,8 @@ pub fn say(e: &io::Error) -> String {
         Some(libc::ENAMETOOLONG) => "the name is too long".into(),
         Some(libc::EBUSY) => "it's in use".into(),
         Some(libc::EXDEV) => "it's on another drive".into(),
-        Some(libc::EINVAL) => "that isn't possible here".into(),
+        // Most often a name a USB drive (FAT32/exFAT) can't store.
+        Some(libc::EINVAL) => "that isn't possible here (on USB drives, names can't contain : * ? \" < > | or \\)".into(),
         _ => e.to_string(),
     }
 }
