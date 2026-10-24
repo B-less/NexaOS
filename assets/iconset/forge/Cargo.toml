@@ -1,0 +1,9 @@
+[package]
+name = "nexa-iconforge"
+version = "0.1.0"
+edition = "2021"
+description = "Builds the NexaHexa icon set (app tiles and symbolic icons) from one shape description"
+publish = false
+
+# Not part of tools/ (nothing here ships in the OS image); no dependencies.
+[workspace]
