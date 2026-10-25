@@ -1,0 +1,1382 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="770" viewBox="0 0 1360 770">
+<rect x="0" y="0" width="1360" height="150" fill="#0d1226"/>
+<text x="20" y="85" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#e6ecff">horizon</text>
+<g transform="translate(170 22) scale(0.8)">
+<title>Nexus</title>
+<defs>
+  <linearGradient id="t0x0nexa-nexus-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#68b1ff"/>
+    <stop offset="1" stop-color="#6850bf"/>
+  </linearGradient>
+  <linearGradient id="t0x0nexa-nexus-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x0nexa-nexus-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x0nexa-nexus-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(288 22) scale(0.8)">
+<title>Files</title>
+<defs>
+  <linearGradient id="t0x1nexa-files-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#dfbe7b"/>
+    <stop offset="1" stop-color="#c57938"/>
+  </linearGradient>
+  <linearGradient id="t0x1nexa-files-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x1nexa-files-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x1nexa-files-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+</g>
+<g transform="translate(406 22) scale(0.8)">
+<title>Browser</title>
+<defs>
+  <linearGradient id="t0x2nexa-browser-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#5cb1ff"/>
+    <stop offset="1" stop-color="#315bc9"/>
+  </linearGradient>
+  <linearGradient id="t0x2nexa-browser-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x2nexa-browser-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x2nexa-browser-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+</g>
+<g transform="translate(524 22) scale(0.8)">
+<title>Settings</title>
+<defs>
+  <linearGradient id="t0x3nexa-settings-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#87a2cf"/>
+    <stop offset="1" stop-color="#474e80"/>
+  </linearGradient>
+  <linearGradient id="t0x3nexa-settings-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x3nexa-settings-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x3nexa-settings-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(642 22) scale(0.8)">
+<title>Store</title>
+<defs>
+  <linearGradient id="t0x4nexa-store-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#7f90ff"/>
+    <stop offset="1" stop-color="#4b3fc8"/>
+  </linearGradient>
+  <linearGradient id="t0x4nexa-store-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x4nexa-store-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x4nexa-store-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(760 22) scale(0.8)">
+<title>Music</title>
+<defs>
+  <linearGradient id="t0x5nexa-music-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#df8bba"/>
+    <stop offset="1" stop-color="#bc3372"/>
+  </linearGradient>
+  <linearGradient id="t0x5nexa-music-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x5nexa-music-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x5nexa-music-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(878 22) scale(0.8)">
+<title>Photos</title>
+<defs>
+  <linearGradient id="t0x6nexa-viewer-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#55d2d4"/>
+    <stop offset="1" stop-color="#27868e"/>
+  </linearGradient>
+  <linearGradient id="t0x6nexa-viewer-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x6nexa-viewer-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x6nexa-viewer-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+</g>
+<g transform="translate(996 22) scale(0.8)">
+<title>Calculator</title>
+<defs>
+  <linearGradient id="t0x7nexa-calc-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#5edcbc"/>
+    <stop offset="1" stop-color="#228973"/>
+  </linearGradient>
+  <linearGradient id="t0x7nexa-calc-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x7nexa-calc-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x7nexa-calc-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(1114 22) scale(0.8)">
+<title>Mail</title>
+<defs>
+  <linearGradient id="t0x8nexa-mail-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#5ebbff"/>
+    <stop offset="1" stop-color="#3265c9"/>
+  </linearGradient>
+  <linearGradient id="t0x8nexa-mail-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x8nexa-mail-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x8nexa-mail-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+</g>
+<g transform="translate(1232 22) scale(0.8)">
+<title>Weather</title>
+<defs>
+  <linearGradient id="t0x9nexa-weather-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#dfc979"/>
+    <stop offset="1" stop-color="#ce7542"/>
+  </linearGradient>
+  <linearGradient id="t0x9nexa-weather-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t0x9nexa-weather-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t0x9nexa-weather-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+</g>
+<rect x="0" y="150" width="1360" height="150" fill="#1d0e2b"/>
+<text x="20" y="235" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#e6ecff">nebula</text>
+<g transform="translate(170 172) scale(0.8)">
+<title>Nexus</title>
+<defs>
+  <linearGradient id="t1x0nexa-nexus-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#cf91ff"/>
+    <stop offset="1" stop-color="#bf5395"/>
+  </linearGradient>
+  <linearGradient id="t1x0nexa-nexus-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x0nexa-nexus-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x0nexa-nexus-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(288 172) scale(0.8)">
+<title>Files</title>
+<defs>
+  <linearGradient id="t1x1nexa-files-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#f5b77b"/>
+    <stop offset="1" stop-color="#d47833"/>
+  </linearGradient>
+  <linearGradient id="t1x1nexa-files-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x1nexa-files-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x1nexa-files-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+</g>
+<g transform="translate(406 172) scale(0.8)">
+<title>Browser</title>
+<defs>
+  <linearGradient id="t1x2nexa-browser-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#72aaff"/>
+    <stop offset="1" stop-color="#415ac4"/>
+  </linearGradient>
+  <linearGradient id="t1x2nexa-browser-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x2nexa-browser-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x2nexa-browser-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+</g>
+<g transform="translate(524 172) scale(0.8)">
+<title>Settings</title>
+<defs>
+  <linearGradient id="t1x3nexa-settings-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#9d9bcf"/>
+    <stop offset="1" stop-color="#564e7b"/>
+  </linearGradient>
+  <linearGradient id="t1x3nexa-settings-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x3nexa-settings-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x3nexa-settings-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(642 172) scale(0.8)">
+<title>Store</title>
+<defs>
+  <linearGradient id="t1x4nexa-store-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#9589ff"/>
+    <stop offset="1" stop-color="#5a3fc3"/>
+  </linearGradient>
+  <linearGradient id="t1x4nexa-store-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x4nexa-store-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x4nexa-store-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(760 172) scale(0.8)">
+<title>Music</title>
+<defs>
+  <linearGradient id="t1x5nexa-music-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#f584ba"/>
+    <stop offset="1" stop-color="#cb336d"/>
+  </linearGradient>
+  <linearGradient id="t1x5nexa-music-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x5nexa-music-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x5nexa-music-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(878 172) scale(0.8)">
+<title>Photos</title>
+<defs>
+  <linearGradient id="t1x6nexa-viewer-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#6bcbd4"/>
+    <stop offset="1" stop-color="#368689"/>
+  </linearGradient>
+  <linearGradient id="t1x6nexa-viewer-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x6nexa-viewer-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x6nexa-viewer-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+</g>
+<g transform="translate(996 172) scale(0.8)">
+<title>Calculator</title>
+<defs>
+  <linearGradient id="t1x7nexa-calc-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#74d5bc"/>
+    <stop offset="1" stop-color="#31896e"/>
+  </linearGradient>
+  <linearGradient id="t1x7nexa-calc-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x7nexa-calc-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x7nexa-calc-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(1114 172) scale(0.8)">
+<title>Mail</title>
+<defs>
+  <linearGradient id="t1x8nexa-mail-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#74b4ff"/>
+    <stop offset="1" stop-color="#4264c4"/>
+  </linearGradient>
+  <linearGradient id="t1x8nexa-mail-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x8nexa-mail-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x8nexa-mail-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+</g>
+<g transform="translate(1232 172) scale(0.8)">
+<title>Weather</title>
+<defs>
+  <linearGradient id="t1x9nexa-weather-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#f5c279"/>
+    <stop offset="1" stop-color="#dd743d"/>
+  </linearGradient>
+  <linearGradient id="t1x9nexa-weather-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t1x9nexa-weather-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t1x9nexa-weather-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+</g>
+<rect x="0" y="300" width="1360" height="150" fill="#081d1f"/>
+<text x="20" y="385" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#e6ecff">aurora</text>
+<g transform="translate(170 322) scale(0.8)">
+<title>Nexus</title>
+<defs>
+  <linearGradient id="t2x0nexa-nexus-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#5ae0df"/>
+    <stop offset="1" stop-color="#53bf77"/>
+  </linearGradient>
+  <linearGradient id="t2x0nexa-nexus-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x0nexa-nexus-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x0nexa-nexus-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(288 322) scale(0.8)">
+<title>Files</title>
+<defs>
+  <linearGradient id="t2x1nexa-files-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#dcc874"/>
+    <stop offset="1" stop-color="#c18a2c"/>
+  </linearGradient>
+  <linearGradient id="t2x1nexa-files-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x1nexa-files-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x1nexa-files-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+</g>
+<g transform="translate(406 322) scale(0.8)">
+<title>Browser</title>
+<defs>
+  <linearGradient id="t2x2nexa-browser-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#59bbf8"/>
+    <stop offset="1" stop-color="#2e6cbe"/>
+  </linearGradient>
+  <linearGradient id="t2x2nexa-browser-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x2nexa-browser-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x2nexa-browser-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+</g>
+<g transform="translate(524 322) scale(0.8)">
+<title>Settings</title>
+<defs>
+  <linearGradient id="t2x3nexa-settings-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#84acc8"/>
+    <stop offset="1" stop-color="#436075"/>
+  </linearGradient>
+  <linearGradient id="t2x3nexa-settings-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x3nexa-settings-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x3nexa-settings-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(642 322) scale(0.8)">
+<title>Store</title>
+<defs>
+  <linearGradient id="t2x4nexa-store-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#7c9af8"/>
+    <stop offset="1" stop-color="#4751bc"/>
+  </linearGradient>
+  <linearGradient id="t2x4nexa-store-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x4nexa-store-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x4nexa-store-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(760 322) scale(0.8)">
+<title>Music</title>
+<defs>
+  <linearGradient id="t2x5nexa-music-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#dc95b3"/>
+    <stop offset="1" stop-color="#b84567"/>
+  </linearGradient>
+  <linearGradient id="t2x5nexa-music-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x5nexa-music-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x5nexa-music-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(878 322) scale(0.8)">
+<title>Photos</title>
+<defs>
+  <linearGradient id="t2x6nexa-viewer-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#52dcce"/>
+    <stop offset="1" stop-color="#239782"/>
+  </linearGradient>
+  <linearGradient id="t2x6nexa-viewer-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x6nexa-viewer-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x6nexa-viewer-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+</g>
+<g transform="translate(996 322) scale(0.8)">
+<title>Calculator</title>
+<defs>
+  <linearGradient id="t2x7nexa-calc-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#5be6b5"/>
+    <stop offset="1" stop-color="#1e9b68"/>
+  </linearGradient>
+  <linearGradient id="t2x7nexa-calc-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x7nexa-calc-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x7nexa-calc-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(1114 322) scale(0.8)">
+<title>Mail</title>
+<defs>
+  <linearGradient id="t2x8nexa-mail-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#5bc5f8"/>
+    <stop offset="1" stop-color="#2e76be"/>
+  </linearGradient>
+  <linearGradient id="t2x8nexa-mail-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x8nexa-mail-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x8nexa-mail-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+</g>
+<g transform="translate(1232 322) scale(0.8)">
+<title>Weather</title>
+<defs>
+  <linearGradient id="t2x9nexa-weather-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#dcd373"/>
+    <stop offset="1" stop-color="#ca8637"/>
+  </linearGradient>
+  <linearGradient id="t2x9nexa-weather-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t2x9nexa-weather-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t2x9nexa-weather-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+</g>
+<rect x="0" y="450" width="1360" height="150" fill="#100d09"/>
+<text x="20" y="535" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#e6ecff">eclipse</text>
+<g transform="translate(170 472) scale(0.8)">
+<title>Nexus</title>
+<defs>
+  <linearGradient id="t3x0nexa-nexus-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#ffc063"/>
+    <stop offset="1" stop-color="#bf5c34"/>
+  </linearGradient>
+  <linearGradient id="t3x0nexa-nexus-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x0nexa-nexus-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x0nexa-nexus-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(288 472) scale(0.8)">
+<title>Files</title>
+<defs>
+  <linearGradient id="t3x1nexa-files-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#ffc15a"/>
+    <stop offset="1" stop-color="#d1791f"/>
+  </linearGradient>
+  <linearGradient id="t3x1nexa-files-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x1nexa-files-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x1nexa-files-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+</g>
+<g transform="translate(406 472) scale(0.8)">
+<title>Browser</title>
+<defs>
+  <linearGradient id="t3x2nexa-browser-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#7cb4de"/>
+    <stop offset="1" stop-color="#3e5bb0"/>
+  </linearGradient>
+  <linearGradient id="t3x2nexa-browser-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x2nexa-browser-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x2nexa-browser-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+</g>
+<g transform="translate(524 472) scale(0.8)">
+<title>Settings</title>
+<defs>
+  <linearGradient id="t3x3nexa-settings-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#a7a5ae"/>
+    <stop offset="1" stop-color="#544f67"/>
+  </linearGradient>
+  <linearGradient id="t3x3nexa-settings-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x3nexa-settings-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x3nexa-settings-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(642 472) scale(0.8)">
+<title>Store</title>
+<defs>
+  <linearGradient id="t3x4nexa-store-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#9f93de"/>
+    <stop offset="1" stop-color="#5840af"/>
+  </linearGradient>
+  <linearGradient id="t3x4nexa-store-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x4nexa-store-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x4nexa-store-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(760 472) scale(0.8)">
+<title>Music</title>
+<defs>
+  <linearGradient id="t3x5nexa-music-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#ff8e99"/>
+    <stop offset="1" stop-color="#c9345a"/>
+  </linearGradient>
+  <linearGradient id="t3x5nexa-music-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x5nexa-music-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x5nexa-music-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(878 472) scale(0.8)">
+<title>Photos</title>
+<defs>
+  <linearGradient id="t3x6nexa-viewer-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#75d5b3"/>
+    <stop offset="1" stop-color="#338775"/>
+  </linearGradient>
+  <linearGradient id="t3x6nexa-viewer-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x6nexa-viewer-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x6nexa-viewer-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+</g>
+<g transform="translate(996 472) scale(0.8)">
+<title>Calculator</title>
+<defs>
+  <linearGradient id="t3x7nexa-calc-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#7edf9b"/>
+    <stop offset="1" stop-color="#2f8a5a"/>
+  </linearGradient>
+  <linearGradient id="t3x7nexa-calc-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x7nexa-calc-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x7nexa-calc-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(1114 472) scale(0.8)">
+<title>Mail</title>
+<defs>
+  <linearGradient id="t3x8nexa-mail-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#7ebede"/>
+    <stop offset="1" stop-color="#3f65b0"/>
+  </linearGradient>
+  <linearGradient id="t3x8nexa-mail-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x8nexa-mail-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x8nexa-mail-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+</g>
+<g transform="translate(1232 472) scale(0.8)">
+<title>Weather</title>
+<defs>
+  <linearGradient id="t3x9nexa-weather-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#ffcc58"/>
+    <stop offset="1" stop-color="#db7629"/>
+  </linearGradient>
+  <linearGradient id="t3x9nexa-weather-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t3x9nexa-weather-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t3x9nexa-weather-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+</g>
+<rect x="0" y="600" width="1360" height="150" fill="#ffffff"/>
+<text x="20" y="685" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#1b2236">daybreak</text>
+<g transform="translate(170 622) scale(0.8)">
+<title>Nexus</title>
+<defs>
+  <linearGradient id="t4x0nexa-nexus-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#4e85f0"/>
+    <stop offset="1" stop-color="#5d3abf"/>
+  </linearGradient>
+  <linearGradient id="t4x0nexa-nexus-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x0nexa-nexus-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x0nexa-nexus-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="12,3 19.79,7.5 19.79,16.5 12,21 4.21,16.5 4.21,7.5" fill="none"/>
+<circle cx="12" cy="12" r="4" fill="none"/>
+<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(288 622) scale(0.8)">
+<title>Files</title>
+<defs>
+  <linearGradient id="t4x1nexa-files-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#e6c183"/>
+    <stop offset="1" stop-color="#d68631"/>
+  </linearGradient>
+  <linearGradient id="t4x1nexa-files-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x1nexa-files-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x1nexa-files-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<polygon points="3,6 9,6 11,8.5 21,8.5 21,19 3,19" fill="none"/>
+</g>
+</g>
+<g transform="translate(406 622) scale(0.8)">
+<title>Browser</title>
+<defs>
+  <linearGradient id="t4x2nexa-browser-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#6db5fd"/>
+    <stop offset="1" stop-color="#2b63da"/>
+  </linearGradient>
+  <linearGradient id="t4x2nexa-browser-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x2nexa-browser-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x2nexa-browser-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="9" fill="none"/>
+<line x1="3" y1="12" x2="21" y2="12" fill="none"/>
+<ellipse cx="12" cy="12" rx="4" ry="9" fill="none"/>
+</g>
+</g>
+<g transform="translate(524 622) scale(0.8)">
+<title>Settings</title>
+<defs>
+  <linearGradient id="t4x3nexa-settings-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#95a7d0"/>
+    <stop offset="1" stop-color="#445586"/>
+  </linearGradient>
+  <linearGradient id="t4x3nexa-settings-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x3nexa-settings-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x3nexa-settings-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<line x1="4" y1="7" x2="20" y2="7" fill="none"/>
+<line x1="4" y1="12" x2="20" y2="12" fill="none"/>
+<line x1="4" y1="17" x2="20" y2="17" fill="none"/>
+<circle cx="9" cy="7" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="15.5" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+<circle cx="7.5" cy="17" r="2.4" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(642 622) scale(0.8)">
+<title>Store</title>
+<defs>
+  <linearGradient id="t4x4nexa-store-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#8d97fd"/>
+    <stop offset="1" stop-color="#4844d8"/>
+  </linearGradient>
+  <linearGradient id="t4x4nexa-store-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x4nexa-store-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x4nexa-store-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="4.5" y="8.5" width="15" height="12.5" rx="2.5" fill="none"/>
+<path d="M8.4 8.5 A3.6 3.6 0 0 1 15.6 8.5" fill="none"/>
+<line x1="12" y1="12" x2="12" y2="17.5" fill="none"/>
+<polyline points="9.5,15 12,17.5 14.5,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(760 622) scale(0.8)">
+<title>Music</title>
+<defs>
+  <linearGradient id="t4x5nexa-music-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#e692bd"/>
+    <stop offset="1" stop-color="#cc3575"/>
+  </linearGradient>
+  <linearGradient id="t4x5nexa-music-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x5nexa-music-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x5nexa-music-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="7.5" cy="17" r="2.8" fill="currentColor" stroke="none"/>
+<circle cx="16.5" cy="15" r="2.8" fill="currentColor" stroke="none"/>
+<polyline points="10.2,17 10.2,6 19.2,4 19.2,15" fill="none"/>
+</g>
+</g>
+<g transform="translate(878 622) scale(0.8)">
+<title>Photos</title>
+<defs>
+  <linearGradient id="t4x6nexa-viewer-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#67d3d5"/>
+    <stop offset="1" stop-color="#1e9695"/>
+  </linearGradient>
+  <linearGradient id="t4x6nexa-viewer-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x6nexa-viewer-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x6nexa-viewer-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="4" width="18" height="16" rx="2" fill="none"/>
+<circle cx="8.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>
+<polyline points="4,18 9,13 12,16 15,12 20,17" fill="none"/>
+</g>
+</g>
+<g transform="translate(996 622) scale(0.8)">
+<title>Calculator</title>
+<defs>
+  <linearGradient id="t4x7nexa-calc-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#6fdcbf"/>
+    <stop offset="1" stop-color="#199976"/>
+  </linearGradient>
+  <linearGradient id="t4x7nexa-calc-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x7nexa-calc-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x7nexa-calc-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="5" y="3" width="14" height="18" rx="2.5" fill="none"/>
+<rect x="8" y="6" width="8" height="4" rx="1" fill="none"/>
+<circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="12" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+<circle cx="15" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>
+</g>
+</g>
+<g transform="translate(1114 622) scale(0.8)">
+<title>Mail</title>
+<defs>
+  <linearGradient id="t4x8nexa-mail-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#6fbefd"/>
+    <stop offset="1" stop-color="#2b6fda"/>
+  </linearGradient>
+  <linearGradient id="t4x8nexa-mail-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x8nexa-mail-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x8nexa-mail-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<rect x="3" y="5" width="18" height="14" rx="2" fill="none"/>
+<polyline points="3.5,6 12,13 20.5,6" fill="none"/>
+</g>
+</g>
+<g transform="translate(1232 622) scale(0.8)">
+<title>Weather</title>
+<defs>
+  <linearGradient id="t4x9nexa-weather-bg" x1="0.15" y1="0" x2="0.85" y2="1">
+    <stop offset="0" stop-color="#e6cb81"/>
+    <stop offset="1" stop-color="#e0823e"/>
+  </linearGradient>
+  <linearGradient id="t4x9nexa-weather-sheen" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#t4x9nexa-weather-bg)"/>
+<path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#t4x9nexa-weather-sheen)" stroke-width="2"/>
+<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<circle cx="12" cy="12" r="4" fill="none"/>
+<line x1="19" y1="12" x2="21.5" y2="12" fill="none"/>
+<line x1="16.95" y1="16.95" x2="18.72" y2="18.72" fill="none"/>
+<line x1="12" y1="19" x2="12" y2="21.5" fill="none"/>
+<line x1="7.05" y1="16.95" x2="5.28" y2="18.72" fill="none"/>
+<line x1="5" y1="12" x2="2.5" y2="12" fill="none"/>
+<line x1="7.05" y1="7.05" x2="5.28" y2="5.28" fill="none"/>
+<line x1="12" y1="5" x2="12" y2="2.5" fill="none"/>
+<line x1="16.95" y1="7.05" x2="18.72" y2="5.28" fill="none"/>
+</g>
+</g>
+</svg>

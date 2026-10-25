@@ -15,6 +15,23 @@ for when NexaOS moves to its own icon theme.
   are made of filled shapes only: GTK 3 recolours symbolic icons through
   their fill, so they follow the theme's text colour in light and dark.
 
+## The icons shift with the theme
+
+Each NexaOS theme has its own variant, `NexaHexa-<theme>` (horizon, nebula,
+aurora, eclipse, daybreak): the same app tiles, each app keeping its own
+colour but tinted toward the theme's accent (lifted on the light Daybreak),
+and the NexaOS mark (Nexus) in the theme's own accent. The variants only
+hold app tiles and inherit everything else from NexaHexa.
+
+![the variants](preview-themes.png)
+
+Once installed, `themes.icon_theme_for()` picks the variant for the current
+theme (written to GTK's settings.ini), and `themes.follow_icon_theme()`
+switches open apps, the Dock and the desktop live when the theme changes
+(the same watcher that recolours them). The variants are generated from
+`themes.txt`, which `make iconset` writes from themes.py, so they always
+match the real themes.
+
 ## Made by code, not drawn by hand
 
 Every icon is a list of shapes on a 24-unit grid in

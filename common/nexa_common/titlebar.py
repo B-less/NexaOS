@@ -35,6 +35,7 @@ def _load_palette(*_args):
     glass = glass_alpha() if settings["glass"] else None
     t = themes.THEMES[settings["theme"]]
     _palette.load_from_data(themes.app_palette_css(t, glass).encode())
+    themes.follow_icon_theme()  # the icons shift with the colours (NexaHexa-<theme>)
     pal = themes.app_palette(t)
     _colors.update({k: _rgb(pal[k]) for k in ("accent", "crit", "muted", "on_accent", "text")})
     for area in list(_hex_buttons):

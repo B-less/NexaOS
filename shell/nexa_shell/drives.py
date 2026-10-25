@@ -95,6 +95,7 @@ class DesktopDrives(Gtk.Window):
         return False
 
     def _load_theme(self):
+        themes.follow_icon_theme()
         t = themes.THEMES[themes.load_settings()["theme"]]
         self.accent = _rgb(t["accent"])
         self.provider.load_from_data(drives_css(t, themes.app_palette(t)).encode())

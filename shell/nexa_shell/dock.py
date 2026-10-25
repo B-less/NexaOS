@@ -125,6 +125,7 @@ class Dock(Gtk.ApplicationWindow):
     # ---- model ----
 
     def _load_theme(self):
+        themes.follow_icon_theme()
         s = themes.load_settings()
         t = themes.THEMES[s["theme"]]
         self.colours = {

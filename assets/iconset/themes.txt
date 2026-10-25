@@ -1,0 +1,6 @@
+# name dark accent accent2 surface (from themes.py)
+horizon 1 #4da3ff #8a6bff #141c3a
+nebula 1 #c77dff #ff6ec7 #2c1642
+aurora 1 #3ddbd9 #6fff9e #0c2c30
+eclipse 1 #ffb547 #ff7a45 #18140e
+daybreak 0 #2f6fed #7c4dff #ffffff

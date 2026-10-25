@@ -404,7 +404,41 @@ general {{
 """
 
 
-def gtk_settings(t):
+# The NexaHexa icon set (assets/iconset) has a variant per theme
+# (NexaHexa-<theme>: app tiles tinted to match). Used once it is installed in
+# one of these folders; until then the icons stay Adwaita.
+ICON_DIRS = ("/usr/share/icons", "/usr/local/share/icons")
+
+
+def icon_theme_for(name, home=None):
+    """The icon theme that goes with theme `name`."""
+    dirs = list(ICON_DIRS) + [os.path.join(home or _home(), ".local", "share", "icons")]
+    for candidate in (f"NexaHexa-{name}", "NexaHexa"):
+        if any(os.path.isfile(os.path.join(d, candidate, "index.theme")) for d in dirs):
+            return candidate
+    return "Adwaita"
+
+
+def follow_icon_theme(home=None):
+    """Switch this (GTK) process's icons to the current theme's set, so open
+    windows change icons along with colours. Call it from a theme-change
+    handler; does nothing outside GTK or when the set isn't installed."""
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk
+        settings = Gtk.Settings.get_default()
+    except (ImportError, ValueError):
+        return None
+    if settings is None:
+        return None
+    wanted = icon_theme_for(load_settings(home)["theme"], home)
+    if settings.get_property("gtk-icon-theme-name") != wanted:
+        settings.set_property("gtk-icon-theme-name", wanted)
+    return wanted
+
+
+def gtk_settings(t, icon_theme="Adwaita"):
     """~/.config/gtk-3.0/settings.ini: without it GTK falls back to its light
     default, so dialogs, file pickers, menus and scrollbars came up light
     inside the dark apps."""
@@ -412,7 +446,7 @@ def gtk_settings(t):
 [Settings]
 gtk-application-prefer-dark-theme={'true' if t['dark'] else 'false'}
 gtk-theme-name=Adwaita
-gtk-icon-theme-name=Adwaita
+gtk-icon-theme-name={icon_theme}
 gtk-cursor-theme-name=Adwaita
 gtk-cursor-theme-size=24
 gtk-font-name=Inter, Noto Sans 10
@@ -513,7 +547,7 @@ def apply(name=None, opacity=None, home=None, reload=True, glass=None):
     _write(os.path.join(cfg, "mako", "config"), mako_config(t, opacity))
     _write(os.path.join(cfg, "foot", "foot.ini"), foot_ini(t, opacity))
     _write(os.path.join(cfg, "sway", "config.d", "20-nexa-theme.conf"), sway_conf(t))
-    _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t))
+    _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t, icon_theme_for(name, home)))
     css_path = os.path.join(cfg, "gtk-3.0", "gtk.css")
     try:
         with open(css_path) as f:

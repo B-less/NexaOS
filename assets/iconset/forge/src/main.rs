@@ -229,6 +229,56 @@ fn rounded_hex_d(cx: f64, cy: f64, r: f64, round: f64) -> String {
 }
 
 fn app_svg(app: &App, glyph: &Icon) -> String {
+    app_svg_in(app, glyph, app.top, app.bottom)
+}
+
+/// One NexaOS theme, from themes.txt (written from themes.py by `make iconset`).
+pub struct Theme {
+    pub name: String,
+    pub dark: bool,
+    pub accent: (f64, f64, f64),
+    pub accent2: (f64, f64, f64),
+    pub surface: (f64, f64, f64),
+}
+
+fn rgb(hex: &str) -> (f64, f64, f64) {
+    let h = hex.trim_start_matches('#');
+    let c = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).unwrap_or(0) as f64;
+    (c(0), c(2), c(4))
+}
+
+fn hexs(c: (f64, f64, f64)) -> String {
+    format!("#{:02x}{:02x}{:02x}", c.0.round() as u8, c.1.round() as u8, c.2.round() as u8)
+}
+
+fn mix(a: (f64, f64, f64), b: (f64, f64, f64), t: f64) -> (f64, f64, f64) {
+    (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t, a.2 + (b.2 - a.2) * t)
+}
+
+pub fn parse_themes(text: &str) -> Vec<Theme> {
+    text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).filter_map(|l| {
+        let f: Vec<&str> = l.split_whitespace().collect();
+        (f.len() == 5).then(|| Theme { name: f[0].to_string(), dark: f[1] == "1", accent: rgb(f[2]), accent2: rgb(f[3]), surface: rgb(f[4]) })
+    }).collect()
+}
+
+/// An app's gradient shifted toward a theme: every app keeps its own hue,
+/// tinted a little with the theme's accent (and, on light themes, lifted),
+/// so the whole set sits in the theme. The NexaOS mark takes the theme's
+/// own accent.
+pub fn themed_colours(app: &App, t: &Theme) -> (String, String) {
+    if app.id == "nexa-nexus" {
+        return (hexs(mix(t.accent, (255.0, 255.0, 255.0), 0.15)), hexs(mix(t.accent2, (0.0, 0.0, 0.0), 0.25)));
+    }
+    let (top, bottom) = (rgb(app.top), rgb(app.bottom));
+    if t.dark {
+        (hexs(mix(top, t.accent, 0.18)), hexs(mix(mix(bottom, t.accent2, 0.12), t.surface, 0.12)))
+    } else {
+        (hexs(mix(mix(top, (255.0, 255.0, 255.0), 0.14), t.accent, 0.12)), hexs(mix(bottom, t.accent, 0.10)))
+    }
+}
+
+fn app_svg_in(app: &App, glyph: &Icon, top: &str, bottom: &str) -> String {
     let mut g = String::new();
     for s in &glyph.shapes {
         native(s, &mut g);
@@ -256,7 +306,7 @@ fn app_svg(app: &App, glyph: &Icon) -> String {
 <g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
 {g}</g>
 </svg>
-"##, title = app.title, top = app.top, bottom = app.bottom)
+"##, title = app.title)
 }
 
 fn inner_svg(svg: &str) -> String {
@@ -301,6 +351,30 @@ fn preview(apps: &[(String, &App)], symbolic: &[(String, &Icon)]) -> String {
     out
 }
 
+/// One row per theme: a handful of app tiles on that theme's background.
+fn theme_preview(variants: &[(Theme, Vec<String>)], apps: &[App]) -> String {
+    let pick = ["nexa-nexus", "nexa-files", "nexa-browser", "nexa-settings", "nexa-store", "nexa-music", "nexa-viewer", "nexa-calc", "nexa-mail", "nexa-weather"];
+    let (cell, row_h) = (118.0, 150.0);
+    let width = 180.0 + cell * pick.len() as f64;
+    let height = 20.0 + row_h * variants.len() as f64;
+    let mut out = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n", w = n(width), h = n(height));
+    for (r, (t, row)) in variants.iter().enumerate() {
+        let y = 10.0 + r as f64 * row_h;
+        let bg = if t.dark { hexs(mix(t.surface, (0.0, 0.0, 0.0), 0.35)) } else { hexs(mix(t.surface, (255.0, 255.0, 255.0), 0.2)) };
+        let fg = if t.dark { "#e6ecff" } else { "#1b2236" };
+        let _ = write!(out, "<rect x=\"0\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{bg}\"/>\n<text x=\"20\" y=\"{}\" font-family=\"Inter, sans-serif\" font-size=\"20\" font-weight=\"700\" fill=\"{fg}\">{}</text>\n",
+                       n(y - 10.0), n(width), n(row_h), n(y + row_h / 2.0), esc(&t.name));
+        for (i, id) in pick.iter().enumerate() {
+            let Some(k) = apps.iter().position(|a| a.id == *id) else { continue };
+            let x = 170.0 + i as f64 * cell;
+            let _ = write!(out, "<g transform=\"translate({} {}) scale(0.8)\">{}</g>\n", n(x), n(y + 12.0),
+                           inner_svg(&row[k]).replace("id=\"", &format!("id=\"t{r}x{i}")).replace("url(#", &format!("url(#t{r}x{i}")));
+        }
+    }
+    out.push_str("</svg>\n");
+    out
+}
+
 fn main() {
     let out_dir = std::env::args().nth(1).unwrap_or_else(|| "NexaHexa".into());
     let out = Path::new(&out_dir);
@@ -327,6 +401,29 @@ fn main() {
         let svg = app_svg(app, glyph);
         fs::write(app_dir.join(format!("{}.svg", app.id)), &svg).expect("write app icon");
         tiles.push((svg, app));
+    }
+    // A variant per NexaOS theme: only the app tiles; symbolic icons come
+    // from NexaHexa itself (they follow the theme's text colour anyway).
+    let themes_txt = std::env::args().nth(2).and_then(|p| fs::read_to_string(p).ok()).unwrap_or_default();
+    let base = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "NexaHexa".into());
+    let mut variants = Vec::new();
+    for t in parse_themes(&themes_txt) {
+        let vdir = out.with_file_name(format!("{base}-{}", t.name));
+        let _ = fs::remove_dir_all(&vdir);
+        fs::create_dir_all(vdir.join("scalable/apps")).expect("variant folder");
+        let mut row = Vec::new();
+        for app in &apps {
+            let glyph = icons.iter().find(|i| i.name == app.glyph).expect("glyph");
+            let (top, bottom) = themed_colours(app, &t);
+            let svg = app_svg_in(app, glyph, &top, &bottom);
+            fs::write(vdir.join("scalable/apps").join(format!("{}.svg", app.id)), &svg).expect("write variant");
+            row.push(svg);
+        }
+        fs::write(vdir.join("index.theme"), format!("[Icon Theme]\nName={base}-{n}\nComment=NexaOS icons matched to the {n} theme\nInherits={base},Adwaita,hicolor\nDirectories=scalable/apps\n\n[scalable/apps]\nContext=Applications\nSize=128\nMinSize=8\nMaxSize=512\nType=Scalable\n", n = t.name)).expect("variant index");
+        variants.push((t, row));
+    }
+    if !variants.is_empty() {
+        fs::write(out.join("preview-themes.svg"), theme_preview(&variants, &apps)).expect("theme preview");
     }
     let dirs: Vec<String> = contexts.iter().map(|c| format!("scalable/{c}")).collect();
     let mut theme = format!("[Icon Theme]\nName=NexaHexa\nComment=NexaOS icons: Hexa app tiles and symbolic icons\nInherits=Adwaita,hicolor\nDirectories={}\n", dirs.join(","));
@@ -364,6 +461,20 @@ mod tests {
             assert!(app.id.starts_with("nexa-"), "{}", app.id);
             assert!(icons.iter().any(|i| i.name == app.glyph), "{} -> {}", app.id, app.glyph);
         }
+    }
+
+    #[test]
+    fn theme_variants_shift_the_tiles() {
+        let themes = parse_themes("horizon 1 #4da3ff #8a6bff #141c3a\ndaybreak 0 #2f6fe0 #7a4fe0 #ffffff\n");
+        assert_eq!(themes.len(), 2);
+        let apps = icons::apps();
+        let files = apps.iter().find(|a| a.id == "nexa-files").unwrap();
+        let (dark, light) = (themed_colours(files, &themes[0]), themed_colours(files, &themes[1]));
+        assert_ne!(dark.0, files.top.to_string(), "tinted toward the theme");
+        assert_ne!(dark, light, "each theme its own shade");
+        let nexus = apps.iter().find(|a| a.id == "nexa-nexus").unwrap();
+        assert!(themed_colours(nexus, &themes[1]).0.starts_with('#'), "the mark takes the theme's accent");
+        assert_ne!(themed_colours(nexus, &themes[0]), themed_colours(nexus, &themes[1]));
     }
 
     #[test]

@@ -16,7 +16,9 @@ sway -c /tmp/sway.conf >/tmp/sway.log 2>&1 &
 for i in $(seq 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
 export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1) WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
 rc=0
-for t in headless_theme_live.py headless_vp_theme_live.py; do
+# The NexaHexa icon sets, installed for the icon-shift test.
+mkdir -p $HOME/.local/share/icons && cp -r /src/assets/iconset/NexaHexa /src/assets/iconset/NexaHexa-* $HOME/.local/share/icons/
+for t in headless_theme_live.py headless_vp_theme_live.py headless_icon_shift.py; do
     PYTHONPATH=/src/common python3 -c "from nexa_common import themes; themes.apply(\"horizon\", reload=False)" >/dev/null 2>&1
     python3 /src/common/tests/$t 2>&1 > /tmp/out.log 2>&1 || rc=1; grep -E "^(PASS|FAIL)" /tmp/out.log; grep -A8 Traceback /tmp/out.log | head -12
 done

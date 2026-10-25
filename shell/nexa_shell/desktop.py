@@ -115,6 +115,7 @@ class DesktopCard(Gtk.Window):
         return False
 
     def _load_theme(self):
+        themes.follow_icon_theme()
         settings = themes.load_settings()
         t = themes.THEMES[settings["theme"]]
         self.accent = _rgb(t["accent"])
