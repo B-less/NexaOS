@@ -115,10 +115,10 @@ done
 mkdir -p "$ROOTFS_DIR/home/user/.config"
 printf 'XDG_DESKTOP_DIR="$HOME/Desktop"\nXDG_DOCUMENTS_DIR="$HOME/Documents"\nXDG_DOWNLOAD_DIR="$HOME/Downloads"\nXDG_MUSIC_DIR="$HOME/Music"\nXDG_PICTURES_DIR="$HOME/Pictures"\nXDG_VIDEOS_DIR="$HOME/Videos"\n' \
     > "$ROOTFS_DIR/home/user/.config/user-dirs.dirs"
-# NexaOS's own .nexa apps (scripts/build-apps.sh), ready to try installing.
-for pkg in apps/*/dist/*.nexa; do
-    [ -f "$pkg" ] && cp "$pkg" "$ROOTFS_DIR/home/user/Downloads/"
-done
+# NexaOS's own .nexa apps are in the Nexa Store (its built-in catalogue,
+# stage-store.sh). They used to be copied into Downloads too, and every
+# build added its version beside the old ones (six Video Players): clear them.
+rm -f "$ROOTFS_DIR"/home/user/Downloads/*.nexa
 chown -R 1000:1000 "$ROOTFS_DIR/home/user" 2>/dev/null || true
 
 echo "[*] staging boot splash binary"
