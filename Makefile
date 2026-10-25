@@ -318,6 +318,10 @@ test-titlebar: nexa-apps
 test-nexa-link: native
 	@sh scripts/test-nexa-link.sh
 
+# Several selected files dragged onto a folder with a real mouse (grid, list).
+test-files-drag: native
+	@sh scripts/test-files-drag.sh
+
 # The top bar's "Hide when not in use" with the real bar in a headless Sway.
 test-topbar: native
 	@sh scripts/test-topbar.sh

@@ -176,8 +176,16 @@ class FileManagerWindow(Gtk.Window):
 
     def _drop_row_at(self, x, y):
         if self.is_grid:
+            # PyGObject gives (path, position), or (found, path, position)
+            # in older versions; reading the first shape as the second
+            # took the drop position (a number) for the item, so a drop on
+            # a folder in the grid went into the folder being shown.
             found = self.grid.get_dest_item_at_pos(x, y)
-            return found[1] if found and found[0] else None
+            if not found:
+                return None
+            if len(found) == 3:
+                return found[1] if found[0] else None
+            return found[0]
         dest = self.tree.get_dest_row_at_pos(x, y)
         return dest[0] if dest else None
 
@@ -684,19 +692,37 @@ class FileManagerWindow(Gtk.Window):
                 if not (ctrl or shift):
                     self._unselect_all()
                 return False  # a box selection can start here
-            if not self.is_grid and not (ctrl or shift) and self._is_selected(hit) and self._count_selected() > 1:
+            if not (ctrl or shift) and self._is_selected(hit) and self._count_selected() > 1:
                 # Keep the whole selection so it can be dragged; a plain
-                # click (no drag) narrows it to this item on release. (The
-                # grid does this by itself.)
-                self.tree.get_selection().set_select_function(lambda *_a: False, None)
+                # click (no drag) narrows it to this item on release.
                 self._pending_click = hit
+                if self.is_grid:
+                    # The grid narrows the selection to the pressed item
+                    # itself (only that one was dragged, then moved); it
+                    # must still see the press to start a drag, so the
+                    # selection is put back right after it.
+                    keep = self._selected_paths()
+                    GLib.idle_add(self._restore_selection, keep)
+                else:
+                    self.tree.get_selection().set_select_function(lambda *_a: False, None)
+        return False
+
+    def _restore_selection(self, paths):
+        if self._pending_click is not None:
+            for p in paths:
+                self.grid.select_path(p)
         return False
 
     def _on_button_release(self, view, _event):
         if self._pending_click is not None and not self._dragging:
-            self.tree.get_selection().set_select_function(lambda *_a: True, None)
             path, self._pending_click = self._pending_click, None
-            self.tree.set_cursor(path, None, False)
+            if self.is_grid:
+                self._unselect_all()
+                self._select_path(path)
+                self._set_cursor(path)
+            else:
+                self.tree.get_selection().set_select_function(lambda *_a: True, None)
+                self.tree.set_cursor(path, None, False)
         return False
 
     def _on_window_button(self, _w, event):
@@ -737,7 +763,8 @@ class FileManagerWindow(Gtk.Window):
     def _on_drag_end(self, view, _ctx):
         self._dragging = False
         if self._pending_click is not None:
-            self.tree.get_selection().set_select_function(lambda *_a: True, None)
+            if not self.is_grid:
+                self.tree.get_selection().set_select_function(lambda *_a: True, None)
             self._pending_click = None
 
     def _on_drag_data_get(self, _view, _ctx, data, _info, _time):
