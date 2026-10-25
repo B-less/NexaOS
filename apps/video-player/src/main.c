@@ -54,6 +54,32 @@ static char *data_path(const char *name)
     return p;
 }
 
+/* Same rule as the Python apps (nexa_common.titlebar.fitted_size): sizes
+ * are designed for a 1366x768 laptop; bigger screens get up to 1.5x, and
+ * nothing opens larger than 92% of the screen. */
+static void fit_to_screen(GtkWidget *win, gpointer data)
+{
+    (void)data;
+    GdkWindow *gw = gtk_widget_get_window(win);
+    GdkDisplay *d = gdk_display_get_default();
+    if (!gw || !d) return;
+    GdkMonitor *m = gdk_display_get_monitor_at_window(d, gw);
+    if (!m) m = gdk_display_get_monitor(d, 0);
+    if (!m) return;
+    GdkRectangle area;
+    gdk_monitor_get_workarea(m, &area);
+    int w, h;
+    gtk_window_get_default_size(GTK_WINDOW(win), &w, &h);
+    double grow = MIN(area.width / 1366.0, area.height / 740.0);
+    grow = CLAMP(grow, 1.0, 1.5);
+    int fw = MIN((int)(w * grow), (int)(area.width * 0.92));
+    int fh = MIN((int)(h * grow), (int)(area.height * 0.92));
+    if (fw != w || fh != h) {
+        gtk_window_set_default_size(GTK_WINDOW(win), fw, fh);
+        gtk_window_resize(GTK_WINDOW(win), fw, fh);
+    }
+}
+
 static void format_time(gint64 ns, char *out, size_t n)
 {
     if (ns < 0)
@@ -986,6 +1012,7 @@ int main(int argc, char **argv)
     app.win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(app.win), "Video Player");
     gtk_window_set_default_size(GTK_WINDOW(app.win), 960, 600);
+    g_signal_connect(app.win, "realize", G_CALLBACK(fit_to_screen), NULL);
     gtk_window_set_icon_name(GTK_WINDOW(app.win), APP_ID);
     /* Client-side title bar with minimize/maximize/close (Hyprland draws no
      * title bars, and Sway's has no buttons); it shows the window title, so

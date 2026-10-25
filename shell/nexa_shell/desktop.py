@@ -54,6 +54,7 @@ class HexIcon(Gtk.Overlay):
         super().__init__()
         self.accent = accent
         area = Gtk.DrawingArea()
+        area.set_has_window(False)  # clicks belong to the button around it
         area.set_size_request(HEX_R * 2, HEX_R * 2)
         area.connect("draw", self._draw)
         self.add(area)
@@ -62,6 +63,7 @@ class HexIcon(Gtk.Overlay):
         self.tile = themes.hexa_tile(icon_name)
         image.set_pixel_size(HEX_R * 2 if self.tile else ICON_PX - 10)
         self.add_overlay(image)
+        self.set_overlay_pass_through(image, True)
 
     def _draw(self, area, cr):
         import math

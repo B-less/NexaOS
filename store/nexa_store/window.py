@@ -70,6 +70,7 @@ class HexIcon(Gtk.Overlay):
     def __init__(self, path, size):
         super().__init__()
         area = Gtk.DrawingArea()
+        area.set_has_window(False)  # clicks belong to the app card around it
         area.set_size_request(size + 20, size + 20)
         area.connect("draw", self._draw)
         self.add(area)
@@ -87,6 +88,7 @@ class HexIcon(Gtk.Overlay):
             image.set_from_icon_name("application-x-executable", Gtk.IconSize.DIALOG)
             image.set_pixel_size(size)
         self.add_overlay(image)
+        self.set_overlay_pass_through(image, True)
 
     def _draw(self, area, cr):
         w, h = area.get_allocated_width(), area.get_allocated_height()

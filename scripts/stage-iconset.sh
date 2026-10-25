@@ -20,5 +20,14 @@ for set in "$src"/NexaHexa "$src"/NexaHexa-*; do
     cp -a "$set" "$rootfs/usr/share/icons/"
     n=$((n + 1))
 done
+# Apps from Alpine ask for their own icon names: point them at the NexaHexa
+# tile, or they show up as the only square icons in the Dock and Nexus.
+#   alias        NexaHexa icon
+for pair in foot:nexa-terminal footclient:nexa-terminal org.codeberg.dnkl.foot:nexa-terminal; do
+    alias=${pair%%:*} target=${pair#*:}
+    for dir in "$rootfs"/usr/share/icons/NexaHexa*/scalable/apps; do
+        [ -f "$dir/$target.svg" ] && ln -sf "$target.svg" "$dir/$alias.svg"
+    done
+done
 chmod -R a+rX "$rootfs"/usr/share/icons/NexaHexa*
 echo "NexaHexa: $n icon sets staged into $rootfs/usr/share/icons"

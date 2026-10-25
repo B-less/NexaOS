@@ -63,12 +63,16 @@ run power        power           nexa_power
 run pulse        pulse           nexa_pulse
 run pulse-perf   pulse           nexa_pulse --performance
 run software     software-center nexa_software
+run store        store           nexa_store
+run sysmon       sysmon          nexa_sysmon
+run taskmgr      taskmgr         nexa_taskmgr
+run desktop-icons desktop-icons  nexa_desktop_icons
 run editor       text-editor     nexa_edit
 run volume       volume-mixer    nexa_volume
 for page in personalization bluetooth vpn system users updates startup time power privacy assistant about; do
     run settings-$page settings-app nexa_settings $page
 done
-for panel in nexus control dock; do
+for panel in nexus control dock foryou drives; do
     run shell-$panel shell nexa_shell $panel
 done
 '

@@ -1,3 +1,4 @@
+import math
 import operator
 
 import gi
@@ -104,6 +105,8 @@ class CalcWindow(Gtk.Window):
         if self.reset_on_digit or self.display_text == "0":
             self.display_text = d
             self.reset_on_digit = False
+        elif self.display_text == "-0":  # ± pressed before the number
+            self.display_text = "-" + d
         else:
             self.display_text += d
         self._render()
@@ -121,7 +124,11 @@ class CalcWindow(Gtk.Window):
     def _on_sign(self, _btn):
         if self.error:
             return
-        if self.display_text.startswith("-"):
+        if self.reset_on_digit:
+            # Right after an operator: the next number is negative.
+            self.display_text = "-0"
+            self.reset_on_digit = False
+        elif self.display_text.startswith("-"):
             self.display_text = self.display_text[1:]
         elif self.display_text != "0":
             self.display_text = "-" + self.display_text
@@ -158,6 +165,13 @@ class CalcWindow(Gtk.Window):
             self.pending_op = None
             self._render()
             return
+        if not math.isfinite(result):
+            self.display_text = "Number too large"
+            self.error = True
+            self.accumulator = None
+            self.pending_op = None
+            self._render()
+            return
         self.accumulator = result
         self.display_text = _fmt(result)
 
@@ -180,7 +194,9 @@ class CalcWindow(Gtk.Window):
         if self.error:
             self._on_clear()
             return
-        self.display_text = self.display_text[:-1] or "0"
+        rest = self.display_text[:-1]
+        # "-5" minus a digit is just "-", which isn't a number.
+        self.display_text = rest if rest not in ("", "-") else "0"
         self._render()
 
     def _on_key(self, _widget, event):

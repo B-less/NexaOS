@@ -24,6 +24,7 @@ treeview { background-image: none; background-color: @nexa_bg; color: @nexa_text
 treeview:selected { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
 treeview header button { background-image: none; background-color: @nexa_surface; color: @nexa_muted; }
 #statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
+notebook, notebook > stack, notebook > header { background-image: none; background-color: @nexa_bg; border: none; }
 notebook tab { background-image: none; background-color: @nexa_surface; color: @nexa_muted; padding: 6px 14px; }
 notebook tab:checked { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
 """

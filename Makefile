@@ -313,6 +313,10 @@ test-store-app: native nexa-apps
 test-titlebar: nexa-apps
 	@sh scripts/test-titlebar.sh
 
+# App icons clicked on the icon itself (Nexus, the desktop card, the Store).
+test-tile-clicks:
+	@sh scripts/test-tile-clicks.sh
+
 # The lock screen (nexa-locker, C) in a headless Sway: lock, wrong and right
 # password, a second lock refused, a crash leaves the session locked.
 test-locker: native

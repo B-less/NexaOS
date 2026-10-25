@@ -52,9 +52,9 @@ class NetworkWindow(Gtk.Window):
         top.set_name("toolbar")
         top.set_border_width(12)
         heading_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        heading = Gtk.Label(label="WiFi", xalign=0)
+        heading = Gtk.Label(label="Wi-Fi", xalign=0)
         heading.set_name("heading")
-        self.status_label = Gtk.Label(label="Looking for a WiFi adapter...", xalign=0)
+        self.status_label = Gtk.Label(label="Looking for a Wi-Fi adapter...", xalign=0)
         self.status_label.set_name("statuslabel")
         heading_box.pack_start(heading, False, False, 0)
         heading_box.pack_start(self.status_label, False, False, 0)
@@ -157,7 +157,7 @@ class NetworkWindow(Gtk.Window):
     def _on_snapshot(self, snap, error):
         self.scan_btn.set_label("Scan")
         if error:
-            self.status_label.set_text("WiFi unavailable")
+            self.status_label.set_text("Wi-Fi unavailable")
             self._set_message(str(error), error=True)
             self._populate([])
             return
@@ -166,7 +166,7 @@ class NetworkWindow(Gtk.Window):
     def _show_snapshot(self, snap):
         status = snap["status"]
         if not status["adapters"]:
-            self.status_label.set_text("No WiFi adapter found")
+            self.status_label.set_text("No Wi-Fi adapter found")
         elif status["connected_to"]:
             self.status_label.set_name("connected")
             self.status_label.set_text(f"Connected to {status['connected_to']}")

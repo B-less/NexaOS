@@ -112,5 +112,15 @@ click(win, bar, buttons["Minimize"])
 _, scratch = node()
 check("Minimize hides it (the Dock brings it back)", scratch)
 
+# A fixed-size window (the Calculator) offers no Maximize: it only moved.
+fixed = Gtk.Window(title="Fixed")
+fixed_bar = titlebar.attach_titlebar(fixed, "Fixed")
+fixed.set_resizable(False)
+fixed.add(Gtk.Label(label="fixed"))
+fixed.show_all()
+pump(0.5)
+shown = {b.get_tooltip_text() for b in fixed_bar.get_children() if isinstance(b, Gtk.Button) and b.get_visible()}
+check("a fixed-size window has Minimize and Close, no Maximize", shown == {"Minimize", "Close"}, str(shown))
+
 print(f"\n{len(failures)} failure(s)")
 sys.exit(1 if failures else 0)

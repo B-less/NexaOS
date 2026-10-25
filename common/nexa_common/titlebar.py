@@ -152,6 +152,8 @@ def _minimize(window):
 
 
 def _toggle_maximize(window):
+    if not window.get_resizable():
+        return
     # Every Nexa window floats, and sway ignores maximize requests from
     # floating windows, so GTK's maximize() did nothing there. On sway the
     # window is resized to the whole workspace and put back on the second
@@ -174,19 +176,43 @@ def _toggle_maximize(window):
         window.unmaximize() if saved else window.maximize()
 
 
+# App sizes are designed for a common laptop screen (1366x768, about 740
+# high once the bar is taken off); bigger screens get proportionally bigger
+# windows (up to 1.5x), and nothing opens larger than 92% of the screen.
+REFERENCE_WORKAREA = (1366, 740)
+MAX_GROW = 1.5
+
+
+def fitted_size(w, h, area_w, area_h):
+    """The size a window designed as w x h opens at on a screen whose free
+    area is area_w x area_h (-1 = no preference, left alone)."""
+    grow = min(area_w / REFERENCE_WORKAREA[0], area_h / REFERENCE_WORKAREA[1])
+    grow = max(1.0, min(MAX_GROW, grow))
+    max_w, max_h = int(area_w * MAX_SCREEN_FRACTION), int(area_h * MAX_SCREEN_FRACTION)
+    fw = min(int(w * grow), max_w) if w > 0 else w
+    fh = min(int(h * grow), max_h) if h > 0 else h
+    return fw, fh
+
+
 def _fit_to_screen(window):
-    """Shrink a default size that wouldn't fit on this screen."""
+    """Size the window for the screen it opens on: bigger on big screens,
+    never larger than the screen. Done once, when it first appears."""
+    if getattr(window, "_nexa_fitted", False):
+        return
     display = Gdk.Display.get_default()
     if display is None or display.get_n_monitors() == 0:
         return
     gdk_win = window.get_window()
-    monitor = display.get_monitor_at_window(gdk_win) if gdk_win else display.get_monitor(0)
+    if gdk_win is None:
+        return  # not on a screen yet: done at "realize"
+    window._nexa_fitted = True
+    monitor = display.get_monitor_at_window(gdk_win) or display.get_monitor(0)
     area = monitor.get_workarea()
     w, h = window.get_default_size()
-    max_w, max_h = int(area.width * MAX_SCREEN_FRACTION), int(area.height * MAX_SCREEN_FRACTION)
-    if w > max_w or h > max_h:
-        window.set_default_size(min(w, max_w) if w > 0 else w, min(h, max_h) if h > 0 else h)
-        window.resize(min(w, max_w) if w > 0 else max_w, min(h, max_h) if h > 0 else max_h)
+    fw, fh = fitted_size(w, h, area.width, area.height)
+    if (fw, fh) != (w, h):
+        window.set_default_size(fw, fh)
+        window.resize(fw if fw > 0 else 1, fh if fh > 0 else 1)
 
 
 def _set_app_id():
@@ -214,6 +240,12 @@ def attach_titlebar(window, title):
 
     max_btn = _hex_button("maximize", "Maximize")
     max_btn.connect("clicked", lambda *_a: _toggle_maximize(window))
+    # A fixed-size window (the Calculator, Power) can't be maximized: it
+    # only moved when the button was pressed. No button for those; apps set
+    # their size after this, so it follows the window's "resizable".
+    max_btn.set_no_show_all(True)
+    max_btn.set_visible(window.get_resizable())
+    window.connect("notify::resizable", lambda w, _p: max_btn.set_visible(w.get_resizable()))
 
     close_btn = _hex_button("close", "Close")
     close_btn.connect("clicked", lambda *_a: window.close())

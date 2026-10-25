@@ -53,6 +53,9 @@ Icon=nexa-installer
 Terminal=false
 Categories=System;PackageManager;
 MimeType=application/vnd.nexa.package;
+# Opens .nexa files (from Files, the browser's downloads); on its own it
+# has nothing to show, so it stays out of the app list.
+NoDisplay=true
 DESKTOP_EOF
 
 echo "nexa-installer staged into $rootfs"

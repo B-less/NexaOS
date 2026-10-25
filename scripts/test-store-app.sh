@@ -13,10 +13,13 @@ version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
 image=nexa-apptest:${version%.*}
 docker image inspect "$image" >/dev/null 2>&1 || { echo "build $image first: sh scripts/test-app-headless.sh"; exit 1; }
 [ -x "$repo/build/native/nexa-store" ] || sh "$repo/scripts/build-native.sh"
-[ -f "$repo/apps/video-player/dist/video-player-1.0.4.nexa" ] || sh "$repo/scripts/build-apps.sh"
+# The Video Player's current version (it used to be written here, and the
+# test broke at every new release).
+vp=$(sed -n 's/^version = "\(.*\)"/\1/p' "$repo/apps/video-player/nexa.toml" | head -n 1)
+[ -f "$repo/apps/video-player/dist/video-player-$vp.nexa" ] || sh "$repo/scripts/build-apps.sh"
 mkdir -p "$out"
 
-docker run --rm --cap-add SYS_NICE -v "$repo:/src:ro" -v "$(cd "$out" && pwd):/out" -e OUT=/out "$image" sh -c '
+docker run --rm --cap-add SYS_NICE -v "$repo:/src:ro" -v "$(cd "$out" && pwd):/out" -e OUT=/out -e VP="$vp" "$image" sh -c '
 set -e
 P=/src/build/native/nexa-pack
 W=/tmp/store; mkdir -p $W/keys $W/trusted/packages $W/community/packages $W/registry $W/home
@@ -36,7 +39,7 @@ mkapp sketch "Sketch" 2.1.0 "Graphics;" "\"files.pictures\"" trusted signed "Dra
 mkapp chat "Chat" 0.9.1 "Network;" "\"network\", \"microphone\", \"notifications\"" trusted signed "Talk with friends: messages and voice" nexa-browser.svg
 mkapp clock "Clock" 1.0.0 "Utility;" "" trusted signed "Alarms, timers and a stopwatch" nexa-power.svg
 mkapp hexes "Hexes" 0.3.0 "Game;" "" community unsigned "A puzzle of sliding hexagons" nexa-nexus.svg
-cp /src/apps/video-player/dist/video-player-1.0.4.nexa $W/trusted/packages/
+cp /src/apps/video-player/dist/video-player-$VP.nexa $W/trusted/packages/
 $P repo build $W/trusted --key $W/tester.key >/dev/null
 $P repo build $W/community >/dev/null
 printf "{\"catalogues\": [{\"name\": \"NexaOS\", \"url\": \"file://$W/trusted\"}, {\"name\": \"Community\", \"url\": \"file://$W/community\"}, {\"name\": \"Online\", \"url\": \"https://nexa-apps.invalid\"}]}" > $W/store.conf

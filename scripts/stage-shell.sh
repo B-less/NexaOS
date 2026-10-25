@@ -24,6 +24,9 @@ for panel in nexus start control dock launchpad foryou drives; do
 done
 
 mkdir -p "$rootfs/usr/share/applications"
+# An entry from older builds (Nexus replaced it, and the name was Apple's):
+# the rootfs is reused by "make refresh", so it has to be removed here.
+rm -f "$rootfs/usr/share/applications/nexa-launchpad.desktop"
 cat > "$rootfs/usr/share/applications/nexa-nexus.desktop" << 'DESKTOP_EOF'
 [Desktop Entry]
 Type=Application

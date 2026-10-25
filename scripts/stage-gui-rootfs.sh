@@ -65,6 +65,7 @@ printf '%s\n' \
     'Exec=/usr/local/bin/nexa-fbdesktop' \
     'Terminal=false' \
     'Categories=System;' \
+    'NoDisplay=true' \
     > "$rootfs/usr/share/applications/nexa-fbdesktop.desktop"
 
 ln -sfn . "$rootfs/disk"

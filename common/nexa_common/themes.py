@@ -507,7 +507,9 @@ def hexa_tile(icon_name):
     """True when `icon_name` resolves to a NexaHexa app tile (already a
     hexagon): Nexus and the desktop then show it as it is, without drawing
     their own hexagon behind it (a hexagon inside a hexagon)."""
-    if not icon_name or not str(icon_name).startswith("nexa-"):
+    # Any name that resolves into the set counts: Alpine apps (the foot
+    # terminal) get NexaHexa tiles through aliases (stage-iconset.sh).
+    if not icon_name or str(icon_name).endswith("-symbolic") or str(icon_name).startswith("/"):
         return False
     try:
         import gi
@@ -517,7 +519,8 @@ def hexa_tile(icon_name):
         info = theme.lookup_icon(icon_name, 64, 0) if theme else None
     except (ImportError, ValueError):
         return False
-    return bool(info and "/NexaHexa" in (info.get_filename() or ""))
+    path = (info.get_filename() or "") if info else ""
+    return "/NexaHexa" in path and not path.endswith("-symbolic.svg")
 
 
 def gtk_settings(t, icon_theme="Adwaita"):

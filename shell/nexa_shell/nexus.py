@@ -73,6 +73,10 @@ class HexTile(Gtk.Button):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         overlay = Gtk.Overlay()
         area = Gtk.DrawingArea()
+        # Drawn on the button's own surface: a drawing area or overlay child
+        # with a surface of its own takes the click, and only the name (no
+        # surface) opened the app.
+        area.set_has_window(False)
         area.set_size_request(TILE_HEX_R * 2, int(TILE_HEX_R * 2))
         area.connect("draw", self._draw_hex)
         overlay.add(area)
@@ -82,6 +86,7 @@ class HexTile(Gtk.Button):
         self.tile = themes.hexa_tile(app["icon"])
         image.set_pixel_size(TILE_HEX_R * 2 - 2 if self.tile else ICON_PX)
         overlay.add_overlay(image)
+        overlay.set_overlay_pass_through(image, True)
         box.pack_start(overlay, False, False, 0)
         name = Gtk.Label(label=app["name"])
         name.set_name("nx-name")

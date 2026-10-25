@@ -57,7 +57,7 @@ class SettingsWindow(Gtk.Window):
         super().__init__(title="Settings")
         self.set_icon_name("nexa-settings")
         attach_titlebar(self, "Settings")
-        self.set_default_size(760, 520)
+        self.set_default_size(860, 600)
         self._build_ui()
 
     def _build_ui(self):

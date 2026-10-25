@@ -39,11 +39,11 @@ _AGENT_XML = """
 """
 
 _FRIENDLY_ERRORS = {
-    "org.freedesktop.DBus.Error.ServiceUnknown": "The WiFi service (iwd) isn't running.",
-    "org.freedesktop.DBus.Error.NameHasNoOwner": "The WiFi service (iwd) isn't running.",
-    "org.freedesktop.DBus.Error.AccessDenied": "Not allowed to control WiFi from this account.",
+    "org.freedesktop.DBus.Error.ServiceUnknown": "The Wi-Fi service (iwd) isn't running.",
+    "org.freedesktop.DBus.Error.NameHasNoOwner": "The Wi-Fi service (iwd) isn't running.",
+    "org.freedesktop.DBus.Error.AccessDenied": "Not allowed to control Wi-Fi from this account.",
     "net.connman.iwd.Failed": "Couldn't connect - the password may be wrong, or the network rejected the connection.",
-    "net.connman.iwd.Busy": "The WiFi adapter is busy, try again in a moment.",
+    "net.connman.iwd.Busy": "The Wi-Fi adapter is busy, try again in a moment.",
     "net.connman.iwd.Aborted": "The connection attempt was cancelled.",
     "net.connman.iwd.NoAgent": "A password is needed to connect to this network.",
     "net.connman.iwd.NotSupported": "This kind of network isn't supported.",
@@ -75,7 +75,7 @@ def _friendly(err):
     if m:
         name, detail = m.group(1), m.group(2).strip()
         return _FRIENDLY_ERRORS.get(name) or detail or name
-    return err.message or "Unknown WiFi error"
+    return err.message or "Unknown Wi-Fi error"
 
 
 def _bus():
@@ -145,7 +145,7 @@ def _pick_device(objects, name=None):
     for d in _station_devices(objects):
         if d["station"] and (name is None or d["name"] == name):
             return d
-    raise WifiError("No WiFi adapter found." if name is None else f"No WiFi adapter named {name}.")
+    raise WifiError("No Wi-Fi adapter found." if name is None else f"No Wi-Fi adapter named {name}.")
 
 
 def status():
@@ -329,7 +329,7 @@ def connect(ssid, passphrase=None, device=None, timeout=60):
         if not passphrase:
             raise PassphraseRequired(f"'{ssid}' needs a password the first time you connect.")
         if not _valid_passphrase(passphrase):
-            raise WifiError("A WiFi password is 8-63 characters (or a 64-digit hex key).")
+            raise WifiError("A Wi-Fi password is 8-63 characters (or a 64-digit hex key).")
     adapter = _pick_device(_objects(), device)["name"]
     _connect_blocking(net["path"], passphrase if net["security"] == "psk" else None, timeout)
     _wait_until_connected(adapter, ssid)
