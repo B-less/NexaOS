@@ -700,7 +700,7 @@ def apply(name=None, opacity=None, home=None, reload=True, glass=None, icon_styl
     _write(settings_path(home), json.dumps({"theme": name, "opacity": round(opacity, 2), "glass": glass,
                                             "icon_style": icon_style, "glass_tint": glass_tint}) + "\n")
     if reload:
-        _quiet(["pkill", "-USR2", "-x", "waybar"])   # reload style
+        _quiet(["pkill", "-USR2", "-u", str(os.getuid()), "-x", "waybar"])   # reload style
         _quiet(["makoctl", "reload"])
         from . import compositor
         compositor.reload()

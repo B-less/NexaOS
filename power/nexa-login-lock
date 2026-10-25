@@ -9,5 +9,8 @@ if [ -f "$marker" ]; then
     rm -f "$marker"
     exec nexa-lock --boot
 fi
-[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/nexa/skip-login-lock" ] && exit 0
+# The opt-out is for the desktop that starts at boot only: a desktop
+# started by "Switch person" was asked for by someone else, so it always
+# opens locked, whatever its owner chose.
+[ "${NEXA_SESSION_PRIMARY:-1}" = 1 ] && [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/nexa/skip-login-lock" ] && exit 0
 exec nexa-lock --boot

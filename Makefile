@@ -335,7 +335,8 @@ test-files-drag: native
 test-living-field: native
 	@sh scripts/test-living-field.sh
 
-# The top bar's "Hide when not in use" with the real bar in a headless Sway.
+# The top bar's "Hide when not in use" with the real bar in a headless Sway,
+# and its motion both ways (none with Interface DNA "motion": "none").
 test-topbar: native
 	@sh scripts/test-topbar.sh
 
@@ -344,9 +345,15 @@ test-tile-clicks:
 	@sh scripts/test-tile-clicks.sh
 
 # The lock screen (nexa-locker, C) in a headless Sway: lock, wrong and right
-# password, a second lock refused, a crash leaves the session locked.
+# password, a second lock refused, a crash leaves the session locked, and
+# Switch person (the hand-over, coming back, a refused switch, Tab + Enter).
 test-locker: native
 	@sh scripts/test-locker.sh
+
+# nexa-sessiond with real accounts: one desktop per person, who may switch,
+# lock on leaving, sign-out going back, the first desktop's restart.
+test-sessions: native
+	@sh scripts/test-sessions.sh
 
 gui-apps:
 	@echo "$(COLOR_BLUE)Building Nexa framebuffer desktop and GUI apps...$(COLOR_RESET)"

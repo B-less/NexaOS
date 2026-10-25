@@ -3,7 +3,9 @@
 # lock screen; swaylock is the fallback if it can't lock (no
 # ext-session-lock in the compositor, or the program is missing).
 #
-# Options are passed on: --boot (the session has just started: "Welcome").
+# Options are passed on: --boot (the session has just started: "Welcome"),
+# --switch-to NAME (lock, play the hand-over, then put NAME's desktop on
+# screen through nexa-sessiond).
 # Returns once the screen is locked, so the lid handler can suspend right
 # after and swayidle keeps running.
 set -u
@@ -14,12 +16,21 @@ set -u
 run=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 exec 9>"$run/nexa-lock.lock"
 flock -n 9 || exit 0
-pgrep -x nexa-locker >/dev/null 2>&1 && exit 0
-pgrep -x swaylock >/dev/null 2>&1 && exit 0
+# This person's lock screen only: with two people signed in, the other
+# person's (paused) lock screen must not stop this one locking.
+pgrep -u "$(id -u)" -x nexa-locker >/dev/null 2>&1 && exit 0
+pgrep -u "$(id -u)" -x swaylock >/dev/null 2>&1 && exit 0
 
 if command -v nexa-locker >/dev/null 2>&1; then
-    nexa-locker --daemonize "$@" && exit 0
-    logger -t nexa-lock "nexa-locker couldn't lock (exit $?); using swaylock" 2>/dev/null || true
+    nexa-locker --daemonize "$@"
+    rc=$?
+    [ $rc = 0 ] && exit 0
+    # 3: --switch-to someone who can't be switched to; it said why, and
+    # nothing was locked (the desktop stays as it was).
+    [ $rc = 3 ] && exit 3
+    logger -t nexa-lock "nexa-locker couldn't lock (exit $rc); using swaylock" 2>/dev/null || true
+    # swaylock can't hand over to someone else: just lock.
+    case " $* " in *" --switch-to "*) set -- ;; esac
 fi
 
 # swaylock: the theme's colours (~/.config/swaylock/config, from

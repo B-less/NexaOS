@@ -4,7 +4,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
 
-from nexa_common import compositor
+from nexa_common import compositor, sessions
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -39,7 +39,9 @@ class PowerWindow(Gtk.Window):
         super().__init__(title="Power")
         self.set_icon_name("nexa-power")
         attach_titlebar(self, "Power")
-        self.set_default_size(300, 390)
+        # One "Switch to ..." per other person (nexa-sessiond), up to three.
+        self._others = sessions.others()[:3]
+        self.set_default_size(300, 390 + 52 * len(self._others))
         self.set_resizable(False)
         self._armed = None
         self._armed_timer = None
@@ -68,6 +70,15 @@ class PowerWindow(Gtk.Window):
             btn.connect("clicked", self._on_action, key)
             root.pack_start(btn, False, False, 0)
             self.buttons[key] = (btn, label, name)
+            if key == "lock":
+                for p in self._others:
+                    label = f"Switch to {p['display']}" + ("  ·  signed in" if p["signed_in"] else "")
+                    sb = Gtk.Button(label=label)
+                    sb.set_name("powerbtn")
+                    sb.set_tooltip_text(f"Locks your desktop and puts {p['display']}'s on screen; "
+                                        "your windows stay as they are.")
+                    sb.connect("clicked", self._switch, p["name"])
+                    root.pack_start(sb, False, False, 0)
 
         cancel = Gtk.Button(label="Cancel")
         cancel.set_name("powerbtn")
@@ -84,6 +95,13 @@ class PowerWindow(Gtk.Window):
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
+
+    def _switch(self, _btn, name):
+        error = sessions.switch_to(name)
+        if error:
+            self.error_label.set_text(error)
+            return
+        self.close()
 
     def _on_key(self, _win, event):
         if event.keyval == Gdk.KEY_Escape:

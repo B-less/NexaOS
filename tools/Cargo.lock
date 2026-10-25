@@ -511,6 +511,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-sessiond"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+]
+
+[[package]]
 name = "nexa-store"
 version = "0.1.0"
 dependencies = [

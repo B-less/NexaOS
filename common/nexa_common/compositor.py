@@ -227,7 +227,7 @@ def set_wallpaper(path):
         return _sway(f"output * bg {path} fill")
     if wm == "hyprland":
         # swaybg draws the wallpaper here; restart it on the new image.
-        _call(["pkill", "-x", "swaybg"])
+        _call(["pkill", "-u", str(os.getuid()), "-x", "swaybg"])
         subprocess.Popen(["swaybg", "-i", path, "-m", "fill"], start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True

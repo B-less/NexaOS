@@ -267,15 +267,19 @@ CHECK_EOF
 # Start the Nexa Wayland desktop, with diagnostics and framebuffer fallback.
 
 MODE="${1:-}"
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"
+# Whose desktop: nexa-sessiond says (Switch person starts other people's);
+# started by hand, the first account's (uid 1000, whatever the installer
+# named it).
+NEXA_USER="${NEXA_SESSION_USER:-$(awk -F: '$3 == 1000 { print $1; exit }' /etc/passwd)}"
+NEXA_UID=$(id -u "$NEXA_USER" 2>/dev/null || echo 1000)
+NEXA_GID=$(id -g "$NEXA_USER" 2>/dev/null || echo 1000)
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$NEXA_UID}"
 export NEXA_WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
-
-# The desktop account is uid 1000, whatever the installer named it.
-NEXA_USER=$(awk -F: '$3 == 1000 { print $1; exit }' /etc/passwd)
+NEXA_SESSION_PRIMARY="${NEXA_SESSION_PRIMARY:-1}"
 
 mkdir -p "$XDG_RUNTIME_DIR" /run/dbus /var/log
 chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
-chown 1000:1000 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+chown "$NEXA_UID:$NEXA_GID" "$XDG_RUNTIME_DIR" 2>/dev/null || true
 
 if [ "$MODE" = "--check" ]; then
     exec /usr/local/bin/nexa-wayland-check
@@ -310,7 +314,8 @@ if command -v seatd >/dev/null 2>&1; then
 fi
 
 if command -v sway >/dev/null 2>&1; then
-    [ -x /usr/local/bin/nexa-boot-finish ] && /usr/local/bin/nexa-boot-finish
+    # The boot animation hands over to the first desktop only.
+    [ "$NEXA_SESSION_PRIMARY" = 1 ] && [ -x /usr/local/bin/nexa-boot-finish ] && /usr/local/bin/nexa-boot-finish
     SWAY_CMD="sway"
     if [ -f /etc/sway/config ]; then
         SWAY_CMD="sway -c /etc/sway/config"
@@ -337,7 +342,7 @@ if command -v sway >/dev/null 2>&1; then
         # its argument.
         DBUS_RUN="dbus-run-session --"
         command -v dbus-run-session >/dev/null 2>&1 || DBUS_RUN=""
-        exec su "$NEXA_USER" -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; export GSETTINGS_BACKEND=keyfile; exec $DBUS_RUN /usr/local/bin/nexa-desktop"
+        exec su "$NEXA_USER" -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; export GSETTINGS_BACKEND=keyfile; export NEXA_SESSION_PRIMARY='$NEXA_SESSION_PRIMARY'; exec $DBUS_RUN /usr/local/bin/nexa-desktop"
     fi
 
     unset WAYLAND_DISPLAY
@@ -371,7 +376,7 @@ SESSION_EOF
     mkdir -p "$MNT_DIR/etc/init.d"
     cat > "$MNT_DIR/etc/init.d/sway" << 'SWAY_EOF'
 #!/sbin/openrc-run
-description="Start Nexa Wayland session"
+description="Start the Nexa desktop sessions"
 
 depend() {
     need localmount
@@ -379,14 +384,22 @@ depend() {
     after devfs
 }
 
-# The desktop is started again whenever it ends: "Log out" ends it (the
-# new one opens locked, see nexa-login-lock), and so does a crash. Without
-# this, logging out left a dark screen. Five ends within 10 s each in a row
-# stop the loop instead of flickering forever.
+# nexa-sessiond (Rust) runs everyone's desktop: the first person's at
+# boot, others' when someone picks "Switch person", each on its own VT. It
+# restarts the first desktop after "Log out" (the new one opens locked, see
+# nexa-login-lock) and goes back after someone else signs out.
+# Without nexa-sessiond (an image built without it), the old loop below
+# keeps the first person's desktop running, as before.
 start() {
-    ebegin "Starting Nexa Wayland session"
+    ebegin "Starting the Nexa desktop sessions"
     mkdir -p /var/log
     rm -f /run/nexa-session.stop
+    if [ -x /usr/local/bin/nexa-sessiond ]; then
+        /usr/local/bin/nexa-sessiond serve </dev/null >>/var/log/nexa-session.log 2>&1 &
+        echo $! > /run/nexa-session.pid
+        eend 0
+        return
+    fi
     (
         quick=0
         while [ ! -f /run/nexa-session.stop ]; do
@@ -1332,7 +1345,7 @@ windowrule = center on, match:class .*
 # themselves, so Hyprland's own layer animation is off for them.
 layerrule = blur on, match:namespace ^(waybar|nexa-.*)$
 layerrule = ignore_alpha 0.1, match:namespace ^(waybar|nexa-.*)$
-layerrule = no_anim on, match:namespace ^(nexa-panel)$
+layerrule = no_anim on, match:namespace ^(nexa-panel|waybar|barhide-ghost)$
 
 bind = SUPER, Return, exec, foot
 bind = SUPER, D, exec, nexa-start
@@ -1530,7 +1543,7 @@ if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
 else
     base=/etc/xdg/waybar/config
 fi
-pkill -x nexa-barhide 2>/dev/null
+pkill -u "$(id -u)" -x nexa-barhide 2>/dev/null
 if [ "$mode" = autohide ] && command -v nexa-barhide >/dev/null 2>&1; then
     dir=${XDG_RUNTIME_DIR:-/tmp}/nexa-bar
     mkdir -p "$dir"

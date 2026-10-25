@@ -9,7 +9,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk, Pango
 
-from nexa_common import accounts, actionui, askpass, broker
+from nexa_common import accounts, actionui, askpass, broker, sessions
 
 CSS = b"""
 .nx-intro { color: @nexa_muted; }
@@ -134,6 +134,8 @@ class UsersPage:
     def reload(self):
         for c in self.list.get_children():
             c.destroy()
+        # Who nexa-sessiond would switch to, and who is signed in now.
+        self._sessions = {p["name"]: p for p in sessions.people()}
         for person in accounts.list_people(self.etc):
             self.list.pack_start(self._card(person), False, False, 0)
         self.list.show_all()
@@ -151,6 +153,9 @@ class UsersPage:
             title.pack_start(_label("You", "nx-tag", "accent", wrap=False), False, False, 0)
         if p["admin"]:
             title.pack_start(_label("Administrator", "nx-tag", wrap=False), False, False, 0)
+        live = self._sessions.get(p["name"])
+        if live and live["signed_in"] and not p["you"]:
+            title.pack_start(_label("Signed in", "nx-tag", "accent", wrap=False), False, False, 0)
         body.pack_start(title, False, False, 0)
         body.pack_start(_label(f"Signs in as {p['name']}", "nx-card-status"), False, False, 0)
         if p["you"]:
@@ -159,9 +164,22 @@ class UsersPage:
         else:
             b = _button("Remove…")
             b.connect("clicked", self._remove, p)
-        b.set_halign(Gtk.Align.START)
-        body.pack_start(b, False, False, 6)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        if live and not p["you"]:
+            sw = _button("Switch to " + p["full_name"].split()[0], "primary")
+            sw.set_tooltip_text("Locks your desktop and puts theirs on screen (they sign in with their password). "
+                                "Your windows stay as they are.")
+            sw.connect("clicked", self._switch, p)
+            row.pack_start(sw, False, False, 0)
+        row.pack_start(b, False, False, 0)
+        row.set_halign(Gtk.Align.START)
+        body.pack_start(row, False, False, 6)
         return card
+
+    def _switch(self, _b, p):
+        error = sessions.switch_to(p["name"])
+        if error:
+            self.status.set_text(f"Couldn't switch: {error}")
 
     def _done(self, ok_text):
         def done(result, error):

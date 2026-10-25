@@ -1,0 +1,9 @@
+[package]
+name = "nexa-sessiond"
+version = "0.1.0"
+edition = "2021"
+description = "NexaOS desktop sessions: one per person, each on its own VT, switched with Switch person"
+
+[dependencies]
+libc = "0.2"
+nexa-sys = { path = "../nexa-sys" }

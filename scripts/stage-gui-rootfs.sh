@@ -101,7 +101,7 @@ printf '%s\n' \
     '# no dconf, and on Wayland GTK takes the icon theme from GSettings, not' \
     '# settings.ini. nexa-theme writes it; GTK follows a change live.' \
     'export GSETTINGS_BACKEND=keyfile' \
-    'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"' \
+    'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"' \
     'if [ -z "${WAYLAND_DISPLAY:-}" ]; then' \
     '    for sock in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do' \
     '        case "$sock" in *.lock) continue ;; esac' \

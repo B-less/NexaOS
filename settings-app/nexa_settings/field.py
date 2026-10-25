@@ -181,7 +181,15 @@ def gather():
 
     def accounts():
         import pwd
-        return (pwd.getpwuid(os.getuid()).pw_name, "ok", {})
+        from nexa_common import sessions
+        me = pwd.getpwuid(os.getuid()).pw_name
+        others = sessions.others()
+        signed = [p["display"] for p in others if p["signed_in"]]
+        if signed:
+            return (f"{me} · {', '.join(signed)} also signed in", "ok", {"others": others})
+        if others:
+            return (f"{me} · {len(others) + 1} people can sign in", "ok", {"others": others})
+        return (me, "ok", {"others": []})
 
     def clock():
         try:
@@ -726,6 +734,14 @@ class LivingField(Gtk.Box):
         self.panel.pack_start(entry, False, False, 0)
         self._button("Save as a workspace", lambda: self._act(
             lambda: f"Saved “{brain.save_workspace(entry.get_text())['workspace']['name']}”."), primary=True)
+
+    def _fill_accounts(self, d):
+        from nexa_common import sessions
+        for p in d.get("others", [])[:4]:
+            label = f"Switch to {p['display']}" + (" (signed in)" if p["signed_in"] else "")
+            self._button(label, lambda n=p["name"]: sessions.switch_to(n))
+        if d.get("others"):
+            self._text("Your desktop locks and stays as it is; theirs asks for their password.", "fieldlabel")
 
     def _fill_apps(self, d):
         self._button("Open Nexus", lambda: brain.run({"type": "launch", "app": "nexa-nexus"}))

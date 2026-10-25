@@ -19,13 +19,25 @@
  * short event log, Caps Lock and keyboard-layout hints, and Sleep / Restart
  * / Shut down buttons (through nexa-brokerd; a second click confirms).
  *
- *   nexa-locker [--daemonize] [--boot]
- *   nexa-locker --preview W H FILE.png [idle|typing|checking|wrong|caps|live|boot]
+ * Switch person: everyone else who may use this computer is a hexagon under
+ * the password field (click, or Tab then Enter). The screen dissolves into
+ * the honeycomb from the middle out, the other person's hexagon warps in,
+ * and nexa-sessiond puts their desktop on screen. --switch-to NAME does the
+ * same from an unlocked desktop (Power, Settings > Users): it locks, takes a
+ * snapshot of the desktop first (wlr-screencopy) so that is what dissolves.
+ * Coming back (nexa-sessiond sends SIGUSR2) or a new desktop (--boot) plays
+ * the reverse: the person's hexagon grows into the clock as the honeycomb
+ * reassembles. "motion": "none" in Interface DNA (~/.config/nexa/interface/
+ * global.json) skips both.
+ *
+ *   nexa-locker [--daemonize] [--boot] [--switch-to NAME]
+ *   nexa-locker --preview W H FILE.png [idle|typing|checking|wrong|caps|live|boot|people|depart:P|arrive:P]
  *
  * --daemonize returns once the screen is locked (exit 0) or couldn't be
  * locked (exit 2), so callers can suspend right after. Theme colours come
  * from ~/.config/nexa/lock.conf (written by nexa-theme).
- * Exit codes: 0 unlocked, 2 couldn't lock, 1 other errors.
+ * Exit codes: 0 unlocked, 2 couldn't lock, 3 can't switch to that person
+ * (nothing locked), 1 other errors.
  */
 #define _GNU_SOURCE
 #include <ctype.h>
@@ -45,7 +57,10 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/signalfd.h>
+#include <sys/socket.h>
 #include <sys/timerfd.h>
+#include <sys/un.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <syslog.h>
@@ -60,10 +75,14 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "ext-session-lock-v1-client-protocol.h"
+#include "wlr-screencopy-unstable-v1-client-protocol.h"
 
 #define MAX_PW 256
 #define LOG_LINES 5
 #define MAX_RIPPLES 10
+#define MAX_PEOPLE 6
+#define DEPART_S 1.3
+#define ARRIVE_S 1.2
 
 typedef struct { double r, g, b; } rgb;
 
@@ -95,6 +114,9 @@ struct buffer {
 
 struct rect { double x, y, w, h; };
 
+/* Someone else who may use this computer (from nexa-sessiond). */
+struct person { char name[64], display[64]; int signed_in; };
+
 struct output {
     struct wl_list link;
     struct wl_output *wl;
@@ -107,10 +129,20 @@ struct output {
     cairo_surface_t *bg;
     int bg_w, bg_h;
     struct rect power[3];
+    struct rect people[MAX_PEOPLE];
+    cairo_surface_t *scene;   /* the lock screen, drawn here first during a transition */
+    cairo_surface_t *snap;    /* the desktop just before locking (--switch-to) */
+    struct zwlr_screencopy_frame_v1 *frame;
+    struct buffer cap;
+    uint32_t cap_format, cap_stride, cap_flags;
+    int cap_state;            /* 1 waiting, 2 done, -1 failed */
 };
 
 enum { P_SLEEP, P_RESTART, P_OFF };
 enum { RP_KEY, RP_WRONG, RP_GOOD };
+/* Transitions: leaving for someone else's desktop, the black screen while
+ * it's theirs, and arriving (a new desktop, or back to this one). */
+enum { TR_NONE, TR_DEPART, TR_AWAY, TR_ARRIVE };
 
 struct ripple { double t0; int kind; };
 
@@ -123,6 +155,8 @@ static struct app {
     struct wl_pointer *pointer;
     struct ext_session_lock_manager_v1 *lock_manager;
     struct ext_session_lock_v1 *lock;
+    struct zwlr_screencopy_manager_v1 *screencopy;
+    uint32_t screencopy_version;
     struct wl_list outputs;
     struct xkb_context *xkb;
     struct xkb_keymap *keymap;
@@ -156,7 +190,16 @@ static struct app {
     char repeat_utf8[16];
     int preview;
     double preview_now;
-} A = {.ready_fd = -1, .watch_fd = -1, .pam_fd = -1, .hover = -1, .armed = -1, .timer_fd = -1, .repeat_fd = -1};
+    /* Switch person */
+    struct person people[MAX_PEOPLE];
+    int npeople, focus;            /* focus: -1 the password field, else a person */
+    int tr, tr_back;
+    double tr_at, sw_error_at;
+    char tr_name[64], tr_display[64], switch_to[64], sw_error[120];
+    int sw_fd, sig_fd;
+    pid_t sw_pid;
+} A = {.ready_fd = -1, .watch_fd = -1, .pam_fd = -1, .hover = -1, .armed = -1, .timer_fd = -1, .repeat_fd = -1,
+       .focus = -1, .sw_fd = -1, .sig_fd = -1};
 
 /* ---------- small helpers ---------- */
 
@@ -181,6 +224,12 @@ static void set_rgb(cairo_t *cr, rgb c, double a) { cairo_set_source_rgba(cr, c.
 
 static rgb mix(rgb a, rgb b, double t) {
     return (rgb){a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t};
+}
+
+static double smooth(double x) { x = clampd(x, 0, 1); return x * x * (3 - 2 * x); }
+static double ease_back(double x) {
+    x = clampd(x, 0, 1) - 1;
+    return 1 + 2.70158 * x * x * x + 1.70158 * x * x;
 }
 
 static void add_log(const char *fmt, ...) {
@@ -536,6 +585,170 @@ static cairo_surface_t *make_background(int BW, int BH, int scale) {
     return out;
 }
 
+/* ---------- people and switching ---------- */
+
+/* One request to nexa-sessiond; its reply in out. -1 if it isn't there. */
+static int session_request(const char *line, char *out, size_t n) {
+    const char *path = getenv("NEXA_SESSION_SOCKET");
+    if (!path || !*path) path = "/run/nexa-session.sock";
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return -1;
+    struct sockaddr_un a = {.sun_family = AF_UNIX};
+    snprintf(a.sun_path, sizeof a.sun_path, "%s", path);
+    struct timeval tv = {8, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+    if (connect(fd, (struct sockaddr *)&a, sizeof a) < 0 || write(fd, line, strlen(line)) < 0) {
+        close(fd);
+        return -1;
+    }
+    shutdown(fd, SHUT_WR);
+    size_t got = 0;
+    ssize_t r;
+    while (got + 1 < n && (r = read(fd, out + got, n - 1 - got)) > 0) got += (size_t)r;
+    out[got] = 0;
+    close(fd);
+    return 0;
+}
+
+/* Everyone else who may use this computer, and who's signed in. */
+static void load_people(void) {
+    char buf[4096];
+    A.npeople = 0;
+    if (session_request("people\n", buf, sizeof buf) < 0 || strncmp(buf, "ok", 2)) return;
+    char *save = NULL;
+    for (char *line = strtok_r(buf, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
+        char *f[5], *s2 = NULL;
+        int nf = 0;
+        for (char *p = strtok_r(line, "\t", &s2); p && nf < 5; p = strtok_r(NULL, "\t", &s2)) f[nf++] = p;
+        if (nf < 5 || !strcmp(f[0], A.user) || A.npeople >= MAX_PEOPLE) continue;
+        struct person *p = &A.people[A.npeople++];
+        snprintf(p->name, sizeof p->name, "%s", f[0]);
+        snprintf(p->display, sizeof p->display, "%.20s", f[2]);
+        p->signed_in = atoi(f[3]);
+    }
+    if (A.focus >= A.npeople) A.focus = -1;
+}
+
+/* A colour of their own, the same every time (FNV-1a of the name). */
+static rgb person_colour(const char *name) {
+    unsigned h = 2166136261u;
+    for (const char *c = name; *c; c++) h = (h ^ (unsigned char)*c) * 16777619u;
+    double hue = (h % 360) / 60.0, s = 0.55, v = 0.95, c = v * s, x = c * (1 - fabs(fmod(hue, 2) - 1)), m = v - c;
+    rgb out = hue < 1 ? (rgb){c, x, 0} : hue < 2 ? (rgb){x, c, 0} : hue < 3 ? (rgb){0, c, x}
+            : hue < 4 ? (rgb){0, x, c} : hue < 5 ? (rgb){x, 0, c} : (rgb){c, 0, x};
+    return (rgb){out.r + m, out.g + m, out.b + m};
+}
+
+/* A person's hexagon: their colour, their initial. */
+static void draw_avatar(cairo_t *cr, const char *name, const char *display, double cx, double cy, double r, double alpha) {
+    if (alpha <= 0.01 || r <= 0.5) return;
+    rgb c = person_colour(name), dark = mix(c, (rgb){0, 0, 0}, 0.45);
+    cairo_pattern_t *g = cairo_pattern_create_linear(cx, cy - r, cx, cy + r);
+    cairo_pattern_add_color_stop_rgba(g, 0, c.r, c.g, c.b, alpha);
+    cairo_pattern_add_color_stop_rgba(g, 1, dark.r, dark.g, dark.b, alpha);
+    hex_path(cr, cx, cy, r);
+    cairo_set_source(cr, g);
+    cairo_fill_preserve(cr);
+    cairo_pattern_destroy(g);
+    set_rgb(cr, (rgb){1, 1, 1}, alpha * 0.45);
+    cairo_set_line_width(cr, fmax(1, r * 0.05));
+    cairo_stroke(cr);
+    char initial[8] = "";
+    const unsigned char *d = (const unsigned char *)(display && *display ? display : name);
+    size_t n = 1;
+    while (d[n] && (d[n] & 0xC0) == 0x80 && n < 4) n++;
+    memcpy(initial, d, n);
+    if (n == 1) initial[0] = (char)toupper(initial[0]);
+    text(cr, "Inter Semi-Bold", r * 0.85, 0, initial, cx, cy, 1, (rgb){1, 1, 1}, alpha);
+}
+
+/* Interface DNA's "motion": "none" means no transitions here either. */
+static int reduce_motion(void) {
+    char path[512], buf[4096];
+    const char *cfg = getenv("XDG_CONFIG_HOME"), *home = getenv("HOME");
+    if (cfg && *cfg) snprintf(path, sizeof path, "%s/nexa/interface/global.json", cfg);
+    else snprintf(path, sizeof path, "%s/.config/nexa/interface/global.json", home ? home : "/");
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    char *m = strstr(buf, "\"motion\"");
+    if (!m) return 0;
+    m = strchr(m + 8, '"');
+    return m && !strncmp(m, "\"none\"", 6);
+}
+
+static void begin_departure(const char *name, const char *display) {
+    snprintf(A.tr_name, sizeof A.tr_name, "%s", name);
+    snprintf(A.tr_display, sizeof A.tr_display, "%s", display);
+    A.tr = TR_DEPART;
+    A.tr_at = now_s() - (reduce_motion() ? DEPART_S : 0);
+    A.focus = -1;
+    A.armed = -1;
+    A.sw_error[0] = 0;
+    add_log("session: handing the screen to %s", name);
+}
+
+static void start_arrival(int back) {
+    if (A.sw_pid > 0) return;  /* still waiting for the answer */
+    A.tr = TR_ARRIVE;
+    A.tr_back = back;
+    A.tr_at = now_s() - (reduce_motion() ? ARRIVE_S : 0);
+    load_people();
+    if (back) add_log("session: back on screen");
+    A.redraw = 1;
+}
+
+static void begin_switch(int i) {
+    if (i < 0 || i >= A.npeople || A.checking || A.unlock_at > 0 || A.tr != TR_NONE) return;
+    begin_departure(A.people[i].name, A.people[i].display);
+}
+
+/* After the departure: ask nexa-sessiond, off the event loop (starting a
+ * desktop takes a moment); the screen stays dark meanwhile. */
+static void send_switch(void) {
+    int p[2];
+    if (pipe2(p, O_CLOEXEC) < 0) { start_arrival(0); return; }
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(p[0]);
+        char line[96], out[256];
+        snprintf(line, sizeof line, "switch %s\n", A.tr_name);
+        if (session_request(line, out, sizeof out) < 0)
+            snprintf(out, sizeof out, "error Switching isn't available (nexa-sessiond isn't running)");
+        if (write(p[1], out, strlen(out)) < 0) _exit(1);
+        _exit(0);
+    }
+    close(p[1]);
+    if (pid < 0) { close(p[0]); start_arrival(0); return; }
+    A.sw_pid = pid;
+    A.sw_fd = p[0];
+    A.tr = TR_AWAY;
+}
+
+static void switch_done(void) {
+    char out[256] = "";
+    ssize_t r = read(A.sw_fd, out, sizeof out - 1);
+    if (r > 0) out[r] = 0;
+    close(A.sw_fd);
+    A.sw_fd = -1;
+    waitpid(A.sw_pid, NULL, 0);
+    A.sw_pid = 0;
+    out[strcspn(out, "\n")] = 0;
+    if (!strncmp(out, "ok", 2) && strncmp(out, "ok already", 10)) {
+        add_log("session: %s is on screen", A.tr_name);
+        return;  /* dark until we're back (SIGUSR2) or a key is pressed */
+    }
+    if (strncmp(out, "ok", 2)) {
+        snprintf(A.sw_error, sizeof A.sw_error, "%.119s", !strncmp(out, "error ", 6) ? out + 6 : "Couldn't switch");
+        A.sw_error_at = now_s();
+        add_log("session: couldn't switch to %s", A.tr_name);
+    }
+    start_arrival(0);
+}
+
 static void draw_power_icon(cairo_t *cr, int which, double cx, double cy, double s, rgb c, double a) {
     set_rgb(cr, c, a);
     cairo_set_line_width(cr, s * 0.16);
@@ -581,6 +794,7 @@ static void meter(cairo_t *cr, double x, double y, double U, double pct, rgb on,
 
 static int animating(void) {
     double t = now_s();
+    if (A.tr == TR_DEPART || A.tr == TR_ARRIVE) return 1;
     if (A.checking || A.unlock_at > 0 || t - A.start_at < 1.4 || t - A.wrong_at < 0.7 || t - A.typed_at < 0.3)
         return 1;
     for (int i = 0; i < MAX_RIPPLES; i++)
@@ -759,10 +973,43 @@ static void draw_scene(cairo_t *cr, struct output *o, double W, double H) {
         if (A.fails > 1) snprintf(buf, sizeof buf, "Wrong password (%d tries)", A.fails);
         else snprintf(buf, sizeof buf, "Wrong password. Try again");
         sc = th->crit;
-    } else if (A.caps) { snprintf(buf, sizeof buf, "Caps Lock is on"); sc = th->warn; }
+    } else if (A.sw_error[0] && t - A.sw_error_at < 8) { snprintf(buf, sizeof buf, "%s", A.sw_error); sc = th->warn; }
+    else if (A.caps) { snprintf(buf, sizeof buf, "Caps Lock is on"); sc = th->warn; }
     else if (A.live) snprintf(buf, sizeof buf, "Live USB: this account has no password");
+    else if (A.focus >= 0) snprintf(buf, sizeof buf, "Enter switches to %s  /  Esc goes back", A.people[A.focus].display);
+    else if (A.npeople) snprintf(buf, sizeof buf, "Enter unlocks  /  Tab: switch person");
     else snprintf(buf, sizeof buf, "Enter unlocks  /  Esc clears");
     text(cr, "Inter", 13 * U, 0, buf, cx, fy0 + fh + 24 * U, 1, sc, 0.95);
+
+    /* Switch person: everyone else who may use this computer. A dot: signed in. */
+    if (A.npeople && A.unlock_at <= 0) {
+        double py = fy0 + fh + 96 * U, step = 100 * U, x0 = cx - (A.npeople - 1) * step / 2;
+        text(cr, "JetBrains Mono Bold", 9.5 * U, 3 * U, "SWITCH PERSON", cx, py - 40 * U, 1, th->muted, 0.7);
+        for (int i = 0; i < A.npeople; i++) {
+            double px = x0 + i * step;
+            int hot = (A.hover == 10 + i && (!o || A.pointer_output == o)) || A.focus == i;
+            double r = (hot ? 23 : 20) * U;
+            if (hot) {
+                hex_path(cr, px, py, r + 6 * U);
+                set_rgb(cr, th->accent, 0.85);
+                cairo_set_line_width(cr, 1.6 * U);
+                cairo_stroke(cr);
+            }
+            draw_avatar(cr, A.people[i].name, A.people[i].display, px, py, r, hot ? 1 : 0.8);
+            if (A.people[i].signed_in) {
+                cairo_arc(cr, px + r * 0.78, py - r * 0.62, 4.5 * U, 0, 2 * M_PI);
+                set_rgb(cr, th->bg, 1);
+                cairo_fill_preserve(cr);
+                set_rgb(cr, th->ok, 1);
+                cairo_set_line_width(cr, 1.2 * U);
+                cairo_stroke(cr);
+                cairo_arc(cr, px + r * 0.78, py - r * 0.62, 2.6 * U, 0, 2 * M_PI);
+                cairo_fill(cr);
+            }
+            text(cr, "Inter", 11.5 * U, 0, A.people[i].display, px, py + 34 * U, 1, hot ? th->text : th->muted, 0.95);
+            if (o) o->people[i] = (struct rect){px - step / 2 + 4 * U, py - 30 * U, step - 8 * U, 76 * U};
+        }
+    }
 
     /* Top left: the mark and the machine. */
     double m = 40 * U;
@@ -880,6 +1127,160 @@ static int make_buffer(struct buffer *b, int w, int h) {
     return 0;
 }
 
+/* The lock screen as it is: background, then the scene. */
+static void paint_lock(cairo_t *cr, struct output *o, cairo_surface_t *bg, int BW, int BH, int s) {
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_surface(cr, bg, 0, 0);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    cairo_save(cr);
+    cairo_scale(cr, s, s);
+    draw_scene(cr, o, (double)BW / s, (double)BH / s);
+    cairo_restore(cr);
+}
+
+/* A transition frame, in buffer pixels. The honeycomb is the picture (the
+ * desktop or the lock screen) cut into the grid's hexagons; a wave runs
+ * from the clock's centre outwards, each cell shrinking away as it passes
+ * (leaving) or growing back (arriving), its edge lit as it goes. */
+static void draw_transition(cairo_t *cr, cairo_surface_t *src, int BW, int BH, int s) {
+    const struct theme *th = &A.th;
+    double W = BW, H = BH, U = unit_for((double)BH / s) * s, t = now_s();
+    double cx = W / 2, cy = H * 0.42, cell = 30 * U;
+    double maxd = hypot(fmax(cx, W - cx), fmax(cy, H - cy)), diag = hypot(W, H);
+    int depart = A.tr == TR_DEPART;
+    double p = A.tr == TR_AWAY ? 1 : clampd((t - A.tr_at) / (depart ? DEPART_S : ARRIVE_S), 0, 1);
+    rgb dark = mix(th->bg, (rgb){0, 0, 0}, 0.8);
+
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    set_rgb(cr, dark, 1);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    if (A.tr == TR_AWAY) return;
+
+    double f = depart ? clampd(p / 0.62, 0, 1) : clampd((p - 0.2) / 0.72, 0, 1);
+#define CELL_C(x, y) smooth((f * 1.3 - hypot((x) - cx, (y) - cy) / maxd) / 0.3)
+    if (src) {
+        double sw = cairo_image_surface_get_width(src), sh = cairo_image_surface_get_height(src);
+        int any = 0;
+        cairo_new_path(cr);
+        GRID_EACH(W, H, U, x, y) {
+            double c = CELL_C(x, y), k = depart ? 1 - c : c;
+            if (k <= 0.01) continue;
+            hex_path(cr, x, y, cell * fmin(k, 1) * 1.035);
+            any = 1;
+        }
+        if (any) {
+            cairo_save(cr);
+            cairo_clip(cr);
+            cairo_scale(cr, W / sw, H / sh);
+            cairo_set_source_surface(cr, src, 0, 0);
+            cairo_paint(cr);
+            cairo_restore(cr);
+        }
+        cairo_new_path(cr);
+    }
+    /* The wave's edge: cells part-way through glow, in three strengths. */
+    for (int band = 1; band <= 3; band++) {
+        cairo_new_path(cr);
+        int any = 0;
+        GRID_EACH(W, H, U, x, y) {
+            double c = CELL_C(x, y), glow = sin(M_PI * c);
+            if (glow <= (band - 1) / 3.0 || glow > band / 3.0 || glow < 0.08) continue;
+            double k = depart ? 1 - c : c;
+            hex_path(cr, x, y, cell * fmax(k, 0.35) * 0.94);
+            any = 1;
+        }
+        if (!any) continue;
+        set_rgb(cr, depart ? th->accent2 : th->accent, 0.10 * band);
+        cairo_fill_preserve(cr);
+        set_rgb(cr, depart ? th->accent2 : th->accent, 0.3 * band);
+        cairo_set_line_width(cr, 1.4 * U);
+        cairo_stroke(cr);
+    }
+#undef CELL_C
+
+    /* The person: their hexagon warps in at the centre, inside turning rings. */
+    const char *name = depart ? A.tr_name : A.user, *display = depart ? A.tr_display : A.display_name;
+    double q = depart ? clampd((p - 0.28) / 0.34, 0, 1) : clampd(p / 0.3, 0, 1);
+    double fade = depart ? 1 : 1 - smooth((p - 0.36) / 0.16);
+    double Ra = 56 * U * ease_back(q);
+    double a = fmin(q, 1) * fade;
+    /* Arriving: the person's hexagon hands over to the clock's, an outline
+     * growing from one to the other as the honeycomb comes back. */
+    if (!depart && p > 0.36 && p < 0.95) {
+        double g = smooth((p - 0.36) / 0.5);
+        hex_path(cr, cx, cy, 56 * U + g * (170 - 56) * U);
+        set_rgb(cr, th->accent, 0.9 * (1 - g));
+        cairo_set_line_width(cr, 2.5 * U);
+        cairo_stroke(cr);
+    }
+    if (a > 0.01) {
+        for (int k = 0; k < 3; k++) {
+            double rr = Ra * (1.45 + 0.42 * k) * (depart ? 1 + 0.25 * (1 - q) : 1 + 0.5 * (1 - q));
+            cairo_save(cr);
+            cairo_translate(cr, cx, cy);
+            cairo_rotate(cr, t * (0.5 + 0.35 * k) * (k % 2 ? -1 : 1));
+            hex_path(cr, 0, 0, rr);
+            cairo_restore(cr);
+            set_rgb(cr, k == 1 ? th->accent2 : th->accent, a * (0.55 - 0.15 * k));
+            cairo_set_line_width(cr, (2.2 - 0.5 * k) * U);
+            cairo_stroke(cr);
+        }
+        draw_avatar(cr, name, display, cx, cy, Ra, a);
+        char buf[160];
+        if (depart) snprintf(buf, sizeof buf, "Switching to %s", display);
+        else snprintf(buf, sizeof buf, A.tr_back ? "Welcome back, %s" : "Welcome, %s", display);
+        double ty = cy + 56 * U * 1.45 * 1.9 + 18 * U;
+        text(cr, "Inter Semi-Bold", 22 * U, 0, buf, cx, ty, 1, th->text, a);
+        /* a terminal line typing itself out */
+        char line[200];
+        if (depart) snprintf(line, sizeof line, "handover  %.32s@%.32s -> %.32s@%.32s", A.user, A.host, name, A.host);
+        else snprintf(line, sizeof line, "session  %.32s@%.32s  restored", name, A.host);
+        size_t len = strlen(line), shown = (size_t)(len * clampd((p - (depart ? 0.4 : 0.1)) / 0.3, 0, 1));
+        line[shown] = 0;
+        if (shown < len && fmod(t, 0.5) < 0.25) strcat(line, "_");
+        text(cr, "JetBrains Mono", 12 * U, 0, line, cx, ty + 30 * U, 1, depart ? th->accent2 : th->accent, a * 0.9);
+    }
+
+    /* Leaving: a hexagon iris opens from the person to the screen's edges,
+     * and everything goes dark behind it, ready for the other desktop. */
+    if (depart && p > 0.76) {
+        double k = smooth((p - 0.76) / 0.24);
+        hex_path(cr, cx, cy, 56 * U + k * diag);
+        set_rgb(cr, th->accent, 0.9 * (1 - k));
+        cairo_set_line_width(cr, 3 * U);
+        cairo_stroke(cr);
+        set_rgb(cr, dark, k);
+        cairo_paint(cr);
+    }
+}
+
+/* One frame: the lock screen, or a transition built from it (or from the
+ * desktop snapshot). */
+static void render_frame(cairo_t *cr, struct output *o, cairo_surface_t *bg, cairo_surface_t **scene,
+                         cairo_surface_t *snap, int BW, int BH, int s) {
+    if (A.tr == TR_NONE) {
+        paint_lock(cr, o, bg, BW, BH, s);
+        return;
+    }
+    cairo_surface_t *src = NULL;
+    if (A.tr == TR_DEPART && snap) {
+        src = snap;
+    } else if (A.tr != TR_AWAY) {
+        if (*scene && (cairo_image_surface_get_width(*scene) != BW || cairo_image_surface_get_height(*scene) != BH)) {
+            cairo_surface_destroy(*scene);
+            *scene = NULL;
+        }
+        if (!*scene) *scene = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, BW, BH);
+        cairo_t *c2 = cairo_create(*scene);
+        paint_lock(c2, o, bg, BW, BH, s);
+        cairo_destroy(c2);
+        src = *scene;
+    }
+    draw_transition(cr, src, BW, BH, s);
+}
+
 static void render_output(struct output *o) {
     if (!o->configured || !o->width || !o->height) return;
     int s = o->scale > 0 ? o->scale : 1, BW = o->width * s, BH = o->height * s;
@@ -895,12 +1296,7 @@ static void render_output(struct output *o) {
         o->bg_h = BH;
     }
     cairo_t *cr = cairo_create(b->cs);
-    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-    cairo_set_source_surface(cr, o->bg, 0, 0);
-    cairo_paint(cr);
-    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    cairo_scale(cr, s, s);
-    draw_scene(cr, o, o->width, o->height);
+    render_frame(cr, o, o->bg, &o->scene, o->snap, BW, BH, s);
     cairo_destroy(cr);
     cairo_surface_flush(b->cs);
     wl_surface_set_buffer_scale(o->surface, s);
@@ -934,12 +1330,114 @@ static void create_lock_surface(struct output *o) {
     ext_session_lock_surface_v1_add_listener(o->lock_surface, &lock_surface_listener, o);
 }
 
+/* ---------- the desktop snapshot (wlr-screencopy) ---------- */
+
+static void cap_buffer(void *data, struct zwlr_screencopy_frame_v1 *f, uint32_t format, uint32_t w, uint32_t h, uint32_t stride) {
+    struct output *o = data;
+    if (o->cap.wl || (format != WL_SHM_FORMAT_ARGB8888 && format != WL_SHM_FORMAT_XRGB8888 &&
+                      format != WL_SHM_FORMAT_ABGR8888 && format != WL_SHM_FORMAT_XBGR8888)) return;
+    size_t size = (size_t)stride * h;
+    int fd = memfd_create("nexa-locker-snap", MFD_CLOEXEC);
+    if (fd < 0) return;
+    void *px = MAP_FAILED;
+    if (ftruncate(fd, (off_t)size) == 0) px = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (px == MAP_FAILED) { close(fd); return; }
+    struct wl_shm_pool *pool = wl_shm_create_pool(A.shm, fd, (int32_t)size);
+    o->cap.wl = wl_shm_pool_create_buffer(pool, 0, (int32_t)w, (int32_t)h, (int32_t)stride, format);
+    wl_shm_pool_destroy(pool);
+    close(fd);
+    o->cap.data = px;
+    o->cap.size = size;
+    o->cap.w = (int)w;
+    o->cap.h = (int)h;
+    o->cap_format = format;
+    o->cap_stride = stride;
+    if (A.screencopy_version < 3) zwlr_screencopy_frame_v1_copy(f, o->cap.wl);
+}
+static void cap_flags(void *data, struct zwlr_screencopy_frame_v1 *f, uint32_t flags) { ((struct output *)data)->cap_flags = flags; }
+static void cap_ready(void *data, struct zwlr_screencopy_frame_v1 *f, uint32_t hi, uint32_t lo, uint32_t ns) {
+    struct output *o = data;
+    int w = o->cap.w, h = o->cap.h;
+    cairo_surface_t *img = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    if (cairo_surface_status(img) == CAIRO_STATUS_SUCCESS) {
+        unsigned char *dst = cairo_image_surface_get_data(img);
+        int ds = cairo_image_surface_get_stride(img);
+        int swap = o->cap_format == WL_SHM_FORMAT_ABGR8888 || o->cap_format == WL_SHM_FORMAT_XBGR8888;
+        for (int y = 0; y < h; y++) {
+            int sy = (o->cap_flags & ZWLR_SCREENCOPY_FRAME_V1_FLAGS_Y_INVERT) ? h - 1 - y : y;
+            const uint32_t *sp = (const uint32_t *)((const unsigned char *)o->cap.data + (size_t)sy * o->cap_stride);
+            uint32_t *dp = (uint32_t *)(dst + (size_t)y * ds);
+            for (int x = 0; x < w; x++) {
+                uint32_t v = sp[x];
+                if (swap) v = (v & 0xff00ff00u) | ((v & 0xffu) << 16) | ((v >> 16) & 0xffu);
+                dp[x] = v | 0xff000000u;  /* the screen is opaque */
+            }
+        }
+        cairo_surface_mark_dirty(img);
+        o->snap = img;
+        o->cap_state = 2;
+    } else {
+        cairo_surface_destroy(img);
+        o->cap_state = -1;
+    }
+    zwlr_screencopy_frame_v1_destroy(f);
+    o->frame = NULL;
+    if (o->cap.wl) wl_buffer_destroy(o->cap.wl);
+    if (o->cap.data) munmap(o->cap.data, o->cap.size);
+    memset(&o->cap, 0, sizeof o->cap);
+}
+static void cap_failed(void *data, struct zwlr_screencopy_frame_v1 *f) {
+    struct output *o = data;
+    o->cap_state = -1;
+    zwlr_screencopy_frame_v1_destroy(f);
+    o->frame = NULL;
+}
+static void cap_damage(void *d, struct zwlr_screencopy_frame_v1 *f, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {}
+static void cap_dmabuf(void *d, struct zwlr_screencopy_frame_v1 *f, uint32_t fmt, uint32_t w, uint32_t h) {}
+static void cap_buffer_done(void *data, struct zwlr_screencopy_frame_v1 *f) {
+    struct output *o = data;
+    if (o->cap.wl) zwlr_screencopy_frame_v1_copy(f, o->cap.wl);
+    else cap_failed(data, f);
+}
+static const struct zwlr_screencopy_frame_v1_listener cap_listener = {
+    .buffer = cap_buffer, .flags = cap_flags, .ready = cap_ready, .failed = cap_failed,
+    .damage = cap_damage, .linux_dmabuf = cap_dmabuf, .buffer_done = cap_buffer_done};
+
+/* Every screen as it is now, so the hand-over can dissolve the desktop
+ * itself. Half a second at most; without it the lock screen dissolves. */
+static void snapshot_desktop(void) {
+    if (!A.screencopy) return;
+    struct output *o;
+    wl_list_for_each(o, &A.outputs, link) {
+        o->frame = zwlr_screencopy_manager_v1_capture_output(A.screencopy, 0, o->wl);
+        zwlr_screencopy_frame_v1_add_listener(o->frame, &cap_listener, o);
+        o->cap_state = 1;
+    }
+    double until = now_s() + 0.5;
+    for (;;) {
+        int waiting = 0;
+        wl_list_for_each(o, &A.outputs, link) waiting |= o->cap_state == 1;
+        if (!waiting || now_s() > until) break;
+        wl_display_flush(A.display);
+        struct pollfd pf = {.fd = wl_display_get_fd(A.display), .events = POLLIN};
+        if (poll(&pf, 1, 50) > 0) {
+            if (wl_display_dispatch(A.display) < 0) break;
+        } else {
+            wl_display_dispatch_pending(A.display);
+        }
+    }
+}
+
 static void destroy_output(struct output *o) {
     if (A.pointer_output == o) A.pointer_output = NULL;
     if (o->lock_surface) ext_session_lock_surface_v1_destroy(o->lock_surface);
     if (o->surface) wl_surface_destroy(o->surface);
     for (int i = 0; i < 2; i++) free_buffer(&o->buf[i]);
     if (o->bg) cairo_surface_destroy(o->bg);
+    if (o->scene) cairo_surface_destroy(o->scene);
+    if (o->snap) cairo_surface_destroy(o->snap);
+    if (o->frame) zwlr_screencopy_frame_v1_destroy(o->frame);
+    free_buffer(&o->cap);
     wl_output_destroy(o->wl);
     wl_list_remove(&o->link);
     free(o);
@@ -1046,12 +1544,30 @@ static int ctrl_down(void) {
 }
 
 static void handle_key(xkb_keysym_t sym, const char *utf8) {
-    if (A.checking || A.unlock_at > 0) return;
+    if (A.tr == TR_AWAY && A.sw_pid <= 0) { start_arrival(1); return; }
+    if (A.tr != TR_NONE || A.checking || A.unlock_at > 0) return;
     A.armed = -1;
     switch (sym) {
+    case XKB_KEY_Tab:
+    case XKB_KEY_ISO_Left_Tab:
+        /* the password field, then each person, round again */
+        if (A.npeople) {
+            int dir = sym == XKB_KEY_ISO_Left_Tab ? -1 : 1;
+            A.focus = (A.focus + 1 + dir + A.npeople + 1) % (A.npeople + 1) - 1;
+            A.redraw = 1;
+        }
+        return;
+    case XKB_KEY_Left:
+    case XKB_KEY_Right:
+        if (A.focus >= 0) {
+            A.focus = (A.focus + (sym == XKB_KEY_Right ? 1 : A.npeople - 1)) % A.npeople;
+            A.redraw = 1;
+        }
+        return;
     case XKB_KEY_Return:
     case XKB_KEY_KP_Enter:
-        submit();
+        if (A.focus >= 0) begin_switch(A.focus);
+        else submit();
         return;
     case XKB_KEY_BackSpace:
         if (ctrl_down()) wipe_password();
@@ -1062,9 +1578,11 @@ static void handle_key(xkb_keysym_t sym, const char *utf8) {
         }
         break;
     case XKB_KEY_Escape:
+        if (A.focus >= 0) { A.focus = -1; A.redraw = 1; return; }
         wipe_password();
         break;
     default:
+        A.focus = -1;  /* typing goes to the password */
         if (ctrl_down()) {
             if (sym == XKB_KEY_u || sym == XKB_KEY_U) wipe_password();
             else return;
@@ -1172,11 +1690,16 @@ static const struct wl_keyboard_listener keyboard_listener = {
 
 /* ---------- pointer: the power buttons ---------- */
 
+/* 0-2: a power button; 10 + i: person i. */
 static int hit(struct output *o, double x, double y) {
-    if (!o) return -1;
+    if (!o || A.tr != TR_NONE) return -1;
     for (int i = 0; i < 3; i++) {
         struct rect r = o->power[i];
         if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return i;
+    }
+    for (int i = 0; i < A.npeople; i++) {
+        struct rect r = o->people[i];
+        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return 10 + i;
     }
     return -1;
 }
@@ -1229,8 +1752,10 @@ static void power_action(int which) {
 
 static void ptr_button(void *d, struct wl_pointer *p, uint32_t serial, uint32_t t, uint32_t button, uint32_t state) {
     if (button != BTN_LEFT || state != WL_POINTER_BUTTON_STATE_PRESSED || A.unlock_at > 0) return;
+    if (A.tr == TR_AWAY && A.sw_pid <= 0) { start_arrival(1); return; }
     int h = hit(A.pointer_output, A.px, A.py);
     if (h < 0) { A.armed = -1; A.redraw = 1; return; }
+    if (h >= 10) { begin_switch(h - 10); A.redraw = 1; return; }
     double now = now_s();
     if (A.armed == h && now - A.armed_at < 4) {
         A.armed = -1;
@@ -1279,6 +1804,9 @@ static void reg_global(void *d, struct wl_registry *reg, uint32_t name, const ch
     } else if (!strcmp(iface, wl_seat_interface.name) && !A.seat) {
         A.seat = wl_registry_bind(reg, name, &wl_seat_interface, ver < 5 ? ver : 5);
         wl_seat_add_listener(A.seat, &seat_listener, NULL);
+    } else if (!strcmp(iface, zwlr_screencopy_manager_v1_interface.name)) {
+        A.screencopy_version = ver < 3 ? ver : 3;
+        A.screencopy = wl_registry_bind(reg, name, &zwlr_screencopy_manager_v1_interface, A.screencopy_version);
     } else if (!strcmp(iface, ext_session_lock_manager_v1_interface.name)) {
         A.lock_manager = wl_registry_bind(reg, name, &ext_session_lock_manager_v1_interface, 1);
     } else if (!strcmp(iface, wl_output_interface.name)) {
@@ -1301,6 +1829,8 @@ static const struct wl_registry_listener registry_listener = {.global = reg_glob
 static void lock_locked(void *d, struct ext_session_lock_v1 *l) {
     A.locked = 1;
     add_log(A.boot ? "session started, locked" : "session locked (ext-session-lock-v1)");
+    if (A.switch_to[0]) A.tr_at = now_s();     /* the hand-over starts now */
+    else if (A.boot) start_arrival(0);
     char c = 'L';
     if (A.ready_fd >= 0) { if (write(A.ready_fd, &c, 1) < 0) {} close(A.ready_fd); A.ready_fd = -1; }
     if (A.watch_fd >= 0) { if (write(A.watch_fd, &c, 1) < 0) {} close(A.watch_fd); A.watch_fd = -1; }
@@ -1334,7 +1864,7 @@ static void who_am_i(void) {
     A.host[sizeof A.host - 1] = 0;
     /* No password on the live USB (the installer writes login-required). */
     const char *env = getenv("NEXA_LOCKER_LIVE");
-    A.live = env ? atoi(env) : access("/etc/nexa/login-required", F_OK) != 0;
+    A.live = env ? atoi(env) : access("/etc/nexa/login-required", F_OK) != 0 && getuid() == 1000;
     A.pam_service = access("/etc/pam.d/nexa-lock", F_OK) == 0 || access("/usr/lib/pam.d/nexa-lock", F_OK) == 0
                         ? "nexa-lock" : "swaylock";
 }
@@ -1367,12 +1897,25 @@ static int preview(int argc, char **argv) {
     }
     if (!strcmp(state, "caps")) A.caps = 1;
     if (!strcmp(state, "intro")) A.start_at = 999.6;
+    if (!strcmp(state, "people") || !strncmp(state, "depart:", 7) || !strncmp(state, "arrive:", 7)) {
+        A.npeople = 2;
+        A.people[0] = (struct person){"ama", "Ama Mensah", 1};
+        A.people[1] = (struct person){"kofi", "Kofi", 0};
+        if (!strcmp(state, "people")) A.focus = 0;
+    }
+    if (!strncmp(state, "depart:", 7)) {
+        begin_departure("ama", "Ama Mensah");
+        A.tr_at = A.preview_now - atof(state + 7) * DEPART_S;
+    } else if (!strncmp(state, "arrive:", 7)) {
+        A.tr = TR_ARRIVE;
+        A.tr_back = 1;
+        A.tr_at = A.preview_now - atof(state + 7) * ARRIVE_S;
+    }
     cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
     cairo_t *cr = cairo_create(s);
-    cairo_surface_t *bg = make_background(W, H, 1);
-    cairo_set_source_surface(cr, bg, 0, 0);
-    cairo_paint(cr);
-    draw_scene(cr, NULL, W, H);
+    cairo_surface_t *bg = make_background(W, H, 1), *scene = NULL;
+    render_frame(cr, NULL, bg, &scene, NULL, W, H, 1);
+    if (scene) cairo_surface_destroy(scene);
     cairo_destroy(cr);
     int rc = cairo_surface_write_to_png(s, argv[4]) == CAIRO_STATUS_SUCCESS ? 0 : 1;
     cairo_surface_destroy(bg);
@@ -1383,7 +1926,7 @@ static int preview(int argc, char **argv) {
 static void arm_tick(void) {
     struct itimerspec its = {0};
     if (animating()) {
-        its.it_value.tv_nsec = 33 * 1000000L;
+        its.it_value.tv_nsec = (A.tr != TR_NONE ? 16 : 33) * 1000000L;
     } else {
         struct timespec rt;
         clock_gettime(CLOCK_REALTIME, &rt);
@@ -1421,6 +1964,25 @@ static int run_locker(void) {
     A.cursor_surface = wl_compositor_create_surface(A.compositor);
     if (cursor_scale > 1) wl_surface_set_buffer_scale(A.cursor_surface, cursor_scale);
 
+    /* Coming back on screen: nexa-sessiond sends SIGUSR2. */
+    sigset_t usr2;
+    sigemptyset(&usr2);
+    sigaddset(&usr2, SIGUSR2);
+    sigprocmask(SIG_BLOCK, &usr2, NULL);
+    signal(SIGUSR2, SIG_DFL);
+    A.sig_fd = signalfd(-1, &usr2, SFD_CLOEXEC | SFD_NONBLOCK);
+
+    load_people();
+    if (A.switch_to[0]) {
+        snapshot_desktop();
+        const char *display = A.switch_to;
+        for (int i = 0; i < A.npeople; i++) if (!strcmp(A.people[i].name, A.switch_to)) display = A.people[i].display;
+        begin_departure(A.switch_to, display);
+        A.tr_at = 1e12;  /* held on the snapshot until the lock is confirmed */
+    } else if (A.boot) {
+        A.tr = TR_AWAY;  /* dark until locked, then the arrival */
+    }
+
     A.lock = ext_session_lock_manager_v1_lock(A.lock_manager);
     ext_session_lock_v1_add_listener(A.lock, &lock_listener, NULL);
     wl_list_for_each(o, &A.outputs, link) create_lock_surface(o);
@@ -1438,13 +2000,15 @@ static int run_locker(void) {
         while (wl_display_prepare_read(A.display) != 0) wl_display_dispatch_pending(A.display);
         wl_display_flush(A.display);
         arm_tick();
-        struct pollfd fds[4] = {
+        struct pollfd fds[6] = {
             {.fd = wl_display_get_fd(A.display), .events = POLLIN},
             {.fd = A.timer_fd, .events = POLLIN},
             {.fd = A.repeat_fd, .events = POLLIN},
+            {.fd = A.sig_fd, .events = POLLIN},
+            {.fd = A.sw_fd, .events = POLLIN},
             {.fd = A.pam_fd, .events = POLLIN},
         };
-        int n = poll(fds, A.pam_fd >= 0 ? 4 : 3, -1);
+        int n = poll(fds, 6, -1);  /* fds of -1 are skipped */
         if (n < 0 && errno != EINTR) { wl_display_cancel_read(A.display); break; }
         if (n > 0 && (fds[0].revents & POLLIN)) {
             if (wl_display_read_events(A.display) < 0) break;
@@ -1463,7 +2027,18 @@ static int run_locker(void) {
             if (read(A.repeat_fd, &ticks, sizeof ticks) < 0) {}
             if (A.repeat_key) handle_key(A.repeat_sym, A.repeat_utf8);
         }
-        if (n > 0 && A.pam_fd >= 0 && (fds[3].revents & (POLLIN | POLLHUP))) pam_done();
+        if (n > 0 && A.pam_fd >= 0 && (fds[5].revents & (POLLIN | POLLHUP))) pam_done();
+        if (n > 0 && A.sig_fd >= 0 && (fds[3].revents & POLLIN)) {
+            struct signalfd_siginfo si;
+            while (read(A.sig_fd, &si, sizeof si) == sizeof si) {}
+            if (A.tr == TR_AWAY || A.tr == TR_NONE) start_arrival(1);
+        }
+        if (n > 0 && A.sw_fd >= 0 && (fds[4].revents & (POLLIN | POLLHUP))) switch_done();
+        if (A.tr == TR_DEPART && now_s() - A.tr_at >= DEPART_S && A.sw_pid <= 0) {
+            render_all();
+            send_switch();
+        }
+        if (A.tr == TR_ARRIVE && now_s() - A.tr_at >= ARRIVE_S) { A.tr = TR_NONE; A.redraw = 1; }
         /* Power-button helpers. SIGCHLD stays default: pam_unix waits for
          * its own unix_chkpwd child, which an ignored SIGCHLD would break. */
         while (waitpid(-1, NULL, WNOHANG) > 0) {}
@@ -1495,9 +2070,28 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--daemonize")) daemonize = 1;
         else if (!strcmp(argv[i], "--boot")) A.boot = 1;
+        else if (!strcmp(argv[i], "--switch-to") && i + 1 < argc) snprintf(A.switch_to, sizeof A.switch_to, "%s", argv[++i]);
         else {
-            fprintf(stderr, "usage: nexa-locker [--daemonize] [--boot] | --preview W H FILE.png [STATE]\n");
+            fprintf(stderr, "usage: nexa-locker [--daemonize] [--boot] [--switch-to NAME] | --preview W H FILE.png [STATE]\n");
             return 1;
+        }
+    }
+    if (A.switch_to[0]) {
+        /* Only someone nexa-sessiond would switch to: otherwise say why and
+         * lock nothing. */
+        who_am_i();
+        load_people();
+        int found = 0;
+        for (int i = 0; i < A.npeople; i++) found |= !strcmp(A.people[i].name, A.switch_to);
+        if (!found) {
+            char out[256];
+            if (session_request("people\n", out, sizeof out) < 0)
+                fprintf(stderr, "nexa-locker: switching isn't available (nexa-sessiond isn't running)\n");
+            else if (!strcmp(A.switch_to, A.user))
+                fprintf(stderr, "nexa-locker: that's you\n");
+            else
+                fprintf(stderr, "nexa-locker: %s can't use this computer's desktop\n", A.switch_to);
+            return 3;
         }
     }
     prctl(PR_SET_DUMPABLE, 0);
@@ -1505,6 +2099,7 @@ int main(int argc, char **argv) {
     signal(SIGINT, SIG_IGN);
     signal(SIGHUP, SIG_IGN);
     signal(SIGCHLD, SIG_DFL);
+    signal(SIGUSR2, SIG_IGN);  /* the watchdog ignores it; the lock screen takes it (signalfd) */
     if (!daemonize) return run_locker();
 
     /* The caller waits until the screen is locked; a watchdog stays with the

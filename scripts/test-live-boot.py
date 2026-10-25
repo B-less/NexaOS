@@ -77,6 +77,16 @@ CHECKS = (
     'echo APPS=$(for c in nexa-pulse nexadark tor wg-quick nexa-pack nexa-mindd nexa-tools nexa-brokerd llama-server; do command -v $c >/dev/null && printf "%s," $c; done)',
     # Nexa Mind runs at boot and the desktop user can reach it (group nexa-mind).
     'echo MIND=$(su user -s /bin/sh -c "nexa-mindd status" 2>&1 | grep -o "\\"state\\": *\\"[a-z]*\\"" | tr -d " \\"")',
+    # Switch person on real VTs (nexa-sessiond + seatd): a second person's
+    # desktop starts on VT 7, the first one is locked and paused, and coming
+    # back resumes the same desktop (same sway process). Last: it waits for
+    # the desktop. Expect USERSWITCH=ok started 7|7|ama2_sway:1|user_locked:1|ok switched 1|1|same:yes
+    'adduser -D -g "Second Person" ama2 >/dev/null 2>&1; addgroup ama2 seat >/dev/null 2>&1; echo ama2:Nexa-2 | chpasswd >/dev/null 2>&1; '
+    'for i in $(seq 90); do pgrep -u user -x sway >/dev/null && break; sleep 1; done; sleep 8; P1=$(pgrep -u user -x sway | head -1); '
+    'R1=$(nexa-sessiond switch ama2 | head -1); for i in $(seq 40); do pgrep -u ama2 -x sway >/dev/null && break; sleep 1; done; sleep 4; '
+    'V1=$(cut -c4- /sys/class/tty/tty0/active); S2=$(pgrep -u ama2 -x sway | wc -l); L1=$(pgrep -u user -x nexa-locker | wc -l); '
+    'R2=$(nexa-sessiond switch user | head -1); sleep 3; V2=$(cut -c4- /sys/class/tty/tty0/active); P2=$(pgrep -u user -x sway | head -1); '
+    'echo "USERSWITCH=$R1|$V1|ama2_sway:$S2|user_locked:$L1|$R2|$V2|same:$([ -n "$P1" ] && [ "$P1" = "$P2" ] && echo yes || echo no)"',
 )
 
 
@@ -174,14 +184,15 @@ def main(argv):
         checks = ([] if no_checks else list(CHECKS)) + ([f"echo EXTRA_BEGIN; {extra}; echo EXTRA_END"] if extra else [])
         # One command per line: BusyBox's line editor stops at ~2 KB.
         s.sendall(("\n".join(checks) + f"\necho {marker}\n").encode())
-        end = time.time() + (int(os.environ.get("NEXA_RUN_WAIT", "300")) if extra else 20)  # --run may wait for the desktop
+        # --run may wait for the desktop; so does the last check (USERSWITCH).
+        end = time.time() + (int(os.environ.get("NEXA_RUN_WAIT", "300")) if extra else 180)
         while time.time() < end and buf.count(marker.encode()) < 2:
             pump(1)
         text = buf.decode(errors="replace").replace("\r", "")
         report = [l for l in text.rsplit(marker, 1)[0].splitlines()
                   if l.startswith(("ALPINE=", "FIREWALL=", "KPTR=", "PTRACE_SCOPE=", "SSHD=", "FW_ERRORS=", "RUN:", "NOT:",
                                    "ICON_THEME=", "UNLOCK_EMPTY=", "BROWSER_SANDBOX=", "BLUETOOTHD=", "IWD=", "SEATD=",
-                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "FILEOPS=", "KERNELD=", "SESSIONS=", "CONSOLE="))] if text.count(marker) >= 2 else []
+                                   "WIREGUARD=", "POLICY_ROUTING=", "APPS=", "MIND=", "HANDS=", "NEXA_INSTALL=", "BROKER=", "BROKER_DENY=", "LIVE_STICK=", "FILEOPS=", "KERNELD=", "SESSIONS=", "CONSOLE=", "USERSWITCH="))] if text.count(marker) >= 2 else []
         if not no_checks:
             print("\n".join(report) if report else "no report (serial login failed?)\n--- serial tail\n" + text[-1500:])
         if extra and text.count("EXTRA_END") >= 2:

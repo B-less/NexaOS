@@ -74,7 +74,7 @@ def set_topbar_mode(mode):
     except OSError:
         return False
     try:
-        subprocess.run(["pkill", "-x", "waybar"], check=False)
+        subprocess.run(["pkill", "-u", str(os.getuid()), "-x", "waybar"], check=False)
         subprocess.Popen(["nexa-bar"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         return False
@@ -556,7 +556,7 @@ class SettingsWindow(Gtk.Window):
             self.city_combo.set_active(0)
 
     def _restart_background(self, name, argv):
-        subprocess.run(["pkill", "-x", name], check=False)
+        subprocess.run(["pkill", "-u", str(os.getuid()), "-x", name], check=False)
         try:
             subprocess.Popen(argv, start_new_session=True,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
