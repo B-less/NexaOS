@@ -803,6 +803,42 @@ static const char *CSS =
     "headerbar button.titlebutton:hover { background-color: @nexa_hover; }"
     "headerbar button.titlebutton.close:hover { background-color: @nexa_crit; color: @nexa_on_accent; }";
 
+/* ---- following the theme live ------------------------------------------
+ * The theme's colours (@nexa_*) are in ~/.config/gtk-3.0/gtk.css, which GTK
+ * reads once at start. Changing the theme in Settings rewrites that file:
+ * load it again, just above GTK's own copy, so an open window follows. */
+
+static GtkCssProvider *live_theme;
+
+static void reload_theme(void)
+{
+    char *path = g_build_filename(g_get_user_config_dir(), "gtk-3.0", "gtk.css", NULL);
+    gtk_css_provider_load_from_path(live_theme, path, NULL); /* missing or bad: keep what we have */
+    g_free(path);
+}
+
+static void on_theme_changed(GFileMonitor *m, GFile *f, GFile *other, GFileMonitorEvent ev, gpointer d)
+{
+    (void)m; (void)f; (void)other; (void)d;
+    if (ev != G_FILE_MONITOR_EVENT_DELETED)
+        reload_theme();
+}
+
+static void follow_theme(void)
+{
+    live_theme = gtk_css_provider_new();
+    reload_theme();
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(live_theme),
+                                              GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
+    char *path = g_build_filename(g_get_user_config_dir(), "gtk-3.0", "gtk.css", NULL);
+    GFile *file = g_file_new_for_path(path);
+    GFileMonitor *mon = g_file_monitor_file(file, G_FILE_MONITOR_NONE, NULL, NULL);
+    if (mon)
+        g_signal_connect(mon, "changed", G_CALLBACK(on_theme_changed), NULL); /* lives as long as the app */
+    g_object_unref(file);
+    g_free(path);
+}
+
 /* ---- build the window ----------------------------------------------- */
 
 static GtkWidget *button(const char *label, const char *tip, GCallback cb, const char *cls)
@@ -945,6 +981,7 @@ int main(int argc, char **argv)
     gtk_css_provider_load_from_data(css, CSS, -1, NULL);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(css),
                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    follow_theme();
 
     app.win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(app.win), "Video Player");

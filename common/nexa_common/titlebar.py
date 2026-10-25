@@ -52,11 +52,15 @@ def _ensure_css():
     if _provider is not None:
         return
     screen = Gdk.Screen.get_default()
-    # The palette goes in first and at a lower priority than the apps' own
-    # stylesheets, which only refer to its colours by name.
+    # The palette only defines the @nexa_* colour names that the apps'
+    # stylesheets use. GTK takes a name from the highest-priority provider
+    # that defines it, and ~/.config/gtk-3.0/gtk.css (read once, when the app
+    # starts, at USER priority) defines them too - so below it, reloading the
+    # palette changed nothing and open apps kept the old theme. Just above
+    # it, this live copy wins and follows every theme change.
     _palette = Gtk.CssProvider()
     _load_palette()
-    Gtk.StyleContext.add_provider_for_screen(screen, _palette, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION - 1)
+    Gtk.StyleContext.add_provider_for_screen(screen, _palette, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
     _provider = Gtk.CssProvider()
     _provider.load_from_data(CSS)
     Gtk.StyleContext.add_provider_for_screen(screen, _provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)

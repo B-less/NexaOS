@@ -132,6 +132,13 @@ isn't loaded. The theme overrides it automatically:
 @define-color nexa_warn #ffb547;
 ```
 
+**Follow theme changes live (should):** the theme's colours are in
+`~/.config/gtk-3.0/gtk.css`, which GTK reads only when the app starts. Watch
+that file (`g_file_monitor_file`) and load it again into a provider at
+`GTK_STYLE_PROVIDER_PRIORITY_USER + 1` when it changes, so an open window
+follows a theme change; `apps/video-player` (`follow_theme()`) does exactly
+this.
+
 Load your CSS with `GTK_STYLE_PROVIDER_PRIORITY_APPLICATION` (not
 `USER`, or the theme can't override your fallbacks), then use only these
 names: `background-color: @nexa_surface; color: @nexa_text;`. **Must
