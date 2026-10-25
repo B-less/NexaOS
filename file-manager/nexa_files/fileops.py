@@ -21,6 +21,8 @@ class FileOpError(Exception):
 def list_dir(path, show_hidden=False):
     try:
         names = os.listdir(path)
+    except PermissionError:
+        raise FileOpError("This folder belongs to the system; your account can't open it.")
     except OSError as e:
         raise FileOpError(str(e))
     entries = []
@@ -33,6 +35,10 @@ def list_dir(path, show_hidden=False):
         except OSError:
             continue
         is_dir = statmod.S_ISDIR(st.st_mode)
+        # Folders this account can't open (/root, lost+found, ...) only led to
+        # a permission error: shown only with hidden items (Ctrl+H).
+        if is_dir and not show_hidden and not os.access(full, os.R_OK | os.X_OK):
+            continue
         is_exec = bool(st.st_mode & statmod.S_IXUSR) and not is_dir
         entries.append({
             "name": name, "path": full, "is_dir": is_dir, "is_exec": is_exec,
