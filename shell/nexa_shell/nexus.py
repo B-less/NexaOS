@@ -17,7 +17,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("GtkLayerShell", "0.1")
 from gi.repository import Gdk, GLib, Gtk, GtkLayerShell, Pango
 
-from nexa_common import design, desktopapps, patterns, themes
+from nexa_common import brain, design, desktopapps, patterns, themes
 from . import search
 from .panel import power, run_panel, spawn
 
@@ -246,13 +246,47 @@ class Nexus(Gtk.ApplicationWindow):
             child.destroy()
         query = self.search.get_text().strip()
         if query:
-            self.results = search.search(self.apps, query)
+            done, note = self._brain_results(query)
+            self.results = done + search.search(self.apps, query)
             self._fill_results()
+            if note and not self.results:
+                self._fill_note(note)
         else:
             self.results = []
             self._fill_suggested()
             self._fill_honeycomb(self._ordered_apps())
         self.content.show_all()
+
+    BRAIN_ICONS = {"open_path": "folder", "open_trash": "user-trash", "settings": "nexa-settings",
+                   "brightness": "display-brightness-symbolic", "volume": "audio-volume-high-symbolic",
+                   "lock": "system-lock-screen-symbolic", "power": "system-shutdown-symbolic", "mode": "nexa-pulse",
+                   "workspace": "view-grid-symbolic", "answer": "dialog-information-symbolic"}
+
+    def _brain_results(self, query):
+        """ZeroSearch (Nexa MicroBrain): commands like "open downloads",
+        "reduce brightness", "why is my computer slow". Apps are already
+        found by Nexus's own search, so app launches aren't repeated."""
+        try:
+            res = brain.ask(query)
+        except brain.BrainError:
+            return [], None
+        out = []
+        for h in res.get("hits", [])[:4]:
+            if h.get("score", 0) < 0.6 or h["action"].get("type") == "launch":
+                continue
+            out.append({"kind": "brain", "icon": self.BRAIN_ICONS.get(h["action"].get("type"), "nexa-pulse"),
+                        "title": h["title"], "subtitle": h.get("subtitle", ""), "command": None,
+                        "action": h["action"], "confirm": h.get("confirm", False)})
+        return out, res.get("note")
+
+    def _fill_note(self, text):
+        label = Gtk.Label(label=text, xalign=0)
+        label.set_name("nx-sub")
+        label.set_line_wrap(True)
+        label.set_max_width_chars(70)
+        label.set_halign(Gtk.Align.CENTER)
+        label.set_margin_top(18)
+        self.content.pack_start(label, False, False, 0)
 
     def _fill_suggested(self):
         """Nexa Patterns' guesses at what you'll open next (when it's on)."""
@@ -370,6 +404,24 @@ class Nexus(Gtk.ApplicationWindow):
         self.close()
 
     def _activate(self, result):
+        if result["kind"] == "brain":
+            if result["confirm"] and not result.get("armed"):
+                result["armed"] = True  # power: a second press does it
+                result["title"] = result["title"] + " (press again)"
+                self._fill_refresh_rows()
+                return
+            try:
+                text = brain.run(result["action"])
+            except (brain.BrainError, Exception) as e:  # shown, never raised into GTK
+                text = str(e)
+            if text:
+                for child in self.content.get_children():
+                    child.destroy()
+                self._fill_note(text)
+                self.content.show_all()
+                return
+            self.close()
+            return
         if result["kind"] == "calc":
             Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(result["value"], -1)
             self.search.set_text(result["value"])
@@ -378,6 +430,12 @@ class Nexus(Gtk.ApplicationWindow):
         if result["command"]:
             spawn(result["command"])
         self.close()
+
+    def _fill_refresh_rows(self):
+        for child in self.content.get_children():
+            child.destroy()
+        self._fill_results()
+        self.content.show_all()
 
     def _activate_first(self, *_a):
         if self.results:

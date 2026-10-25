@@ -68,8 +68,8 @@ Each: **exists** = what we build on; **build** = new work; **test** = done when.
 
 ### 1. HabitCore (habit learning)
 - Exists: `nexa-patternd` journal, decaying time and sequence models, ranker, "For you" card, Settings > Privacy > Patterns (forget, export, pause).
-- Build: [ ] co-occurrence of apps opened together in a time window → "Save these as a workspace?" (feeds PocketWorkspace); [ ] remember dismissed suggestions so they don't come back; [ ] contextual settings (brightness/volume per time/place, already planned as Patterns P4).
-- Test: [ ] simulated repeated sequences give the suggestion, random or thin data doesn't; [ ] Forget removes the prediction state.
+- Build: [x] co-occurrence of apps opened together (15-min sittings, 3+ days) → "Save these as a workspace?" (Learning agent, once per set); [x] dismissed suggestions never come back; [ ] contextual settings (brightness/volume per time/place, already planned as Patterns P4).
+- Test: [x] simulated repeated sequences give the suggestion, random or thin data doesn't (habit.rs tests); [x] `forget-habits` clears MicroBrain's part (Patterns' Forget clears the journal).
 
 ### 2. SmartFreeze (pause background apps)
 - Exists: `nexa-kerneld` user cgroups and the app-in-front signal.
@@ -83,8 +83,8 @@ Each: **exists** = what we build on; **build** = new work; **test** = done when.
 
 ### 4. PocketWorkspace (save and restore a working set)
 - Exists: the compositor layer (`nexa_common.compositor`) lists and places windows; app ids match .desktop files.
-- Build: [ ] save: apps (by .desktop id), folders, documents the app can reopen, window positions where the compositor allows; [ ] restore with a report of what couldn't come back; [ ] manifests validated on load, never run as commands; [ ] Workspace Manager in Settings and in Nexus ("Activate coding workspace").
-- Test: [ ] save Editor + Terminal + Files on a project folder, close all, restore, all back.
+- Build: [x] save: apps (by .desktop id), folder, files, window positions; [x] restore with a report of what couldn't come back; [x] validated on save and on restore (installed apps only, paths inside home or on a drive, symlinks resolved), never run as commands; [x] in Nexus ("activate coding workspace"); [ ] Workspace Manager page in Settings.
+- Test: [x] save and plan back with the project folder (unit tests + `make test-microbrain`); [ ] the full close-and-reopen on a real desktop.
 
 ### 5. MiniSkill (user automations)
 - Exists: broker actions, Files engine (copy with no overwrite, undo), drives events, notifications (mako).
@@ -117,8 +117,8 @@ Each: **exists** = what we build on; **build** = new work; **test** = done when.
 
 ### 11. ZeroSearch (plain-language commands)
 - Exists: Nexus (apps, settings, sums, "Ask Nexa").
-- Build: [ ] a compact command index: intents, synonyms, fuzzy matching, typo tolerance; every result maps to a registered action; ambiguous → choices; unsupported → a clear "I can't do that yet"; [ ] "Why is my computer slow?" answered from FutureLoad + Pulse data; [ ] lives inside Nexus, no new window.
-- Test: [ ] a set of commands, typos and ambiguous phrases routes correctly; unsupported ones are refused politely.
+- Build: [x] intents, synonyms, typo tolerance (swapped letters count as one typo; short words exact); every result is a typed action the desktop carries out; ambiguous → choices; unsupported → "I can't do that yet"; delete/wipe requests are never mapped to anything; [x] "Why is my computer slow?" and battery health answered from real numbers; [x] inside Nexus (power actions need a second press).
+- Test: [x] commands, typos, ambiguous and unsupported phrases (search.rs tests, `make test-microbrain`).
 
 ### 12. AdaptivePulse (resource modes)
 - Exists: `nexa-kerneld` CPU floor for the app in front and the AI cgroup cap; power profiles in Settings > Power.

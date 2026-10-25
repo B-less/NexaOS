@@ -68,6 +68,49 @@ def windows():
     return []
 
 
+def window_rects():
+    """[{app_id, rect: [x, y, w, h]}] for the windows on screen (not
+    minimised), for saving a workspace."""
+    wm = which()
+    out = []
+    if wm == "hyprland":
+        try:
+            clients = json.loads(_call(["hyprctl", "clients", "-j"]) or "[]")
+        except ValueError:
+            return []
+        for c in clients:
+            if c.get("pid") and (c.get("workspace") or {}).get("name") != MINIMIZED:
+                at, size = c.get("at") or [0, 0], c.get("size") or [0, 0]
+                out.append({"app_id": (c.get("class") or "").lower(), "rect": [at[0], at[1], size[0], size[1]]})
+    elif wm == "sway":
+        try:
+            tree = json.loads(_call(["swaymsg", "-t", "get_tree"]) or "{}")
+        except ValueError:
+            return []
+        stack = [(tree, False)]
+        while stack:
+            node, in_scratch = stack.pop()
+            in_scratch = in_scratch or node.get("name") == "__i3_scratch"
+            app_id = node.get("app_id") or (node.get("window_properties") or {}).get("class")
+            if app_id and node.get("pid") and not in_scratch:
+                r = node.get("rect") or {}
+                out.append({"app_id": app_id.lower(), "rect": [r.get("x", 0), r.get("y", 0), r.get("width", 0), r.get("height", 0)]})
+            stack.extend((n, in_scratch) for n in node.get("nodes", []) + node.get("floating_nodes", []))
+    return out
+
+
+def place_window(app_id, rect):
+    """Best effort: put a floating window of `app_id` at rect [x, y, w, h]."""
+    x, y, w, h = (int(v) for v in rect)
+    wm = which()
+    if wm == "hyprland":
+        sel = f"class:^({app_id})$"
+        return _hypr("resizewindowpixel", f"exact {w} {h},{sel}") and _hypr("movewindowpixel", f"exact {x} {y},{sel}")
+    if wm == "sway":
+        return _sway(f'[app_id="^{app_id}$"] resize set width {w} px height {h} px, move absolute position {x} {y}')
+    return False
+
+
 def minimize(pid):
     wm = which()
     if wm == "hyprland":

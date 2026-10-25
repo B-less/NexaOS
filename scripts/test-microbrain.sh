@@ -17,7 +17,7 @@ docker run --rm --memory 768m -v "$bin:/usr/local/bin/nexa-microbrain:ro" "alpin
 rc=0
 pass() { echo "PASS $1"; }
 fail() { echo "FAIL $1${2:+  [$2]}"; rc=1; }
-apk add -q --no-cache jq >/dev/null 2>&1 || { echo "no jq"; exit 1; }
+apk add -q --no-cache jq socat >/dev/null 2>&1 || { echo "no jq"; exit 1; }
 adduser -D -u 1000 user; adduser -D -u 1001 other
 mkdir -p /run/user/1000 /tmp/fake/pressure /tmp/fakesys && chown -R user /run/user/1000 /tmp/fake && chmod 700 /run/user/1000
 calm() { printf "MemTotal: 4000000 kB\nMemAvailable: 3000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n" > /tmp/fake/meminfo
@@ -65,6 +65,24 @@ st=$($U "$E nexa-microbrain status")
 [ "$(echo "$st" | jq -r .budget.mode)" = balanced ] && pass "pressure gone: back to Balanced" || fail "recovery" "$(echo "$st" | jq -c .budget)"
 $U "$E nexa-microbrain mode battery-saver" | jq -e ".budget.mode == \"battery-saver\"" >/dev/null && pass "a chosen mode is applied and saved" || fail "chosen mode"
 grep -q battery-saver /home/user/.local/share/nexa-microbrain/config.json && pass "...and remembered" || fail "remembered"
+# ZeroSearch, answers and workspaces over the socket.
+mkdir -p /home/user/Downloads /home/user/Projects/App /home/user/.local/share/applications
+printf "[Desktop Entry]\nType=Application\nName=Nexa Editor\nExec=nexa-edit %%F\n" > /home/user/.local/share/applications/nexa-edit.desktop
+chown -R user /home/user
+a=$($U "$E nexa-microbrain ask opne donwloads")
+[ "$(echo "$a" | jq -r ".results.hits[0].action.path")" = /home/user/Downloads ] && pass "ZeroSearch: \"opne donwloads\" opens Downloads" || fail "ask" "$a"
+a=$($U "$E nexa-microbrain ask delete all my files")
+echo "$a" | jq -e ".results.hits == [] and (.results.note | startswith(\"I can\"))" >/dev/null && pass "ZeroSearch: a delete request is refused, not guessed" || fail "delete refused" "$a"
+a=$($U "$E nexa-microbrain answer slow")
+echo "$a" | jq -r .text | grep -q "^Memory: " && pass "\"Why is my computer slow?\" answers from real numbers" || fail "slow answer" "$a"
+r=$(printf "%s\n" "{\"cmd\":\"workspace-save\",\"name\":\"Coding\",\"folder\":\"~/Projects/App\",\"windows\":[{\"app_id\":\"nexa-edit\",\"rect\":[1,2,3,4]},{\"app_id\":\"made-up\"}]}" | $U "socat - UNIX-CONNECT:/run/user/1000/nexa-microbrain.sock" 2>/dev/null)
+if [ -n "$r" ]; then
+  echo "$r" | jq -e ".ok and (.workspace.apps | length == 1)" >/dev/null && pass "a workspace saves only installed apps" || fail "workspace save" "$r"
+  p=$(printf "%s\n" "{\"cmd\":\"workspace-plan\",\"name\":\"Coding\"}" | $U "socat - UNIX-CONNECT:/run/user/1000/nexa-microbrain.sock")
+  echo "$p" | jq -e ".launches[0].app == \"nexa-edit\" and (.launches[0].paths[0] | endswith(\"Projects/App\"))" >/dev/null && pass "...and restores it with the project folder" || fail "workspace plan" "$p"
+else
+  echo "SKIP workspace save/restore over the socket (no socat)"
+fi
 kill $(pidof nexa-microbrain) 2>/dev/null; sleep 0.5
 $U "$E NEXA_MICROBRAIN_PROC=/tmp/fake NEXA_MICROBRAIN_SYS=/tmp/fakesys nexa-microbrain serve > /tmp/serve2.log 2>&1 &"; sleep 2
 $U "$E nexa-microbrain mode" | jq -e ".mode == \"battery-saver\"" >/dev/null && pass "after a restart it comes back the same" || fail "restart"

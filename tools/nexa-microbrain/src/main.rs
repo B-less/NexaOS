@@ -10,17 +10,25 @@
 //!                                      battery-saver, performance
 //!   nexa-microbrain agents | decisions | jobs
 //!   nexa-microbrain config [FEATURE on|off]
+//!   nexa-microbrain ask WORDS...        ZeroSearch: what those words would do
+//!   nexa-microbrain answer slow|battery
+//!   nexa-microbrain workspaces | suggestions
 //!
 //! Talks to Settings over $XDG_RUNTIME_DIR/nexa-microbrain.sock (0600,
 //! this user only, checked by the kernel's peer credentials), one JSON
 //! line each way. Anything that needs root goes through nexa-brokerd.
 
 mod agents;
+mod apps;
 mod config;
+mod habit;
 mod pulse;
 mod resources;
 mod scheduler;
+mod features;
+mod search;
 mod store;
+mod workspace;
 
 use agents::{Coordinator, Event, Notice};
 use config::{Config, Profile};
@@ -233,15 +241,39 @@ fn handle_request(req: &Value, c: &mut Coordinator, cfg: &mut Config, store: &St
     }
 }
 
+/// The installed apps, rebuilt at most once a minute (Nexus asks per keystroke).
+pub struct AppCache {
+    apps: std::collections::BTreeMap<String, apps::App>,
+    built: u64,
+}
+
+impl AppCache {
+    pub fn get(&mut self, home: &std::path::Path) -> &std::collections::BTreeMap<String, apps::App> {
+        if self.built == 0 || now().saturating_sub(self.built) >= 60 {
+            self.apps = apps::index(home);
+            self.built = now().max(1);
+        }
+        &self.apps
+    }
+}
+
+pub fn home() -> PathBuf {
+    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| "/".into())
+}
+
 fn coordinator_loop(rx: Receiver<Msg>, mut c: Coordinator, mut cfg: Config, store: Store, interval: Arc<AtomicU64>,
                     job_tx: SyncSender<Msg>) {
     let saved: Decisions = store.load();
     c.log.extend(saved.0);
+    let mut cache = AppCache { apps: Default::default(), built: 0 };
     for msg in rx {
         let (notices, reply) = match msg {
             Msg::Event(ev) => (if cfg.enabled { c.handle(ev, now()) } else { Vec::new() }, None),
             Msg::Request(req, tx) => {
-                let (r, n) = handle_request(&req, &mut c, &mut cfg, &store);
+                let (r, n) = match features::handle(&req, &mut c, &mut cfg, &store, &mut cache) {
+                    Some(answer) => answer,
+                    None => handle_request(&req, &mut c, &mut cfg, &store),
+                };
                 (n, Some((tx, r)))
             }
         };
@@ -337,7 +369,8 @@ fn serve() -> io::Result<()> {
     std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600))?;
     // SAFETY: getuid has no failure mode.
     let uid = unsafe { libc::getuid() };
-    let agents: Vec<Box<dyn agents::Agent>> = vec![Box::<agents::Performance>::default(), Box::<agents::Maintenance>::default()];
+    let agents: Vec<Box<dyn agents::Agent>> = vec![Box::<agents::Performance>::default(), Box::<agents::Maintenance>::default(),
+                                                    Box::new(features::Learning::new(store.dir.clone(), home()))];
     let coordinator = Coordinator::new(profile, cfg.mode, agents, resources::Paths::real().proc_root, uid);
     let interval = Arc::new(AtomicU64::new(coordinator.budget.sample_secs));
     let (tx, rx) = mpsc::sync_channel::<Msg>(256);
@@ -355,7 +388,7 @@ fn serve() -> io::Result<()> {
         });
     }
     confine(&store.dir);
-    eprintln!("nexa-microbrain: profile {profile:?}, mode {:?}, {} agents", cfg.mode, 2);
+    eprintln!("nexa-microbrain: profile {profile:?}, mode {:?}", cfg.mode);
     {
         let job_tx = tx.clone();
         std::thread::spawn(move || coordinator_loop(rx, coordinator, cfg, store, interval, job_tx));
@@ -395,12 +428,17 @@ fn main() {
         ["jobs"] => request(json!({"cmd": "jobs"})).and_then(print),
         ["jobs", "cancel", id] => request(json!({"cmd": "jobs", "cancel": id.parse::<u64>().unwrap_or(0)})).and_then(print),
         ["forget-history"] => request(json!({"cmd": "forget-history"})).and_then(print),
+        ["ask", words @ ..] if !words.is_empty() => request(json!({"cmd": "ask", "query": words.join(" ")})).and_then(print),
+        ["answer", topic] => request(json!({"cmd": "answer", "topic": topic})).and_then(print),
+        ["workspaces"] => request(json!({"cmd": "workspaces"})).and_then(print),
+        ["suggestions"] => request(json!({"cmd": "suggestions"})).and_then(print),
         ["mode"] => request(json!({"cmd": "mode"})).and_then(print),
         ["mode", m] => request(json!({"cmd": "mode", "mode": m})).and_then(print),
         ["config"] => request(json!({"cmd": "config"})).and_then(print),
         ["config", feature, on @ ("on" | "off")] => request(json!({"cmd": "config", "feature": feature, "on": *on == "on"})).and_then(print),
         _ => {
-            eprintln!("usage: nexa-microbrain serve | status | resources | mode [MODE] | agents | decisions | jobs | config [FEATURE on|off]");
+            eprintln!("usage: nexa-microbrain serve | status | resources | mode [MODE] | agents | decisions | jobs [cancel ID] |\n       \
+                       config [FEATURE on|off] | ask WORDS... | answer slow|battery | workspaces | suggestions | forget-history");
             std::process::exit(2);
         }
     };

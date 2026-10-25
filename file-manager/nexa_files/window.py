@@ -1535,6 +1535,8 @@ def engine_trash_dir():
 
 def _start_dir(argv):
     for arg in argv[1:]:
+        if arg.startswith("trash:"):
+            return TRASH  # "nexa-files trash:///" opens the Trash (Nexus, MicroBrain)
         path = Gio.File.new_for_commandline_arg(arg).get_path()
         if path and os.path.isdir(path):
             return path
