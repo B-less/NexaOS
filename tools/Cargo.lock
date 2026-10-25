@@ -398,6 +398,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-dna"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexa-doctor"
 version = "0.1.0"
 dependencies = [
