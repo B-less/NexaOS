@@ -186,7 +186,7 @@ Features:
 - [ ] Updates scheduled for when the PC is usually idle and on mains (HabitCore + broker `system_update`).
 - [ ] Boot report: what made this boot slower than usual (OpenRC timings + preload).
 - [ ] A low-RAM guard before the kernel OOM killer: warn and offer to close or freeze, using PSI (`nexa-kerneld`).
-- [ ] One process for the Python desktop parts (Dock, For you card, drives, Nexa Link pop-ups): measured ~100 MB PSS for the four today, most of it repeated Python + GTK; one process would save an estimated 60-70 MB. The biggest win for 2 GB PCs.
+- [x] One process for the Python desktop parts (Dock, For you card, drives, Nexa Link pop-ups): `nexa-parts`. Measured in the same headless desktop: 104 MB PSS as four processes, 39 MB as one (65 MB saved). Nexa Doctor restarts it as one part.
 - [ ] Nexa Link + MicroBrain: "your phone's battery is low" and workspace hand-off between two NexaOS PCs.
 
 ## 10. Settings > Intelligence (and where each screen lives)

@@ -33,7 +33,7 @@ CHECKS = (
     'echo SSHD=$(rc-service sshd status 2>&1 | grep -o "started\\|stopped")',
     'echo FW_ERRORS=$(dmesg | grep -ciE "firmware.*(fail|error)")',
     # [x]-bracketed patterns can't match this command line itself.
-    'for p in "[s]way -c" "[H]yprland" "[w]aybar" "[m]ako" "[s]waybg" "[n]exa_shell dock"; do '
+    'for p in "[s]way -c" "[H]yprland" "[w]aybar" "[m]ako" "[s]waybg" "[n]exa_shell parts"; do '
     'pgrep -f "$p" >/dev/null && echo "RUN:$p" || echo "NOT:$p"; done',
     'echo ICON_THEME=$(test -f /usr/share/icons/hicolor/index.theme && echo ok || echo missing)',
     # The live account has no password: Enter (empty) must unlock the lock screen.

@@ -1112,7 +1112,9 @@ exec wireplumber
 # Render the saved theme (bar, notifications, terminal, borders) before the
 # bar and notification daemon read their config.
 exec sh -c 'nexa-theme apply --saved --no-reload >/dev/null 2>&1; swaymsg reload >/dev/null 2>&1; nexa-bar & exec mako'
-exec nexa-dock
+# The Dock, the For you card, drives on the desktop and Nexa Link's pop-ups,
+# in one process (nexa_shell parts): about 65 MB less than four.
+exec nexa-parts
 exec nexa-idle
 exec nexa-battery-watch
 # Tell nexa-kerneld which app is in front (it gets a CPU floor).
@@ -1121,13 +1123,9 @@ exec nexa-kerneld focus-watch
 exec nexa-patternd serve
 # Nexa MicroBrain: pressure forecasts, resource modes, background-work budget.
 exec nexa-microbrain serve
-exec nexa-foryou
-# USB sticks and SD cards on the desktop (nexa_shell drives).
-exec nexa-drives
-# Nexa Link: paired devices find each other (silent until one is paired),
-# and its pop-ups (files offered, received, messages, Ring).
+# Nexa Link: paired devices find each other (silent until one is paired);
+# its pop-ups are part of nexa-parts.
 exec nexa-linkd serve
-exec nexa-linknotify
 # Nexa Doctor: restarts desktop parts that stop, fixes common problems.
 exec nexa-doctor watch
 
@@ -1236,16 +1234,13 @@ exec-once = wireplumber
 exec-once = swaybg -i /usr/share/backgrounds/nexaos/wallpaper.png -m fill
 exec-once = nexa-bar
 exec-once = mako
-exec-once = nexa-dock
+exec-once = nexa-parts
 exec-once = nexa-idle
 exec-once = nexa-battery-watch
 exec-once = nexa-kerneld focus-watch
 exec-once = nexa-patternd serve
 exec-once = nexa-microbrain serve
-exec-once = nexa-foryou
-exec-once = nexa-drives
 exec-once = nexa-linkd serve
-exec-once = nexa-linknotify
 exec-once = nexa-doctor watch
 exec-once = nexa-keyboard-layout
 

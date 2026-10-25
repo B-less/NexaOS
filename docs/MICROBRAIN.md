@@ -72,8 +72,12 @@ MemAvailable at that moment: 3476 MB of 3901 MB.
 
 What it says: NexaOS's Rust services cost about 1 MB each; the four
 Python desktop parts cost about 100 MB together, mostly because each is
-its own Python + GTK process. Running them in one process is the biggest
-saving available for 2 GB computers (TODOnexa_inter.md, own ideas).
+its own Python + GTK process.
+
+**Done (2026-10-25):** they now run as one process, `nexa-parts`.
+Measured in a headless Sway (nexa-apptest container), same parts, same
+method: 104 MB PSS as four processes, **39 MB as one: 65 MB saved** on
+every NexaOS computer.
 
 ### MicroBrain itself
 

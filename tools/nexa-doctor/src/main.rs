@@ -68,12 +68,10 @@ fn parts() -> Vec<Part> {
         // the pointer touches the top edge) for either session.
         part("the top bar", &["waybar"], &["nexa-bar"], ""),
         part("notifications", &["mako"], &["mako"], ""),
-        part("the Dock", &["nexa_shell", "dock"], &["nexa-dock"], ""),
-        part("the For you card", &["nexa_shell", "foryou"], &["nexa-foryou"], ""),
-        part("the drives on the desktop", &["nexa_shell", "drives"], &["nexa-drives"], ""),
+        // The Dock, the For you card, drives and Nexa Link's pop-ups: one process.
+        part("the Dock and desktop parts", &["nexa_shell", "parts"], &["nexa-parts"], ""),
         part("Nexa Link", &["nexa-linkd", "serve"], &["nexa-linkd", "serve"], ""),
         part("Nexa MicroBrain", &["nexa-microbrain", "serve"], &["nexa-microbrain", "serve"], ""),
-        part("Nexa Link's pop-ups", &["nexa_shell", "linknotify"], &["nexa-linknotify"], ""),
         part("Nexa Patterns", &["nexa-patternd", "serve"], &["nexa-patternd", "serve"], ""),
         part("the app-in-front boost", &["nexa-kerneld", "focus-watch"], &["nexa-kerneld", "focus-watch"], ""),
         part("idle and screen-off", &["nexa-idle"], &["nexa-idle"], ""),

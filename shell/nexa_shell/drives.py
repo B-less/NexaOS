@@ -49,8 +49,12 @@ def read_state(path=STATE):
     """The drives the broker last published (empty if none or unreadable)."""
     try:
         with open(path) as f:
-            drives = json.load(f).get("drives", [])
+            data = json.load(f)
     except (OSError, ValueError):
+        return []
+    # Anything but {"drives": [...]} (a half-written or odd file) means none.
+    drives = data.get("drives", []) if isinstance(data, dict) else []
+    if not isinstance(drives, list):
         return []
     return [d for d in drives if isinstance(d, dict) and d.get("name")]
 
