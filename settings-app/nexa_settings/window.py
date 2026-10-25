@@ -569,14 +569,16 @@ class SettingsWindow(Gtk.Window):
         apply_btn.connect("clicked", self._on_apply_idle)
         page.pack_start(apply_btn, False, False, 0)
 
-        if os.path.exists(LOGIN_REQUIRED):
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-            row.pack_start(self._field_label("Ask for my password when NexaOS starts"), True, True, 0)
-            self.login_switch = Gtk.Switch()
-            self.login_switch.set_active(not os.path.exists(SKIP_LOGIN_LOCK))
-            self.login_switch.connect("notify::active", self._on_login_lock_toggled)
-            row.pack_start(self.login_switch, False, False, 0)
-            page.pack_start(row, False, False, 8)
+        # Every boot opens on the lock screen; the live USB's account has no
+        # password, so there it's a "press Enter" screen.
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        row.pack_start(self._field_label("Ask for my password when NexaOS starts" if os.path.exists(LOGIN_REQUIRED)
+                                         else "Show the lock screen when NexaOS starts"), True, True, 0)
+        self.login_switch = Gtk.Switch()
+        self.login_switch.set_active(not os.path.exists(SKIP_LOGIN_LOCK))
+        self.login_switch.connect("notify::active", self._on_login_lock_toggled)
+        row.pack_start(self.login_switch, False, False, 0)
+        page.pack_start(row, False, False, 8)
 
         self.power_status = Gtk.Label(label="")
         self.power_status.set_xalign(0)
@@ -595,8 +597,8 @@ class SettingsWindow(Gtk.Window):
             self._set_label(self.power_status, f"Couldn't save: {e}", error=True)
             return
         self._set_label(self.power_status,
-                        "Your password will be asked at startup." if switch.get_active()
-                        else "NexaOS will open without asking for your password.", error=False)
+                        "NexaOS will start on the lock screen." if switch.get_active()
+                        else "NexaOS will open straight to the desktop.", error=False)
 
     def _on_apply_idle(self, _btn):
         try:

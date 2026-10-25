@@ -21,6 +21,10 @@ check("apply returns what it applied", applied == {"theme": "nebula", "opacity":
 for rel in ("waybar/style.css", "mako/config", "foot/foot.ini", "sway/config.d/20-nexa-theme.conf",
             "gtk-3.0/settings.ini", "hypr/nexa-theme.conf", "swaylock/config", "nexa/theme.json"):
     check(f"apply writes ~/.config/{rel}", os.path.isfile(os.path.join(home, ".config", rel)))
+lock = dict(l.split("=", 1) for l in open(os.path.join(home, ".config/nexa/lock.conf")).read().splitlines() if "=" in l)
+check("the lock screen gets the theme's colours (nexa/lock.conf)",
+      lock.get("accent") == themes.THEMES["nebula"]["accent"] and lock.get("bg", "").startswith("#")
+      and all(len(lock.get(k, "")) == 7 for k in ("bg", "surface", "text", "muted", "accent2", "crit", "ok", "warn")), str(lock))
 css = open(os.path.join(home, ".config/waybar/style.css")).read()
 check("bar uses the theme accent and transparency",
       themes.THEMES["nebula"]["accent"] in css and "rgba(22, 10, 36, 0.50)" in css, css[:200])

@@ -1,23 +1,30 @@
 #!/bin/sh
-# Lock the screen: swaylock-effects over a blurred picture of the desktop,
-# with a clock, in the current theme's colours (~/.config/swaylock/config,
-# written by nexa-theme). Works on both Sway and Hyprland (ext-session-lock).
+# Lock the screen: nexa-locker (C, tools-c/nexa-locker) draws the NexaOS
+# lock screen; swaylock is the fallback if it can't lock (no
+# ext-session-lock in the compositor, or the program is missing).
 #
-# The password is checked through PAM (pam_unix + the setgid unix_chkpwd
-# helper, which reads /etc/shadow via the "shadow" group). On the live USB
-# the account has no password: pressing Enter unlocks, so an empty password
-# must not be ignored there. Installed systems ignore a stray Enter.
-#
-# --daemonize: returns once the screen is locked, so the lid handler can
-# suspend right after and swayidle keeps running (screen-off still works).
+# Options are passed on: --boot (the session has just started: "Welcome").
+# Returns once the screen is locked, so the lid handler can suspend right
+# after and swayidle keeps running.
 set -u
 
-# Already locked (the idle timer and the lid can both fire): nothing to do.
+# One lock screen at a time: the idle timer, the lid, the power menu and
+# the login lock can all fire together. The lock file stays held by the
+# lock screen (it inherits fd 9) for as long as it runs.
+run=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+exec 9>"$run/nexa-lock.lock"
+flock -n 9 || exit 0
+pgrep -x nexa-locker >/dev/null 2>&1 && exit 0
 pgrep -x swaylock >/dev/null 2>&1 && exit 0
 
-# What to do, said on the lock screen itself: swaylock has no message
-# option, but the clock's second line is free text. The ring stays visible
-# before any key is pressed (it used to appear only once typing started).
+if command -v nexa-locker >/dev/null 2>&1; then
+    nexa-locker --daemonize "$@" && exit 0
+    logger -t nexa-lock "nexa-locker couldn't lock (exit $?); using swaylock" 2>/dev/null || true
+fi
+
+# swaylock: the theme's colours (~/.config/swaylock/config, from
+# nexa-theme) over the blurred wallpaper. Never a screenshot: right after
+# login or logout the desktop isn't drawn yet, and the lock was black.
 if [ -f /etc/nexa/login-required ]; then
     prompt="Type your password to unlock"
     extra="--ignore-empty-password"
@@ -26,12 +33,9 @@ else
     extra=""
 fi
 common="--daemonize --clock --timestr %H:%M --indicator --indicator-idle-visible --indicator-radius 120 --indicator-thickness 8 --font Inter --show-failed-attempts"
-
+wall=/usr/share/backgrounds/nexaos/wallpaper.png
 # shellcheck disable=SC2086
-swaylock $common --datestr "$prompt" $extra --screenshots --effect-blur 9x4 --effect-vignette 0.4:0.6 --fade-in 0.25 && exit 0
-# The blurred-screenshot lock can fail to start (no screen capture, an
-# effect the GPU path refuses): lock anyway, on the plain theme colour, so
-# pressing Lock never leaves the screen unlocked.
+[ -f "$wall" ] && swaylock $common --datestr "$prompt" $extra --image "$wall" --scaling fill --effect-blur 9x4 --effect-vignette 0.4:0.6 && exit 0
 logger -t nexa-lock "swaylock with effects failed; locking with a plain background" 2>/dev/null || true
 # shellcheck disable=SC2086
 exec swaylock $common --datestr "$prompt" $extra --color 0c1228

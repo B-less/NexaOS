@@ -313,6 +313,11 @@ test-store-app: native nexa-apps
 test-titlebar: nexa-apps
 	@sh scripts/test-titlebar.sh
 
+# The lock screen (nexa-locker, C) in a headless Sway: lock, wrong and right
+# password, a second lock refused, a crash leaves the session locked.
+test-locker: native
+	@sh scripts/test-locker.sh
+
 gui-apps:
 	@echo "$(COLOR_BLUE)Building Nexa framebuffer desktop and GUI apps...$(COLOR_RESET)"
 	@$(MAKE) -C $(BASE_DIR)/gui nexa-fbdesktop apps

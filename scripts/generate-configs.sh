@@ -1284,6 +1284,10 @@ misc {
     disable_watchdog_warning = true
     disable_xdg_env_checks = true
     disable_hyprland_guiutils_check = true
+    # If the lock screen ever dies, the session stays locked and nexa-locker's
+    # watchdog starts swaylock to take the lock over; Hyprland refuses that
+    # second lock unless this is on.
+    allow_session_lock_restore = true
     force_default_wallpaper = 0
     focus_on_activate = true
 }

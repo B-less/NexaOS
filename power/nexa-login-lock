@@ -1,14 +1,13 @@
 #!/bin/sh
-# Installed systems start the desktop locked, so the password is needed
-# after every boot (the session itself starts automatically). The live USB
-# has no /etc/nexa/login-required. Opt out per user from Settings > Power.
-# After "Log out" (compositor.logout leaves this marker) the new session
-# always opens locked, live USB included.
+# Every new desktop session opens on the lock screen: after each boot and
+# after "Log out" (compositor.logout leaves a marker; it's used up here).
+# Installed systems ask for the password; the live USB's account has none,
+# so there Enter starts the session. Opt out per user from Settings >
+# Power ("Ask for my password when NexaOS starts"); a logout always locks.
 marker="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/nexa-logged-out"
 if [ -f "$marker" ]; then
     rm -f "$marker"
-    exec nexa-lock
+    exec nexa-lock --boot
 fi
-[ -f /etc/nexa/login-required ] || exit 0
 [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/nexa/skip-login-lock" ] && exit 0
-exec nexa-lock
+exec nexa-lock --boot

@@ -41,7 +41,7 @@ signed HTTPS repositories.
 | `nexa-control` | Control Centre: Wi-Fi, volume, brightness, Do Not Disturb (Super+N) |
 | `nexa-dock` | Dock with magnification, running-app dots, Launchpad first |
 | `nexa-launchpad` | Full-screen app grid with type-to-search (Super+Space) |
-| `nexa-lock` | Lock screen; idle lock/blank set in Settings > Power |
+| `nexa-lock` | Lock screen: starts `nexa-locker` (C, ext-session-lock), swaylock as fallback; idle lock/blank set in Settings > Power |
 | mako | Notifications |
 
 The shell panels are GTK layer-shell surfaces (namespaces `nexa-*`, which

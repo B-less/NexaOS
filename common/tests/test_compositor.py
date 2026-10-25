@@ -84,7 +84,8 @@ calls.clear(); c.screen_power(True)
 check("screen on", calls[-1] == ["swaymsg", "output * power on"])
 
 # Log out: a marker for the next session, then the compositor exits; the
-# real nexa-login-lock then locks (once) even on the live USB.
+# real nexa-login-lock then locks, even for someone who turned the boot lock
+# off (the marker is used up, so after that their choice holds again).
 import tempfile  # noqa: E402
 run = tempfile.mkdtemp()
 os.environ["XDG_RUNTIME_DIR"] = run
@@ -95,11 +96,17 @@ with open(os.path.join(bindir, "nexa-lock"), "w") as f:
     f.write(f"#!/bin/sh\necho locked >> {run}/lock.log\n")
 os.chmod(os.path.join(bindir, "nexa-lock"), 0o755)
 login_lock = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "power", "nexa-login-lock")
-env = dict(os.environ, PATH=bindir + ":" + os.environ["PATH"], HOME=run)
+env = dict(os.environ, PATH=bindir + ":" + os.environ["PATH"], HOME=run, XDG_CONFIG_HOME=os.path.join(run, "cfg"))
+os.makedirs(os.path.join(run, "cfg", "nexa"))
+open(os.path.join(run, "cfg", "nexa", "skip-login-lock"), "w").close()
 subprocess.run(["sh", login_lock], env=env, check=False)
 subprocess.run(["sh", login_lock], env=env, check=False)
 log = open(os.path.join(run, "lock.log")).read() if os.path.exists(os.path.join(run, "lock.log")) else ""
-check("the next session opens locked, once (the marker is used up)",
+check("after logging out the next session opens locked, once (the marker is used up)",
       log == "locked\n" and not os.path.exists(os.path.join(run, "nexa-logged-out")), repr(log))
+os.remove(os.path.join(run, "cfg", "nexa", "skip-login-lock"))
+subprocess.run(["sh", login_lock], env=env, check=False)
+log = open(os.path.join(run, "lock.log")).read()
+check("every boot opens on the lock screen (live USB too) unless turned off", log == "locked\nlocked\n", repr(log))
 
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)

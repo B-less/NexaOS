@@ -1,0 +1,4 @@
+# PAM service for nexa-locker, the NexaOS lock screen (/etc/pam.d/nexa-lock).
+# base-auth: pam_unix with nullok, so the live USB's account (no password)
+# unlocks with Enter; installed systems always have a password.
+auth include base-auth
