@@ -52,6 +52,33 @@ AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
 PAGES = ("Personalization", "Bluetooth", "VPN", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
 
 
+TOPBAR_FILE = os.path.expanduser("~/.config/nexa/topbar")
+
+
+def read_topbar_mode():
+    try:
+        with open(TOPBAR_FILE) as f:
+            return "autohide" if f.read().strip() == "autohide" else "always"
+    except OSError:
+        return "always"
+
+
+def set_topbar_mode(mode):
+    """Save the choice and restart the bar with it (nexa-bar reads it)."""
+    try:
+        os.makedirs(os.path.dirname(TOPBAR_FILE), exist_ok=True)
+        with open(TOPBAR_FILE, "w") as f:
+            f.write(("autohide" if mode == "autohide" else "always") + "\n")
+    except OSError:
+        return False
+    try:
+        subprocess.run(["pkill", "-x", "waybar"], check=False)
+        subprocess.Popen(["nexa-bar"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return False
+    return True
+
+
 class SettingsWindow(Gtk.Window):
     def __init__(self):
         super().__init__(title="Settings")
@@ -252,6 +279,18 @@ class SettingsWindow(Gtk.Window):
             self._icon_style.set_tooltip_text("Comes with the NexaHexa icons, which aren't installed yet")
         icons_row.pack_start(self._icon_style, False, False, 0)
         page.pack_start(icons_row, False, False, 0)
+
+        # The top bar: always there (it keeps its space), or out of the way
+        # until the pointer rests on the top edge (nexa-barhide).
+        bar_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        bar_row.pack_start(self._field_label("Top bar: always shown, or hidden until you point at the top of the screen"), True, True, 0)
+        self._topbar = Gtk.ComboBoxText(valign=Gtk.Align.CENTER)
+        for key, label in (("always", "Always shown"), ("autohide", "Hide when not in use")):
+            self._topbar.append(key, label)
+        self._topbar.set_active_id(read_topbar_mode())
+        self._topbar.connect("changed", lambda c: set_topbar_mode(c.get_active_id()))
+        bar_row.pack_start(self._topbar, False, False, 0)
+        page.pack_start(bar_row, False, False, 0)
 
         apply_btn = Gtk.Button(label="Apply Theme")
         apply_btn.set_name("actionbtn")

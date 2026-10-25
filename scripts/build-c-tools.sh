@@ -7,10 +7,11 @@ set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
 version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
 image=nexa-rust-apps:${version%.*}
-# Rebuilt when a needed package is missing (linux-pam-dev: nexa-locker).
-if ! docker run --rm "$image" apk info -e linux-pam-dev >/dev/null 2>&1; then
+# Rebuilt when a needed package is missing (linux-pam-dev: nexa-locker;
+# wlr-protocols: nexa-barhide's layer-shell surface).
+if ! docker run --rm "$image" sh -c 'apk info -e linux-pam-dev && apk info -e wlr-protocols' >/dev/null 2>&1; then
     docker image inspect "nexa-rust:${version%.*}" >/dev/null 2>&1 || sh "$repo/scripts/build-native.sh" >/dev/null
-    printf 'FROM nexa-rust:%s\nRUN apk add --no-cache gstreamer-dev gst-plugins-base-dev linux-pam-dev\n' "${version%.*}" \
+    printf 'FROM nexa-rust:%s\nRUN apk add --no-cache gstreamer-dev gst-plugins-base-dev linux-pam-dev wlr-protocols\n' "${version%.*}" \
         | docker build -q -t "$image" - >/dev/null
 fi
 mkdir -p "$repo/build/native"

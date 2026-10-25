@@ -83,6 +83,30 @@ check("an app on screen is just focused", calls[-1] == ["swaymsg", '[app_id="nex
 calls.clear(); c.screen_power(True)
 check("screen on", calls[-1] == ["swaymsg", "output * power on"])
 
+# The free part of the screen (no top bar, no Dock), and centring there.
+session("hyprland")
+replies["hyprctl monitors -j"] = json.dumps([{"name": "eDP-1", "x": 0, "y": 0, "width": 1920, "height": 1080,
+                                               "scale": 1.25, "transform": 0, "reserved": [0, 48, 0, 90], "focused": True}])
+check("Hyprland: free area = screen in logical pixels minus bar and Dock",
+      c.usable_area() == (0, 48, 1536, 726), str(c.usable_area()))
+replies["hyprctl clients -j"] = json.dumps([
+    {"pid": 77, "address": "0xa", "floating": True, "focusHistoryID": 3},
+    {"pid": 77, "address": "0xb", "floating": True, "focusHistoryID": 0}])
+calls.clear(); c.center_in_view(77)
+check("a new window is centred in the free area (the one in front, by address)",
+      calls[-2:] == [["hyprctl", "dispatch", "focuswindow", "address:0xb"], ["hyprctl", "dispatch", "centerwindow", "1"]], str(calls))
+replies["hyprctl clients -j"] = json.dumps([
+    {"pid": 77, "address": "0xa", "floating": True, "focusHistoryID": 3},
+    {"pid": 77, "address": "0xb", "floating": True, "focusHistoryID": 2}])
+calls.clear(); c.center_in_view(77)
+check("...and none moved when it can't tell which is new",
+      not any(a[:3] == ["hyprctl", "dispatch", "centerwindow"] for a in calls), str(calls))
+session("sway")
+replies["swaymsg -t get_workspaces"] = json.dumps([{"name": "1", "focused": True, "rect": {"x": 10, "y": 48, "width": 1260, "height": 666}}])
+check("Sway: free area = the focused workspace", c.usable_area() == (10, 48, 1260, 666), str(c.usable_area()))
+replies["swaymsg -t get_workspaces"] = "not json"
+check("a garbled answer gives no area (GTK's guess is used)", c.usable_area() is None)
+
 # Log out: a marker for the next session, then the compositor exits; the
 # real nexa-login-lock then locks, even for someone who turned the boot lock
 # off (the marker is used up, so after that their choice holds again).

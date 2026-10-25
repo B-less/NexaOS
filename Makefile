@@ -318,6 +318,10 @@ test-titlebar: nexa-apps
 test-nexa-link: native
 	@sh scripts/test-nexa-link.sh
 
+# The top bar's "Hide when not in use" with the real bar in a headless Sway.
+test-topbar: native
+	@sh scripts/test-topbar.sh
+
 # App icons clicked on the icon itself (Nexus, the desktop card, the Store).
 test-tile-clicks:
 	@sh scripts/test-tile-clicks.sh

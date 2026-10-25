@@ -64,8 +64,9 @@ fn parts() -> Vec<Part> {
         return serde_json::from_str(&json.to_string_lossy()).unwrap_or_default();
     }
     vec![
-        part("the top bar", &["waybar"], &["waybar"], "sway"),
-        part("the top bar", &["waybar"], &["waybar", "-c", "/etc/xdg/waybar/config-hyprland"], "hyprland"),
+        // nexa-bar picks the bar's config (always shown, or hidden until
+        // the pointer touches the top edge) for either session.
+        part("the top bar", &["waybar"], &["nexa-bar"], ""),
         part("notifications", &["mako"], &["mako"], ""),
         part("the Dock", &["nexa_shell", "dock"], &["nexa-dock"], ""),
         part("the For you card", &["nexa_shell", "foryou"], &["nexa-foryou"], ""),

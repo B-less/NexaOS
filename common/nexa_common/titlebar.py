@@ -206,13 +206,29 @@ def _fit_to_screen(window):
     if gdk_win is None:
         return  # not on a screen yet: done at "realize"
     window._nexa_fitted = True
-    monitor = display.get_monitor_at_window(gdk_win) or display.get_monitor(0)
-    area = monitor.get_workarea()
+    # The free part of the screen (no top bar, no Dock) from the compositor;
+    # GTK's own idea is the whole screen on Wayland.
+    free = compositor.usable_area()
+    if free:
+        area_w, area_h = free[2], free[3]
+    else:
+        monitor = display.get_monitor_at_window(gdk_win) or display.get_monitor(0)
+        area = monitor.get_workarea()
+        area_w, area_h = area.width, area.height
     w, h = window.get_default_size()
-    fw, fh = fitted_size(w, h, area.width, area.height)
+    fw, fh = fitted_size(w, h, area_w, area_h)
     if (fw, fh) != (w, h):
         window.set_default_size(fw, fh)
         window.resize(fw if fw > 0 else 1, fh if fh > 0 else 1)
+    window.connect("map-event", _center_once)
+
+
+def _center_once(window, _event):
+    if getattr(window, "_nexa_centered", False):
+        return False
+    window._nexa_centered = True
+    GLib.timeout_add(120, lambda: compositor.center_in_view(os.getpid()) and False)
+    return False
 
 
 def _set_app_id():

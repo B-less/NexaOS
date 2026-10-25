@@ -91,6 +91,54 @@ def toggle_maximize(pid, restore_size=None):
     return False
 
 
+def usable_area():
+    """(x, y, width, height) of the screen in front, minus what the bar and
+    the Dock keep for themselves; None if the compositor can't say. GTK on
+    Wayland only knows the whole screen, so tall windows opened with their
+    title bar under the top bar."""
+    wm = which()
+    try:
+        if wm == "hyprland":
+            mons = json.loads(_call(["hyprctl", "monitors", "-j"]) or "[]")
+            m = next((m for m in mons if m.get("focused")), mons[0] if mons else None)
+            if not m:
+                return None
+            scale = float(m.get("scale") or 1) or 1
+            left, top, right, bottom = (list(m.get("reserved") or []) + [0, 0, 0, 0])[:4]
+            w, h = m["width"] / scale, m["height"] / scale
+            # Rotated screens report width and height the panel way round.
+            if int(m.get("transform", 0)) % 2:
+                w, h = h, w
+            return (int(m["x"] + left), int(m["y"] + top), int(w - left - right), int(h - top - bottom))
+        if wm == "sway":
+            spaces = json.loads(_call(["swaymsg", "-t", "get_workspaces"]) or "[]")
+            ws = next((w for w in spaces if w.get("focused")), None)
+            if ws:
+                r = ws["rect"]
+                return (r["x"], r["y"], r["width"], r["height"])
+    except (ValueError, KeyError, TypeError, IndexError, ZeroDivisionError):
+        return None
+    return None
+
+
+def center_in_view(pid):
+    """Hyprland centres new windows on the whole screen, title bar under the
+    top bar if the window is tall: centre it in the free area instead.
+    (Sway already centres floating windows there.)"""
+    if which() != "hyprland":
+        return True
+    try:
+        clients = json.loads(_call(["hyprctl", "clients", "-j"]) or "[]")
+    except ValueError:
+        return False
+    mine = [c for c in clients if c.get("pid") == pid and c.get("floating")]
+    # The new window is the one in front; with one window there's no doubt.
+    target = next((c for c in mine if c.get("focusHistoryID") == 0), mine[0] if len(mine) == 1 else None)
+    if not target:
+        return False
+    return _hypr("focuswindow", f"address:{target['address']}") and _hypr("centerwindow", "1")
+
+
 def focus_app(app_id):
     """Bring an app's window forward, restoring it if minimised."""
     wm = which()

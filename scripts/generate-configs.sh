@@ -1111,7 +1111,7 @@ exec pipewire-pulse
 exec wireplumber
 # Render the saved theme (bar, notifications, terminal, borders) before the
 # bar and notification daemon read their config.
-exec sh -c 'nexa-theme apply --saved --no-reload >/dev/null 2>&1; swaymsg reload >/dev/null 2>&1; waybar & exec mako'
+exec sh -c 'nexa-theme apply --saved --no-reload >/dev/null 2>&1; swaymsg reload >/dev/null 2>&1; nexa-bar & exec mako'
 exec nexa-dock
 exec nexa-idle
 exec nexa-battery-watch
@@ -1230,7 +1230,7 @@ exec-once = pipewire
 exec-once = pipewire-pulse
 exec-once = wireplumber
 exec-once = swaybg -i /usr/share/backgrounds/nexaos/wallpaper.png -m fill
-exec-once = waybar -c /etc/xdg/waybar/config-hyprland
+exec-once = nexa-bar
 exec-once = mako
 exec-once = nexa-dock
 exec-once = nexa-idle
@@ -1517,6 +1517,30 @@ WAYBAR_CONFIG_EOF
     sed -e 's#"sway/workspaces", "sway/mode", "sway/scratchpad"#"hyprland/workspaces"#' \
         -e 's#"sway/workspaces": {#"hyprland/workspaces": {#' \
         "$MNT_DIR/etc/xdg/waybar/config" > "$MNT_DIR/etc/xdg/waybar/config-hyprland"
+
+    # The top bar, as Settings > Personalization > Top bar says: always
+    # shown (it keeps its space), or hidden until the pointer rests on the
+    # top edge of the screen (nexa-barhide, C), drawn over the windows then.
+    cat > "$MNT_DIR/usr/local/bin/nexa-bar" << 'NEXABAR_EOF'
+#!/bin/sh
+mode=$(cat "${XDG_CONFIG_HOME:-$HOME/.config}/nexa/topbar" 2>/dev/null)
+if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+    base=/etc/xdg/waybar/config-hyprland
+else
+    base=/etc/xdg/waybar/config
+fi
+pkill -x nexa-barhide 2>/dev/null
+if [ "$mode" = autohide ] && command -v nexa-barhide >/dev/null 2>&1; then
+    dir=${XDG_RUNTIME_DIR:-/tmp}/nexa-bar
+    mkdir -p "$dir"
+    sed 's/"layer": "top",/"layer": "top", "exclusive": false, "start_hidden": true,/' "$base" > "$dir/config"
+    height=$(sed -n 's/.*"height": *\([0-9]*\).*/\1/p' "$base" | head -n 1)
+    nexa-barhide "${height:-38}" &
+    exec waybar -c "$dir/config"
+fi
+exec waybar -c "$base"
+NEXABAR_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-bar"
 
     echo "[*] Generating Mako (notification daemon) configuration..."
     mkdir -p "$MNT_DIR/etc/xdg/mako"
