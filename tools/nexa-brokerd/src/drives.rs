@@ -25,12 +25,15 @@ pub struct Tree {
     /// The OS installer marks the disk it is writing to here
     /// (/run/nexa-install/<disk>): such a disk is never mounted meanwhile.
     pub installing: PathBuf,
+    /// The drive list for the desktop (/run/nexa/drives.json), rewritten
+    /// after every change; readable by everyone, written only by root here.
+    pub state: PathBuf,
 }
 
 impl Tree {
     pub fn real() -> Tree {
         Tree { sys: "/sys".into(), dev: "/dev".into(), media: "/media".into(), mounts: "/proc/mounts".into(), tools: PathBuf::new(),
-               installing: "/run/nexa-install".into() }
+               installing: "/run/nexa-install".into(), state: "/run/nexa/drives.json".into() }
     }
 
     fn tool(&self, name: &str) -> Command {
@@ -351,6 +354,20 @@ pub fn eject(t: &Tree, k: &str) -> Result<Value, String> {
     Ok(json!({"ejected": disk, "done": "You can unplug the drive now"}))
 }
 
+/// Write the current drive list for the desktop (atomically: a reader never
+/// sees half a file). Errors are ignored: the desktop just keeps the last list.
+pub fn publish(t: &Tree) {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(dir) = t.state.parent() else { return };
+    let _ = fs::create_dir_all(dir);
+    let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o755));
+    let tmp = t.state.with_extension("tmp");
+    if fs::write(&tmp, list(t).to_string()).is_ok() {
+        let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o644));
+        let _ = fs::rename(&tmp, &t.state);
+    }
+}
+
 pub fn list(t: &Tree) -> Value {
     let mut names: Vec<String> = fs::read_dir(t.sys.join("class/block")).into_iter().flatten().flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned()).collect();
@@ -482,7 +499,7 @@ mod tests {
             fs::write(bin.join(n), body).unwrap();
             fs::set_permissions(bin.join(n), fs::Permissions::from_mode(0o755)).unwrap();
         }
-        (Tree { sys: r.join("sys"), dev: "/dev".into(), media: r.join("media"), mounts, tools: bin, installing: r.join("run/nexa-install") }, r)
+        (Tree { sys: r.join("sys"), dev: "/dev".into(), media: r.join("media"), mounts, tools: bin, installing: r.join("run/nexa-install"), state: r.join("run/nexa/drives.json") }, r)
     }
 
     fn calls(r: &Path) -> String {
@@ -629,6 +646,20 @@ mod tests {
         assert!(calls(&r).is_empty() || !calls(&r).contains("mount -t"), "{}", calls(&r));
         fs::remove_file(r.join("run/nexa-install/sdb")).unwrap();
         assert!(added(&t, "sdb1").get("mountpoint").is_some(), "mounted again once the install is over");
+    }
+
+    #[test]
+    fn publishes_the_drive_list_for_the_desktop() {
+        let (t, r) = fake("publish");
+        added(&t, "sdb1");
+        publish(&t);
+        let v: Value = serde_json::from_str(&fs::read_to_string(&t.state).unwrap()).unwrap();
+        let names: Vec<&str> = v["drives"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"sdb1"), "{v}");
+        assert!(!names.contains(&"sdd1") && !names.contains(&"sda1"), "not the system's own drives: {v}");
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(fs::metadata(&t.state).unwrap().permissions().mode() & 0o777, 0o644, "readable by the desktop");
+        assert!(!r.join("run/nexa/drives.tmp").exists());
     }
 
     #[test]

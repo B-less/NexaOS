@@ -288,9 +288,16 @@ pub fn perform(a: &Action, root: &Path, caller: &Caller) -> Result<Value, String
         Action::VpnDown(n) => vpn::down(&vp, n),
         Action::VpnRemove(n) => vpn::remove(&vp, n),
         Action::ListDrives => Ok(drives::list(&drives::Tree::real())),
-        Action::MountDrive(k) => drives::mount(&drives::Tree::real(), k),
-        Action::UnmountDrive(k) => drives::unmount(&drives::Tree::real(), k),
-        Action::EjectDrive(k) => drives::eject(&drives::Tree::real(), k),
+        Action::MountDrive(k) | Action::UnmountDrive(k) | Action::EjectDrive(k) => {
+            let t = drives::Tree::real();
+            let r = match a {
+                Action::MountDrive(_) => drives::mount(&t, k),
+                Action::UnmountDrive(_) => drives::unmount(&t, k),
+                _ => drives::eject(&t, k),
+            };
+            drives::publish(&t);
+            r
+        }
         Action::ChangePassword { new_password } => users::change_password(&caller.user, new_password),
         Action::AddUser { name, full_name, password, admin } => users::add(&root.join("etc"), name, full_name, password, *admin),
         Action::RemoveUser(name) => users::remove(&root.join("etc"), &caller.user, name),

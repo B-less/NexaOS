@@ -158,6 +158,8 @@ fn run_worker(action: &str, args: &Value, timeout_s: u64, uid: u32, user: &str) 
 }
 
 fn serve() -> ! {
+    // The desktop's drive list exists from the start (drives plugged in at boot).
+    drives::publish(&drives::Tree::real());
     // SAFETY: geteuid can't fail.
     if unsafe { libc::geteuid() } != 0 {
         eprintln!("nexa-brokerd: serve must run as root");
@@ -284,8 +286,18 @@ fn main() {
         Some("exec") => exec(),
         Some("call") if args.len() >= 3 => call(&args[2], args.get(3).map(String::as_str).unwrap_or("{}")),
         // udev runs these as root when a USB/SD drive comes or goes.
-        Some("drive-added") if args.len() == 3 => drives::added(&drives::Tree::real(), &args[2]),
-        Some("drive-removed") if args.len() == 3 => drives::removed(&drives::Tree::real(), &args[2]),
+        Some("drive-added") if args.len() == 3 => {
+            let t = drives::Tree::real();
+            let v = drives::added(&t, &args[2]);
+            drives::publish(&t);
+            v
+        }
+        Some("drive-removed") if args.len() == 3 => {
+            let t = drives::Tree::real();
+            let v = drives::removed(&t, &args[2]);
+            drives::publish(&t);
+            v
+        }
         _ => {
             eprintln!("usage: nexa-brokerd serve | call ACTION [JSON-ARGS] | exec | drive-added NAME | drive-removed NAME");
             std::process::exit(2);

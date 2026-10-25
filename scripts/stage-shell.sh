@@ -14,7 +14,7 @@ find "$rootfs/usr/local/lib/nexa-shell/nexa_shell" -name '__pycache__' -exec rm 
 
 # ("foryou" is the desktop card; nexa-desktop is the session launcher, see
 # generate-configs.sh - never reuse that name.)
-for panel in nexus start control dock launchpad foryou; do
+for panel in nexus start control dock launchpad foryou drives; do
     printf '%s\n' \
         '#!/bin/sh' \
         '. /usr/local/lib/nexa-wayland-env.sh' \
