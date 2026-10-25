@@ -91,6 +91,9 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [ ] M4-M6: private index, screen OCR, offline voice
 - [ ] Download the model on the HP and time real answers there
 
+## 4c2. Nexa MicroBrain, Nexa Defender, Files (plan: TODOnexa_inter.md, 2026-10-25)
+- [ ] One small Rust service (`nexa-microbrain`) for the 12 features (HabitCore, SmartFreeze, FutureLoad, PocketWorkspace, MiniSkill, StorageDNA, MicroGuard, NanoAgents, OfflineFirst, RecoveryMap, ZeroSearch, AdaptivePulse) on top of the existing services; Nexa Defender; a better Files app; 2/4/8 GB profiles. Details and order of work in TODOnexa_inter.md
+
 ## 4d. Nexa Mobile (plan: docs/MOBILE_PLAN.md, 2026-10-25)
 - [ ] P0 aarch64 builds + `postmarketos-ui-nexa` (NexaOS as a postmarketOS UI), QEMU aarch64 image
 - [ ] P1 reference phone (OnePlus 6/6T): boot, Wi-Fi, touch, shell, rotation, on-screen keyboard *(needs the phone)*
