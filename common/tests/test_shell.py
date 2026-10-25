@@ -15,21 +15,21 @@ def check(label, cond, detail=""):
 
 # ---- themes
 home = tempfile.mkdtemp()
-check("defaults with no saved settings", themes.load_settings(home) == {"theme": "horizon", "opacity": themes.DEFAULT_OPACITY, "glass": True, "icon_style": "colour"})
+check("defaults with no saved settings", themes.load_settings(home) == {"theme": "horizon", "opacity": themes.DEFAULT_OPACITY, "glass": True, "icon_style": "colour", "glass_tint": "tinted"})
 applied = themes.apply("nebula", 0.5, home=home, reload=False)
-check("apply returns what it applied", applied == {"theme": "nebula", "opacity": 0.5, "glass": True, "icon_style": "colour"}, str(applied))
+check("apply returns what it applied", applied == {"theme": "nebula", "opacity": 0.5, "glass": True, "icon_style": "colour", "glass_tint": "tinted"}, str(applied))
 for rel in ("waybar/style.css", "mako/config", "foot/foot.ini", "sway/config.d/20-nexa-theme.conf",
             "gtk-3.0/settings.ini", "hypr/nexa-theme.conf", "swaylock/config", "nexa/theme.json"):
     check(f"apply writes ~/.config/{rel}", os.path.isfile(os.path.join(home, ".config", rel)))
 css = open(os.path.join(home, ".config/waybar/style.css")).read()
 check("bar uses the theme accent and transparency",
       themes.THEMES["nebula"]["accent"] in css and "rgba(22, 10, 36, 0.50)" in css, css[:200])
-check("settings persist", themes.load_settings(home) == {"theme": "nebula", "opacity": 0.5, "glass": True, "icon_style": "colour"})
+check("settings persist", themes.load_settings(home) == {"theme": "nebula", "opacity": 0.5, "glass": True, "icon_style": "colour", "glass_tint": "tinted"})
 themes.apply(None, None, home=home, reload=False)
 check("apply --saved reuses the saved theme", themes.load_settings(home)["theme"] == "nebula")
 themes.apply("not-a-theme", 7, home=home, reload=False)
 s = themes.load_settings(home)
-check("unknown theme keeps the current one; opacity is clamped", s == {"theme": "nebula", "opacity": themes.MAX_OPACITY, "glass": True, "icon_style": "colour"}, str(s))
+check("unknown theme keeps the current one; opacity is clamped", s == {"theme": "nebula", "opacity": themes.MAX_OPACITY, "glass": True, "icon_style": "colour", "glass_tint": "tinted"}, str(s))
 themes.apply(None, None, home=home, reload=False, glass=False)
 check("glass windows can be turned off and stay off", themes.load_settings(home)["glass"] is False)
 themes.apply("nebula", None, home=home, reload=False)
@@ -58,7 +58,9 @@ for key, t in themes.THEMES.items():
     check(f"theme '{key}' has 8 terminal colours", len(t["term"]) == 8)
 for key, t in themes.THEMES.items():
     pal = themes.app_palette(t)
-    ok = all(isinstance(v, str) and len(v) == 7 and v.startswith("#") for v in pal.values())
+    # The glass edge light is the one see-through colour (rgba); none without glass.
+    ok = all(isinstance(v, str) and len(v) == 7 and v.startswith("#") for k, v in pal.items() if k != "edge") \
+        and pal["edge"] == "rgba(255, 255, 255, 0.00)"
     check(f"theme '{key}' app palette is complete hex colours", ok and {"bg", "text", "accent", "on_accent"} <= set(pal), str(pal))
 css = themes.app_palette_css(themes.THEMES["horizon"])
 check("palette CSS defines @nexa_ colours", css.count("@define-color nexa_") == len(themes.app_palette(themes.THEMES["horizon"])))

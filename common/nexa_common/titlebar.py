@@ -9,7 +9,9 @@ from gi.repository import Gio, GLib, Gtk, Gdk
 from . import compositor, design, themes
 
 CSS = b"""
-headerbar.nexa-titlebar { background-image: none; background-color: @nexa_titlebar; color: @nexa_text; border: none; box-shadow: none; }
+headerbar.nexa-titlebar { background-image: none; background-color: @nexa_titlebar; color: @nexa_text; border: none;
+                          box-shadow: inset 0 1px @nexa_edge; }
+menu, .menu, .context-menu, popover.background { box-shadow: inset 0 1px @nexa_edge; }
 headerbar.nexa-titlebar .title { color: @nexa_text_strong; font-weight: 600; }
 headerbar.nexa-titlebar button.nexa-hexbtn,
 headerbar.nexa-titlebar button.nexa-hexbtn:hover,
@@ -32,9 +34,9 @@ def _load_palette(*_args):
     """(Re)define the @nexa_* colours from the saved theme. Called again when
     the theme changes, which restyles every open window of this app."""
     settings = themes.load_settings()
-    glass = glass_alpha() if settings["glass"] else None
+    glass = glass_alpha(settings["glass_tint"]) if settings["glass"] else None
     t = themes.THEMES[settings["theme"]]
-    _palette.load_from_data(themes.app_palette_css(t, glass).encode())
+    _palette.load_from_data(themes.app_palette_css(t, glass, settings["glass_tint"]).encode())
     themes.follow_icon_theme()  # the icons shift with the colours (NexaHexa-<theme>)
     pal = themes.app_palette(t)
     _colors.update({k: _rgb(pal[k]) for k in ("accent", "crit", "muted", "on_accent", "text")})
@@ -42,10 +44,9 @@ def _load_palette(*_args):
         area.queue_draw()
 
 
-def glass_alpha():
-    """How solid glass windows are: Hyprland blurs what is behind them, so
-    they can be clearer; Sway can't blur, so they stay nearly solid there."""
-    return 0.84 if compositor.which() == "hyprland" else 0.94
+def glass_alpha(tint=themes.DEFAULT_GLASS_TINT):
+    """How solid glass windows are, here (see themes.glass_alpha)."""
+    return themes.glass_alpha(compositor.which(), tint)
 
 
 def _ensure_css():

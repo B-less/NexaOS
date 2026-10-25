@@ -35,7 +35,8 @@ def card_css(t, pal):
     ar, ag, ab = (int(c * 255) for c in _rgb(t["accent"]))
     return f"""
 #nx-card {{ background-color: rgba({r}, {g}, {b}, 0.78); border-radius: 16px;
-            border: 1px solid rgba({ar}, {ag}, {ab}, 0.35); padding: 14px 16px; }}
+            border: 1px solid rgba({ar}, {ag}, {ab}, 0.35); padding: 14px 16px;
+            box-shadow: inset 0 1px rgba(255, 255, 255, 0.14); }}
 #nx-card-title {{ color: {pal['text_strong']}; font-family: Inter, sans-serif; font-weight: 700; font-size: 11pt; }}
 #nx-card-clock {{ color: {pal['muted']}; font-family: "JetBrains Mono", monospace; font-size: 9pt; }}
 .nx-sugg {{ background: none; border: none; box-shadow: none; padding: 4px; border-radius: 10px; color: {pal['text']}; }}

@@ -768,7 +768,7 @@ static const char *CSS =
     "@define-color nexa_text #d9e0f6; @define-color nexa_text_strong #e6ecff;"
     "@define-color nexa_muted #8f9bc4; @define-color nexa_accent #4da3ff;"
     "@define-color nexa_accent_hover #6db4ff; @define-color nexa_on_accent #080c1e;"
-    "@define-color nexa_selected #264779;"
+    "@define-color nexa_selected #264779; @define-color nexa_edge rgba(255, 255, 255, 0.13);"
     "* { font-family: Inter, sans-serif; }"
     "window { background-color: @nexa_bg_deep; color: @nexa_text; }"
     ".name { color: @nexa_text_strong; font-size: 11pt; }"
@@ -796,7 +796,7 @@ static const char *CSS =
     "scale slider { background-color: @nexa_text_strong; border-radius: 50%; min-width: 14px; min-height: 14px; border: none; box-shadow: none; }"
     /* Its own title bar: Hyprland draws none, so minimize/maximize/close live here. */
     "headerbar { background-image: none; background-color: @nexa_surface; color: @nexa_text_strong;"
-    "  border-bottom: 1px solid @nexa_border; box-shadow: none; min-height: 38px; padding: 0 8px; }"
+    "  border-bottom: 1px solid @nexa_border; box-shadow: inset 0 1px @nexa_edge; min-height: 38px; padding: 0 8px; }"
     "headerbar .title { font-weight: 600; color: @nexa_text_strong; }"
     "headerbar button.titlebutton { background-image: none; background-color: transparent; color: @nexa_text;"
     "  border: none; border-radius: 50%; box-shadow: none; min-width: 26px; min-height: 26px; padding: 0; }"

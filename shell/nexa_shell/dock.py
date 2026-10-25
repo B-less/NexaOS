@@ -137,6 +137,7 @@ class Dock(Gtk.ApplicationWindow):
             "divider": _rgba(t["muted"], 0.4),
             "logo": _rgba(t["accent"]),
         }
+        self.colours["light"] = themes.EDGE_LIGHT[s["glass_tint"]] * 2 if s["glass"] else 0.18
 
     def _icon(self, name):
         theme = Gtk.IconTheme.get_default()
@@ -324,6 +325,19 @@ class Dock(Gtk.ApplicationWindow):
         cr.fill_preserve()
         cr.set_source_rgba(*self.colours["edge"])
         cr.set_line_width(1)
+        cr.stroke()
+        # Edge light: a soft line of light along the top, fading at the
+        # rounded ends, so the Dock reads as a sheet of glass.
+        import cairo as _cairo
+        light = _cairo.LinearGradient(tray_x, 0, tray_x + tray_w, 0)
+        a = self.colours["light"]
+        light.add_color_stop_rgba(0.0, 1, 1, 1, 0)
+        light.add_color_stop_rgba(0.5, 1, 1, 1, a)
+        light.add_color_stop_rgba(1.0, 1, 1, 1, 0)
+        cr.move_to(tray_x + 14, tray_y + 1.5)
+        cr.line_to(tray_x + tray_w - 14, tray_y + 1.5)
+        cr.set_source(light)
+        cr.set_line_width(1.2)
         cr.stroke()
 
         icon_bottom = h - BOTTOM - PAD

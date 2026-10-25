@@ -223,6 +223,20 @@ class SettingsWindow(Gtk.Window):
         glass_row.pack_start(self._glass, False, False, 0)
         page.pack_start(glass_row, False, False, 0)
 
+        # Glass look: clear (more see-through, frosted) or tinted (the
+        # theme's colour); both with a light along the top edge.
+        glass_look = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        glass_look.pack_start(self._field_label("Glass look: clear and frosted, or tinted with the theme's colour"), True, True, 0)
+        self._glass_tint = Gtk.ComboBoxText(valign=Gtk.Align.CENTER)
+        for key, label in (("clear", "Clear"), ("tinted", "Tinted")):
+            self._glass_tint.append(key, label)
+        self._glass_tint.set_active_id(saved.get("glass_tint", "tinted"))
+        self._glass_tint.set_sensitive(saved["glass"])
+        self._glass_tint.connect("changed", lambda c: themes.apply(glass_tint=c.get_active_id()))
+        self._glass.connect("notify::active", lambda sw, _p: self._glass_tint.set_sensitive(sw.get_active()))
+        glass_look.pack_start(self._glass_tint, False, False, 0)
+        page.pack_start(glass_look, False, False, 0)
+
         # App icons: full colour, dark, or tinted in the theme's accent
         # (NexaHexa icons; they also follow the theme).
         icons_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)

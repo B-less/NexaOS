@@ -1335,6 +1335,10 @@ bindl = , XF86AudioMute, exec, nexa-media-key mute
 bindel = , XF86MonBrightnessUp, exec, nexa-media-key brightness-up
 bindel = , XF86MonBrightnessDown, exec, nexa-media-key brightness-down
 bindl = , switch:on:Lid Switch, exec, nexa-lid
+
+# Glass (clear or tinted) and the edge-lit borders, from nexa-theme: last, so
+# it has the final word over the blur settings above.
+source = ~/.config/hypr/nexa-glass.conf
 HYPR_EOF
 
     # Starts the user's desktop: Hyprland where a real GPU driver is loaded
