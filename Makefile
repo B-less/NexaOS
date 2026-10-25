@@ -318,6 +318,10 @@ test-titlebar: nexa-apps
 test-nexa-link: native
 	@sh scripts/test-nexa-link.sh
 
+# Nexa Link's screens (Settings, pop-ups, Files) against a real second device.
+test-nexa-link-ui: native
+	@sh scripts/test-nexa-link-ui.sh
+
 # Several selected files dragged onto a folder with a real mouse (grid, list).
 test-files-drag: native
 	@sh scripts/test-files-drag.sh

@@ -913,11 +913,20 @@ class FileManagerWindow(Gtk.Window):
             ("Rename…", self._on_rename, n == 1),
             None,
             ("Copy Location", self._on_copy_location),
+            ("Send to a Device…", self._on_send_to_device, bool(sel) and not any(i["is_dir"] for i in sel)),
             ("Move to Trash", self._on_trash),
             ("Delete for Good…", self._on_delete_forever),
             None,
             ("Properties", lambda _b: self._properties()),
         ]
+
+    def _on_send_to_device(self, _b=None):
+        """Nexa Link: send the selected files to a nearby device."""
+        from nexa_common import linkui
+        files = [i["path"] for i in self._selected() if not i["is_dir"]]
+        chosen = linkui.pick_device(self, len(files)) if files else None
+        if chosen:
+            linkui.send_files(chosen[0], chosen[1], files, lambda text, error=False: self.status.set_text(text))
 
     def _background_menu(self):
         if self.in_trash:

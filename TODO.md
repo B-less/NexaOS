@@ -102,8 +102,9 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 
 - [~] Nexa Link (design: docs/NEXA_LINK.md): PC and phone connect automatically once paired (QR), Noise-encrypted with pinned keys, discovery that changes nothing, per-feature permissions, no cloud; `nexa-linkd` (Rust). L1 pairing + channel (PC to PC first) ... L6 fuzzing and an outside review
   - [x] L1 built (2026-10-25): `nexa-linkd` (Rust, snow/Noise XX): device keys, pairing by code with the same six digits on both screens, Nexa-only signals (random 32 bytes to anything else), files asked and checksummed and never overwriting, Nexa Drop (receive from any Nexa device for a few minutes, each item asked), Forget; Landlock; firewall opens 47420/47421 to the local network only; starts with the session. `make test-nexa-link` (3 machines)
-  - [ ] Settings > Nexa Link page (QR, devices, permissions, Drop switch) and the "accept this file?" notification
-  - [ ] L2-L6: find my phone, battery, notifications, calls (needs Nexa Mobile), clipboard, fuzzing, outside review
+  - [x] Screens (2026-10-25): Settings > Nexa Link (this device, Nexa Drop switch, Pair a device with a QR code, Enter a pairing code, devices with Ask/Always/Never, Send file, Ring, Forget; devices taking drops); pop-ups (file offered Save/Decline, saved Open/Show in Files, messages and links Copy/Open, Ring with a tone until Stop); Files > Send to a Device. Works PC to PC today. `make test-nexa-link-ui`: 13 checks against a real second device
+  - [x] Ring (find a device) and messages/links, paired devices only (an unpaired one's message is asked first)
+  - [ ] L2-L6: battery and notifications from the phone, calls (need Nexa Mobile), clipboard (off by default), fuzzing, outside review
 
 ## 5. Hardware
 - [~] Bluetooth: kernel + bluez + Bluetooth audio + bt-probe firmware re-bind + Settings page with pairing agent (tested against a mock BlueZ; needs a real adapter: HP test)

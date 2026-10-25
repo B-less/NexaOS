@@ -1122,8 +1122,10 @@ exec nexa-patternd serve
 exec nexa-foryou
 # USB sticks and SD cards on the desktop (nexa_shell drives).
 exec nexa-drives
-# Nexa Link: paired devices find each other (silent until one is paired).
+# Nexa Link: paired devices find each other (silent until one is paired),
+# and its pop-ups (files offered, received, messages, Ring).
 exec nexa-linkd serve
+exec nexa-linknotify
 # Nexa Doctor: restarts desktop parts that stop, fixes common problems.
 exec nexa-doctor watch
 
@@ -1240,6 +1242,7 @@ exec-once = nexa-patternd serve
 exec-once = nexa-foryou
 exec-once = nexa-drives
 exec-once = nexa-linkd serve
+exec-once = nexa-linknotify
 exec-once = nexa-doctor watch
 exec-once = nexa-keyboard-layout
 

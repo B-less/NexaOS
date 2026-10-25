@@ -260,6 +260,7 @@ def attach_titlebar(window, title):
     # only moved when the button was pressed. No button for those; apps set
     # their size after this, so it follows the window's "resizable".
     max_btn.set_no_show_all(True)
+    max_btn.get_child().show()  # show_all() skips it now: its hexagon too
     max_btn.set_visible(window.get_resizable())
     window.connect("notify::resizable", lambda w, _p: max_btn.set_visible(w.get_resizable()))
 

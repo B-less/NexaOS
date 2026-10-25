@@ -95,7 +95,7 @@ devices know you're there.
 | Phase | What | Done when |
 |---|---|---|
 | L1 | Keys, QR pairing, Noise channel, discovery with rotating codes, files with Nexa Drop; PC to PC first | **built (2026-10-25)**: `nexa-linkd` (Rust), `make test-nexa-link` pairs a PC and a phone on a private network with a stranger listening: same six digits on both, signals random to the stranger, files asked and checksummed, the stranger refused, Drop asked first, Forget cuts off at once |
-| L2 | Files, links, find my phone, battery | headless test between two machines |
+| L2 | Files, links, find my phone, battery | files, links and Ring **built (2026-10-25)** with their screens (Settings > Nexa Link, pop-ups, Files > Send to a Device), `make test-nexa-link-ui`; battery waits for Nexa Mobile |
 | L3 | Notifications and replies, media controls | |
 | L4 | Calls and texts from the PC (with Nexa Mobile P3) | a call answered on the PC |
 | L5 | Clipboard and remote input (opt-in), continue where you were | |

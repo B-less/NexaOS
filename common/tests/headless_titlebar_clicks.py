@@ -95,6 +95,8 @@ n, scratch = node()
 check("the window is on screen", n is not None and not scratch, str(n and n.get("rect")))
 buttons = {b.get_tooltip_text(): b for b in bar.get_children() if isinstance(b, Gtk.Button)}
 check("it has the three buttons", set(buttons) == {"Minimize", "Maximize", "Close"}, str(list(buttons)))
+drawn = {name for name, b in buttons.items() if b.get_mapped() and b.get_child() and b.get_child().get_mapped()}
+check("...all three drawn (not an empty button)", drawn == {"Minimize", "Maximize", "Close"}, str(drawn))
 
 before = n["rect"]["width"], n["rect"]["height"]
 click(win, bar, buttons["Maximize"])

@@ -11,6 +11,9 @@
 //!   nexa-linkd devices | nearby | status
 //!   nexa-linkd send DEVICE-ID|ADDRESS FILE [--json]
 //!   nexa-linkd ping DEVICE-ID
+//!   nexa-linkd ring DEVICE-ID            make a paired device ring (find it)
+//!   nexa-linkd text DEVICE-ID|ADDRESS TEXT   send a message or a link
+//!   nexa-linkd qr TEXT                   a QR code as rows of 0/1 (for Settings to draw)
 //!   nexa-linkd drop MINUTES              receive from any Nexa device (0 = off)
 //!   nexa-linkd allow DEVICE-ID ask|always|never   files from that device
 //!   nexa-linkd forget DEVICE-ID
@@ -305,6 +308,22 @@ fn receive_file(ch: &mut channel::Channel, state: &Shared, peer: Option<&Peer>, 
     }
 }
 
+/// A message or a link: shown at once from a paired device; from an
+/// unpaired one (Nexa Drop) only after the person says yes.
+fn receive_text(ch: &mut channel::Channel, state: &Shared, peer: Option<&Peer>, from: &str, msg: &Value) -> io::Result<()> {
+    let text: String = msg["text"].as_str().unwrap_or("").chars().filter(|c| !c.is_control() || *c == '\n').take(4000).collect();
+    if text.trim().is_empty() {
+        return ch.send_json(&json!({"t": "decline", "why": "empty"}));
+    }
+    if peer.is_none()
+        && !ask_user(state, json!({"event": "offer", "kind": "text", "from": from, "device": null, "paired": false, "name": "a message", "size": text.len()}))
+    {
+        return ch.send_json(&json!({"t": "decline"}));
+    }
+    emit(state, json!({"event": "text", "from": from, "text": text, "paired": peer.is_some()}));
+    ch.send_json(&json!({"t": "done"}))
+}
+
 fn handle_conn(stream: std::net::TcpStream, state: Shared) {
     let (secret, peers, drop_open, my_name) = {
         let st = state.lock().unwrap();
@@ -324,6 +343,12 @@ fn handle_conn(stream: std::net::TcpStream, state: Shared) {
         let r = match msg["t"].as_str().unwrap_or("") {
             "ping" => ch.send_json(&json!({"t": "pong"})),
             "offer" if msg["kind"] == "file" => receive_file(&mut ch, &state, peer.as_ref(), &from, &msg),
+            "offer" if msg["kind"] == "text" => receive_text(&mut ch, &state, peer.as_ref(), &from, &msg),
+            // Only a paired device may make this one ring.
+            "ring" if peer.is_some() => {
+                emit(&state, json!({"event": "ring", "from": from}));
+                ch.send_json(&json!({"t": "ringing"}))
+            }
             "bye" => return,
             _ => ch.send_json(&json!({"t": "error", "why": "not understood"})),
         };
@@ -645,6 +670,46 @@ fn ping(store: &Store, target: &str) -> io::Result<()> {
     }
 }
 
+fn ring(store: &Store, target: &str) -> io::Result<()> {
+    let (mut ch, to) = open(store, target)?;
+    ch.send_json(&json!({"t": "ring"}))?;
+    let r = ch.recv_json()?;
+    ch.send_json(&json!({"t": "bye"})).ok();
+    if r["t"] == "ringing" {
+        println!("\"{to}\" is ringing.");
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, "it didn't ring"))
+    }
+}
+
+fn send_text(store: &Store, target: &str, text: &str, out: &Out) -> io::Result<()> {
+    let (mut ch, to) = open(store, target)?;
+    ch.send_json(&json!({"t": "offer", "kind": "text", "text": text}))?;
+    ch.set_timeout(ASK_TIMEOUT.as_secs() + 10);
+    let r = ch.recv_json()?;
+    ch.send_json(&json!({"t": "bye"})).ok();
+    if r["t"] == "done" {
+        out.say("sent", json!({"to": to}), format!("Sent to \"{to}\"."));
+    } else {
+        out.say("declined", json!({"to": to}), format!("\"{to}\" declined."));
+    }
+    Ok(())
+}
+
+/// A QR code for TEXT as rows of 0 and 1 (1 = dark), quiet zone not
+/// included: Settings draws it in the theme's colours.
+fn qr(text: &str) -> io::Result<()> {
+    let code = qrcode::QrCode::new(text.as_bytes()).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    let w = code.width();
+    let colors = code.to_colors();
+    let rows: Vec<String> = colors.chunks(w)
+        .map(|r| r.iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect())
+        .collect();
+    println!("{}", json!({"size": w, "rows": rows}));
+    Ok(())
+}
+
 fn print(v: Value) -> io::Result<()> {
     println!("{v}");
     if v["ok"] == false {
@@ -670,6 +735,9 @@ fn run(args: &[String]) -> io::Result<()> {
         (Some("pair-accept"), [code]) => pair_accept(&store, code, flag("--yes"), &out),
         (Some("send"), [target, file]) => send_file(&store, target, Path::new(file), &out),
         (Some("ping"), [target]) => ping(&store, target),
+        (Some("ring"), [target]) => ring(&store, target),
+        (Some("text"), [target, text]) => send_text(&store, target, text, &out),
+        (Some("qr"), [text]) => qr(text),
         (Some(cmd @ ("devices" | "nearby" | "status")), _) => print(ctl(json!({"cmd": cmd}))?),
         (Some("drop"), [minutes]) => print(ctl(json!({"cmd": "drop", "minutes": minutes.parse::<u64>().unwrap_or(0)}))?),
         (Some("allow"), [id, files]) => print(ctl(json!({"cmd": "allow", "id": id, "files": files}))?),
@@ -686,7 +754,7 @@ fn run(args: &[String]) -> io::Result<()> {
         }
         _ => {
             eprintln!("usage: nexa-linkd serve | id | name NAME | pair-offer | pair-accept CODE | devices | nearby | status\n       \
-                       send ID|ADDRESS FILE | ping ID | drop MINUTES | allow ID ask|always|never | forget ID | watch | answer OFFER yes|no");
+                       send ID|ADDRESS FILE | ping ID | ring ID | text ID|ADDRESS TEXT | qr TEXT | drop MINUTES | allow ID ask|always|never | forget ID | watch | answer OFFER yes|no");
             std::process::exit(2);
         }
     }
