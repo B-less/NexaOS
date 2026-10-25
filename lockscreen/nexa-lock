@@ -10,18 +10,28 @@
 #
 # --daemonize: returns once the screen is locked, so the lid handler can
 # suspend right after and swayidle keeps running (screen-off still works).
-set -eu
+set -u
 
 # Already locked (the idle timer and the lid can both fire): nothing to do.
 pgrep -x swaylock >/dev/null 2>&1 && exit 0
 
-set -- --daemonize --screenshots --effect-blur 9x4 --effect-vignette 0.4:0.6 \
-    --clock --timestr "%H:%M" --datestr "%A, %d %B" \
-    --indicator --indicator-radius 120 --indicator-thickness 8 \
-    --font Inter --fade-in 0.25 --show-failed-attempts
-
+# What to do, said on the lock screen itself: swaylock has no message
+# option, but the clock's second line is free text. The ring stays visible
+# before any key is pressed (it used to appear only once typing started).
 if [ -f /etc/nexa/login-required ]; then
-    set -- "$@" --ignore-empty-password
+    prompt="Type your password to unlock"
+    extra="--ignore-empty-password"
+else
+    prompt="Press Enter to unlock"
+    extra=""
 fi
+common="--daemonize --clock --timestr %H:%M --indicator --indicator-idle-visible --indicator-radius 120 --indicator-thickness 8 --font Inter --show-failed-attempts"
 
-exec swaylock "$@"
+# shellcheck disable=SC2086
+swaylock $common --datestr "$prompt" $extra --screenshots --effect-blur 9x4 --effect-vignette 0.4:0.6 --fade-in 0.25 && exit 0
+# The blurred-screenshot lock can fail to start (no screen capture, an
+# effect the GPU path refuses): lock anyway, on the plain theme colour, so
+# pressing Lock never leaves the screen unlocked.
+logger -t nexa-lock "swaylock with effects failed; locking with a plain background" 2>/dev/null || true
+# shellcheck disable=SC2086
+exec swaylock $common --datestr "$prompt" $extra --color 0c1228

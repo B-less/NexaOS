@@ -100,12 +100,22 @@ def focus_app(app_id):
             return False
         pid = mine[0]["pid"]
         if mine[0]["minimized"]:
+            # Silently: a plain movetoworkspace moved the focus (and the
+            # pointer) on its own, before the window was raised.
             active = json.loads(_call(["hyprctl", "activeworkspace", "-j"]) or "{}").get("id", 1)
-            _hypr("movetoworkspace", f"{active},pid:{pid}")
-        return _hypr("focuswindow", f"pid:{pid}")
+            _hypr("movetoworkspacesilent", f"{active},pid:{pid}")
+        ok = _hypr("focuswindow", f"pid:{pid}")
+        # Every window floats; focusing one doesn't raise it, so a restored
+        # window came back *behind* the one in front, under the pointer.
+        _hypr("alterzorder", f"top,pid:{pid}")
+        return ok
     if wm == "sway":
         sel = f'[app_id="{app_id}"]'
-        return _sway(f"{sel} focus") or _sway(f"{sel} scratchpad show")
+        mine = [w for w in windows() if w["app_id"] == app_id.lower()]
+        if any(w["minimized"] for w in mine):
+            # Out of the scratchpad: shown, focused and on top.
+            return _sway(f"{sel} scratchpad show") or _sway(f"{sel} focus")
+        return _sway(f"{sel} focus")
     return False
 
 
@@ -151,8 +161,19 @@ def reload():
     return False
 
 
+LOGGED_OUT = "nexa-logged-out"
+
+
 def logout():
-    """End the desktop session (back to the login screen)."""
+    """End the desktop session. The session supervisor (the "sway" service)
+    starts a new one, which opens locked: the marker left here tells
+    nexa-login-lock to lock even where the boot doesn't ask for a password."""
+    try:
+        run_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+        with open(os.path.join(run_dir, LOGGED_OUT), "w"):
+            pass
+    except OSError:
+        pass
     wm = which()
     if wm == "hyprland":
         return _hypr("exit")

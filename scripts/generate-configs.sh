@@ -379,22 +379,42 @@ depend() {
     after devfs
 }
 
+# The desktop is started again whenever it ends: "Log out" ends it (the
+# new one opens locked, see nexa-login-lock), and so does a crash. Without
+# this, logging out left a dark screen. Five ends within 10 s each in a row
+# stop the loop instead of flickering forever.
 start() {
     ebegin "Starting Nexa Wayland session"
     mkdir -p /var/log
-    /usr/local/bin/nexa-session --wayland-only >/var/log/nexa-session.log 2>&1 &
+    rm -f /run/nexa-session.stop
+    (
+        quick=0
+        while [ ! -f /run/nexa-session.stop ]; do
+            began=$(date +%s)
+            /usr/local/bin/nexa-session --wayland-only >>/var/log/nexa-session.log 2>&1
+            [ -f /run/nexa-session.stop ] && break
+            if [ $(( $(date +%s) - began )) -lt 10 ]; then quick=$((quick + 1)); else quick=0; fi
+            if [ $quick -ge 5 ]; then
+                echo "nexa-session: ended 5 times in a row within 10 s; not starting it again" >>/var/log/nexa-session.log
+                break
+            fi
+            sleep 1
+        done
+    ) &
     echo $! > /run/nexa-session.pid
-    eend $?
+    eend 0
 }
 
 stop() {
     ebegin "Stopping Nexa Wayland session"
+    touch /run/nexa-session.stop
     if [ -f /run/nexa-session.pid ]; then
         kill "$(cat /run/nexa-session.pid)" 2>/dev/null || true
         rm -f /run/nexa-session.pid
     fi
-    pkill -f "sway" 2>/dev/null || true
-    eend $?
+    pkill -x sway 2>/dev/null || true
+    pkill -x Hyprland 2>/dev/null || true
+    eend 0
 }
 SWAY_EOF
     chmod +x "$MNT_DIR/etc/init.d/sway"
@@ -1237,6 +1257,12 @@ input {
 
 # Three fingers sideways switches workspaces, like a Mac trackpad.
 gesture = 3, horizontal, workspace
+
+# The pointer stays where you put it: focusing a window (the Dock bringing
+# one back) used to jump it there, onto whatever window was on top.
+cursor {
+    no_warps = true
+}
 
 misc {
     disable_hyprland_logo = true
