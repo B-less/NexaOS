@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gio, GLib, Gtk, Gdk
 
-from . import compositor, design, themes
+from . import compositor, design, magic, themes
 
 CSS = b"""
 headerbar.nexa-titlebar { background-image: none; background-color: @nexa_titlebar; color: @nexa_text; border: none;
@@ -21,6 +21,7 @@ headerbar.nexa-titlebar button.nexa-hexbtn:active { background-image: none; back
 _provider = None
 _palette = None
 _monitor = None
+_magic_monitor = None
 _colors = {}            # the theme's colours as RGB tuples, for drawing
 _hex_buttons = []       # drawing areas to repaint when the theme changes
 
@@ -35,6 +36,11 @@ def _load_palette(*_args):
     the theme changes, which restyles every open window of this app."""
     settings = themes.load_settings()
     glass = glass_alpha(settings["glass_tint"]) if settings["glass"] else None
+    # A living background (nexa-living) shows through this app's glass, so
+    # an app that has one gets glass, at least as clear as the setting says.
+    living = magic.window_alpha(GLib.get_prgname() or "")
+    if living is not None:
+        glass = living if glass is None else min(glass, living)
     t = themes.THEMES[settings["theme"]]
     _palette.load_from_data(themes.app_palette_css(t, glass, settings["glass_tint"]).encode())
     themes.follow_icon_theme()  # the icons shift with the colours (NexaHexa-<theme>)
@@ -76,6 +82,10 @@ def _ensure_css():
     # Follow theme changes made in Settings while the app is open.
     _monitor = Gio.File.new_for_path(themes.settings_path()).monitor_file(Gio.FileMonitorFlags.NONE, None)
     _monitor.connect("changed", _load_palette)
+    # ...and changes to its living background (Settings > Magic Layer).
+    global _magic_monitor
+    _magic_monitor = Gio.File.new_for_path(magic.path()).monitor_file(Gio.FileMonitorFlags.NONE, None)
+    _magic_monitor.connect("changed", _load_palette)
 
 
 def _hex_button(role, tooltip):
@@ -242,9 +252,9 @@ def _set_app_id():
 
 def attach_titlebar(window, title):
     """Give `window` a custom titlebar with minimize/maximize/close buttons."""
-    _ensure_css()
     if not window.get_realized():
-        _set_app_id()  # read by GTK when the window is first shown
+        _set_app_id()  # read by GTK when the window is first shown (and by the palette: living glass)
+    _ensure_css()
 
     bar = Gtk.HeaderBar()
     bar.set_show_close_button(False)

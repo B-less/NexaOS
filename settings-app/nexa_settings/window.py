@@ -13,6 +13,7 @@ from . import privileged
 from .connections import BluetoothPage, VpnPage
 from .field import CSS as FIELD_CSS, LivingField
 from .link_page import LinkPage
+from .magic_page import MagicPage
 from .privacy_page import PrivacyPage
 from .system_pages import StartupPage, UpdatesPage, UsersPage
 from nexa_common import actionui, compositor, mind, persist, sysconf, themes
@@ -51,7 +52,7 @@ WALLPAPER_GALLERY = "/usr/share/backgrounds/nexaos/gallery"
 LOGIN_REQUIRED = "/etc/nexa/login-required"  # written by the OS installer
 SKIP_LOGIN_LOCK = os.path.expanduser("~/.config/nexa/skip-login-lock")
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
-PAGES = ("Overview", "Personalization", "Bluetooth", "Nexa Link", "VPN", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
+PAGES = ("Overview", "Personalization", "Magic Layer", "Bluetooth", "Nexa Link", "VPN", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
 
 
 TOPBAR_FILE = os.path.expanduser("~/.config/nexa/topbar")
@@ -122,6 +123,8 @@ class SettingsWindow(Gtk.Window):
         self.field = LivingField(self)
         self.stack.add_named(self.field, "Overview")
         self.stack.add_named(self._scrolled(self._build_appearance_page()), "Personalization")
+        self.magic_page = MagicPage(self)
+        self.stack.add_named(self._scrolled(self.magic_page.page), "Magic Layer")
         self.bluetooth_page = BluetoothPage(self)
         self.stack.add_named(self._scrolled(self.bluetooth_page.page), "Bluetooth")
         self.link_page = LinkPage(self)

@@ -1128,6 +1128,8 @@ exec sh -c 'nexa-theme apply --saved --no-reload >/dev/null 2>&1; swaymsg reload
 # The Dock, the For you card, drives on the desktop and Nexa Link's pop-ups,
 # in one process (nexa_shell parts): about 65 MB less than four.
 exec nexa-parts
+# Living backgrounds (C): the wallpaper, and each Nexa app's style behind its glass.
+exec nexa-living
 exec nexa-idle
 exec nexa-battery-watch
 # Tell nexa-kerneld which app is in front (it gets a CPU floor).
@@ -1248,6 +1250,7 @@ exec-once = swaybg -i /usr/share/backgrounds/nexaos/wallpaper.png -m fill
 exec-once = nexa-bar
 exec-once = mako
 exec-once = nexa-parts
+exec-once = nexa-living
 exec-once = nexa-idle
 exec-once = nexa-battery-watch
 exec-once = nexa-kerneld focus-watch

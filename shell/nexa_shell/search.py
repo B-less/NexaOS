@@ -11,6 +11,7 @@ from nexa_common import desktopapps
 # Settings pages: (page argument for nexa-settings, title, extra words people search for)
 SETTINGS_PAGES = (
     ("personalization", "Personalization", "theme wallpaper background colour color dark light glass transparency"),
+    ("magic", "Magic Layer", "living background animated wallpaper animation effects motion particles circuit"),
     ("bluetooth", "Bluetooth", "headphones mouse keyboard pair speaker"),
     ("vpn", "VPN", "wireguard private network tunnel"),
     ("system", "System", "hostname computer name live usb keep files persistence"),

@@ -24,5 +24,10 @@ for dir in /src/tools-c/*/; do
     rm -f "$dir/$name"
     echo "built $name: $(stat -c %s /src/build/native/$name) bytes"
 done
+# Settings draws its style previews with the renderer'"'"'s own code.
+make -s -C /src/tools-c/nexa-living nexa-living-preview
+install -m 0755 /src/tools-c/nexa-living/nexa-living-preview /src/build/native/nexa-living-preview
+rm -f /src/tools-c/nexa-living/nexa-living-preview
+echo "built nexa-living-preview: $(stat -c %s /src/build/native/nexa-living-preview) bytes"
 chown -R "$OWNER" /src/build/native
 '

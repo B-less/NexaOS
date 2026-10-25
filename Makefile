@@ -350,6 +350,16 @@ test-tile-clicks:
 test-locker: native
 	@sh scripts/test-locker.sh
 
+# The Living Visual Engine (nexa-living, C) with real apps in a headless
+# Sway: draws, follows windows, holds still unfocused, Static/Off, theme
+# colours, app clicks; prints measured CPU, memory and frame time.
+test-living: native
+	@sh scripts/test-living.sh
+
+# Settings > Magic Layer driven like a person, with the real renderer.
+test-magic-page: native
+	@sh scripts/test-magic-page.sh
+
 # nexa-sessiond with real accounts: one desktop per person, who may switch,
 # lock on leaving, sign-out going back, the first desktop's restart.
 test-sessions: native

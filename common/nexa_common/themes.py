@@ -679,7 +679,10 @@ def apply(name=None, opacity=None, home=None, reload=True, glass=None, icon_styl
     cfg = _config_dir(home)
     _write(os.path.join(cfg, "waybar", "style.css"), waybar_css(t, opacity))
     _write(os.path.join(cfg, "mako", "config"), mako_config(t, opacity))
-    _write(os.path.join(cfg, "foot", "foot.ini"), foot_ini(t, opacity))
+    # The terminal is see-through enough for its living background, if it has one.
+    from . import magic
+    foot_alpha = magic.window_alpha("foot", home)
+    _write(os.path.join(cfg, "foot", "foot.ini"), foot_ini(t, opacity if foot_alpha is None else min(opacity, foot_alpha)))
     _write(os.path.join(cfg, "sway", "config.d", "20-nexa-theme.conf"), sway_conf(t))
     icon_theme = icon_theme_for(name, home, icon_style)
     _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t, icon_theme))
@@ -699,6 +702,10 @@ def apply(name=None, opacity=None, home=None, reload=True, glass=None, icon_styl
     _write(os.path.join(_data_dir(home), "gtksourceview-4", "styles", "nexa.xml"), sourceview_scheme(t))
     _write(settings_path(home), json.dumps({"theme": name, "opacity": round(opacity, 2), "glass": glass,
                                             "icon_style": icon_style, "glass_tint": glass_tint}) + "\n")
+    # The living backgrounds take the new colours too (nexa-living also
+    # notices lock.conf change; this makes it immediate).
+    from . import magic
+    magic.notify()
     if reload:
         _quiet(["pkill", "-USR2", "-u", str(os.getuid()), "-x", "waybar"])   # reload style
         _quiet(["makoctl", "reload"])
