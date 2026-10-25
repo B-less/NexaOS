@@ -1,0 +1,12 @@
+[Icon Theme]
+Name=NexaHexa-aurora-dark
+Comment=NexaOS icons, dark style, for the aurora theme
+Inherits=NexaHexa,Adwaita,hicolor
+Directories=scalable/apps
+
+[scalable/apps]
+Context=Applications
+Size=128
+MinSize=8
+MaxSize=512
+Type=Scalable

@@ -9,6 +9,10 @@
     <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
     <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
   </linearGradient>
+  <linearGradient id="nexa-clipboard-glyph" gradientUnits="userSpaceOnUse" x1="0" y1="2" x2="0" y2="22">
+    <stop offset="0" stop-color="#ffffff"/>
+    <stop offset="1" stop-color="#ffffff"/>
+  </linearGradient>
 </defs>
 <path d="M56.21 8.5 Q64 4 71.79 8.5 L108.17 29.5 Q115.96 34 115.96 43 L115.96 85 Q115.96 94 108.17 98.5 L71.79 119.5 Q64 124 56.21 119.5 L19.83 98.5 Q12.04 94 12.04 85 L12.04 43 Q12.04 34 19.83 29.5 Z" fill="url(#nexa-clipboard-bg)"/>
 <path d="M57.07 11 Q64 7 70.93 11 L106.44 31.5 Q113.36 35.5 113.36 43.5 L113.36 84.5 Q113.36 92.5 106.44 96.5 L70.93 117 Q64 121 57.07 117 L21.56 96.5 Q14.64 92.5 14.64 84.5 L14.64 43.5 Q14.64 35.5 21.56 31.5 Z" fill="none" stroke="url(#nexa-clipboard-sheen)" stroke-width="2"/>
@@ -18,7 +22,7 @@
 <line x1="8.5" y1="12" x2="15.5" y2="12" fill="none"/>
 <line x1="8.5" y1="16" x2="13" y2="16" fill="none"/>
 </g>
-<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+<g stroke="url(#nexa-clipboard-glyph)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
 <rect x="5" y="5" width="14" height="16" rx="2" fill="none"/>
 <rect x="9" y="3" width="6" height="4" rx="1" fill="none"/>
 <line x1="8.5" y1="12" x2="15.5" y2="12" fill="none"/>

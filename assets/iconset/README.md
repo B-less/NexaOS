@@ -25,6 +25,18 @@ hold app tiles and inherit everything else from NexaHexa.
 
 ![the variants](preview-themes.png)
 
+Each theme also has two more styles, chosen in Settings > Personalization
+("App icons: Colour / Dark / Tinted"), like iOS 18's dark and tinted icons
+but on NexaOS's hexagon:
+
+- **Dark** (`NexaHexa-<theme>-dark`): a dark hexagon in the theme's depth,
+  the glyph in the app's own colours;
+- **Tinted** (`NexaHexa-<theme>-tinted`): the same dark hexagon, every glyph
+  in the theme's accent - one colour across the desktop.
+
+Dark tiles have a faint light edge so they keep their shape on a dark
+desktop, and the NexaOS mark takes the theme's accent in every style.
+
 Once installed, `themes.icon_theme_for()` picks the variant for the current
 theme (written to GTK's settings.ini), and `themes.follow_icon_theme()`
 switches open apps, the Dock and the desktop live when the theme changes

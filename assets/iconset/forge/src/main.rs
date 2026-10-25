@@ -279,6 +279,42 @@ pub fn themed_colours(app: &App, t: &Theme) -> (String, String) {
 }
 
 fn app_svg_in(app: &App, glyph: &Icon, top: &str, bottom: &str) -> String {
+    tile_svg(app, glyph, &Tile { top: top.into(), bottom: bottom.into(), glyph_top: "#ffffff".into(),
+                                 glyph_bottom: "#ffffff".into(), shadow: 0.2, sheen: 0.35, edge: 0.0 })
+}
+
+/// How one tile is painted: the hexagon's gradient, the glyph's gradient,
+/// the glyph's shadow and the rim's light.
+pub struct Tile {
+    pub top: String,
+    pub bottom: String,
+    pub glyph_top: String,
+    pub glyph_bottom: String,
+    pub shadow: f64,
+    pub sheen: f64,
+    /// A faint light outline, so a dark tile keeps its shape on a dark desktop.
+    pub edge: f64,
+}
+
+/// The icon styles beside the full-colour one (iOS 18 has light, dark and
+/// tinted icons; these are NexaOS's own, on the hexagon):
+/// * dark: a dark hexagon in the theme's depth, the glyph in the app's colours;
+/// * tinted: the same dark hexagon, every glyph in the theme's accent - one
+///   colour for the whole desktop.
+pub fn styled_tile(app: &App, t: &Theme, style: &str) -> Tile {
+    let deep = mix(t.surface, (0.0, 0.0, 0.0), if t.dark { 0.35 } else { 0.82 });
+    let tile_top = hexs(mix(deep, (255.0, 255.0, 255.0), 0.10));
+    let tile_bottom = hexs(mix(deep, (0.0, 0.0, 0.0), 0.45));
+    let (gt, gb) = match style {
+        // The NexaOS mark keeps the theme's accent in every style.
+        "dark" if app.id == "nexa-nexus" => (hexs(mix(t.accent, (255.0, 255.0, 255.0), 0.15)), hexs(t.accent2)),
+        "dark" => (hexs(mix(rgb(app.top), (255.0, 255.0, 255.0), 0.12)), hexs(rgb(app.bottom))),
+        _ => (hexs(mix(t.accent, (255.0, 255.0, 255.0), 0.25)), hexs(mix(t.accent, t.accent2, 0.55))),
+    };
+    Tile { top: tile_top, bottom: tile_bottom, glyph_top: gt, glyph_bottom: gb, shadow: 0.0, sheen: 0.22, edge: 0.10 }
+}
+
+fn tile_svg(app: &App, glyph: &Icon, p: &Tile) -> String {
     let mut g = String::new();
     for s in &glyph.shapes {
         native(s, &mut g);
@@ -286,7 +322,15 @@ fn app_svg_in(app: &App, glyph: &Icon, top: &str, bottom: &str) -> String {
     let tile = rounded_hex_d(64.0, 64.0, 60.0, 9.0);
     let rim = rounded_hex_d(64.0, 64.0, 57.0, 8.0);
     let id = app.id;
-    // Glyph: 24-unit grid scaled to 66 px, centred; a soft shadow under it.
+    // Glyph: 24-unit grid scaled to 66 px, centred. Its gradient is in the
+    // glyph's own units (a gradient per element would vanish on straight
+    // lines, whose box has no height).
+    let painted = g.replace("fill=\"currentColor\"", &format!("fill=\"url(#{id}-glyph)\""));
+    let shadow = if p.shadow > 0.0 {
+        format!("<g color=\"#000000\" stroke=\"currentColor\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\" opacity=\"{}\" transform=\"translate(31 32.6) scale(2.75)\">\n{g}</g>\n", n(p.shadow))
+    } else {
+        String::new()
+    };
     format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
 <title>{title}</title>
 <defs>
@@ -295,18 +339,21 @@ fn app_svg_in(app: &App, glyph: &Icon, top: &str, bottom: &str) -> String {
     <stop offset="1" stop-color="{bottom}"/>
   </linearGradient>
   <linearGradient id="{id}-sheen" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+    <stop offset="0" stop-color="#ffffff" stop-opacity="{sheen}"/>
     <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
   </linearGradient>
+  <linearGradient id="{id}-glyph" gradientUnits="userSpaceOnUse" x1="0" y1="2" x2="0" y2="22">
+    <stop offset="0" stop-color="{gt}"/>
+    <stop offset="1" stop-color="{gb}"/>
+  </linearGradient>
 </defs>
-<path d="{tile}" fill="url(#{id}-bg)"/>
+<path d="{tile}" fill="url(#{id}-bg)"{edge}/>
 <path d="{rim}" fill="none" stroke="url(#{id}-sheen)" stroke-width="2"/>
-<g color="#000000" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.2" transform="translate(31 32.6) scale(2.75)">
-{g}</g>
-<g color="#ffffff" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
-{g}</g>
+{shadow}<g stroke="url(#{id}-glyph)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" transform="translate(31 31) scale(2.75)">
+{painted}</g>
 </svg>
-"##, title = app.title)
+"##, title = app.title, top = p.top, bottom = p.bottom, sheen = n(p.sheen), gt = p.glyph_top, gb = p.glyph_bottom,
+       edge = if p.edge > 0.0 { format!(" stroke=\"#ffffff\" stroke-opacity=\"{}\" stroke-width=\"1.5\"", n(p.edge)) } else { String::new() })
 }
 
 fn inner_svg(svg: &str) -> String {
@@ -352,18 +399,24 @@ fn preview(apps: &[(String, &App)], symbolic: &[(String, &Icon)]) -> String {
 }
 
 /// One row per theme: a handful of app tiles on that theme's background.
-fn theme_preview(variants: &[(Theme, Vec<String>)], apps: &[App]) -> String {
+type Variant = (Theme, Vec<String>, Vec<(&'static str, Vec<String>)>);
+
+fn theme_preview(variants: &[Variant], apps: &[App]) -> String {
     let pick = ["nexa-nexus", "nexa-files", "nexa-browser", "nexa-settings", "nexa-store", "nexa-music", "nexa-viewer", "nexa-calc", "nexa-mail", "nexa-weather"];
     let (cell, row_h) = (118.0, 150.0);
     let width = 180.0 + cell * pick.len() as f64;
-    let height = 20.0 + row_h * variants.len() as f64;
+    // Every theme: colour, dark and tinted, one row each.
+    let rows: Vec<(&Theme, String, &Vec<String>)> = variants.iter().flat_map(|(t, row, styled)| {
+        std::iter::once((t, t.name.clone(), row)).chain(styled.iter().map(move |(st, r)| (t, format!("{} {st}", t.name), r)))
+    }).collect();
+    let height = 20.0 + row_h * rows.len() as f64;
     let mut out = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n", w = n(width), h = n(height));
-    for (r, (t, row)) in variants.iter().enumerate() {
+    for (r, (t, label, row)) in rows.iter().enumerate() {
         let y = 10.0 + r as f64 * row_h;
         let bg = if t.dark { hexs(mix(t.surface, (0.0, 0.0, 0.0), 0.35)) } else { hexs(mix(t.surface, (255.0, 255.0, 255.0), 0.2)) };
         let fg = if t.dark { "#e6ecff" } else { "#1b2236" };
         let _ = write!(out, "<rect x=\"0\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{bg}\"/>\n<text x=\"20\" y=\"{}\" font-family=\"Inter, sans-serif\" font-size=\"20\" font-weight=\"700\" fill=\"{fg}\">{}</text>\n",
-                       n(y - 10.0), n(width), n(row_h), n(y + row_h / 2.0), esc(&t.name));
+                       n(y - 10.0), n(width), n(row_h), n(y + row_h / 2.0), esc(label));
         for (i, id) in pick.iter().enumerate() {
             let Some(k) = apps.iter().position(|a| a.id == *id) else { continue };
             let x = 170.0 + i as f64 * cell;
@@ -420,7 +473,22 @@ fn main() {
             row.push(svg);
         }
         fs::write(vdir.join("index.theme"), format!("[Icon Theme]\nName={base}-{n}\nComment=NexaOS icons matched to the {n} theme\nInherits={base},Adwaita,hicolor\nDirectories=scalable/apps\n\n[scalable/apps]\nContext=Applications\nSize=128\nMinSize=8\nMaxSize=512\nType=Scalable\n", n = t.name)).expect("variant index");
-        variants.push((t, row));
+        let mut styled = Vec::new();
+        for style in ["dark", "tinted"] {
+            let sdir = out.with_file_name(format!("{base}-{}-{style}", t.name));
+            let _ = fs::remove_dir_all(&sdir);
+            fs::create_dir_all(sdir.join("scalable/apps")).expect("style folder");
+            let mut srow = Vec::new();
+            for app in &apps {
+                let glyph = icons.iter().find(|i| i.name == app.glyph).expect("glyph");
+                let svg = tile_svg(app, glyph, &styled_tile(app, &t, style));
+                fs::write(sdir.join("scalable/apps").join(format!("{}.svg", app.id)), &svg).expect("write styled");
+                srow.push(svg);
+            }
+            fs::write(sdir.join("index.theme"), format!("[Icon Theme]\nName={base}-{n}-{style}\nComment=NexaOS icons, {style} style, for the {n} theme\nInherits={base},Adwaita,hicolor\nDirectories=scalable/apps\n\n[scalable/apps]\nContext=Applications\nSize=128\nMinSize=8\nMaxSize=512\nType=Scalable\n", n = t.name)).expect("style index");
+            styled.push((style, srow));
+        }
+        variants.push((t, row, styled));
     }
     if !variants.is_empty() {
         fs::write(out.join("preview-themes.svg"), theme_preview(&variants, &apps)).expect("theme preview");
@@ -475,6 +543,23 @@ mod tests {
         let nexus = apps.iter().find(|a| a.id == "nexa-nexus").unwrap();
         assert!(themed_colours(nexus, &themes[1]).0.starts_with('#'), "the mark takes the theme's accent");
         assert_ne!(themed_colours(nexus, &themes[0]), themed_colours(nexus, &themes[1]));
+    }
+
+    #[test]
+    fn dark_and_tinted_styles() {
+        let themes = parse_themes("horizon 1 #4da3ff #8a6bff #141c3a\naurora 1 #3ddbd9 #6fff9e #0c2c30\n");
+        let apps = icons::apps();
+        let (files, music) = (apps.iter().find(|a| a.id == "nexa-files").unwrap(), apps.iter().find(|a| a.id == "nexa-music").unwrap());
+        let dark = styled_tile(files, &themes[0], "dark");
+        assert_ne!(dark.glyph_top, styled_tile(music, &themes[0], "dark").glyph_top, "dark: each glyph in its app's colour");
+        let (t1, t2) = (styled_tile(files, &themes[0], "tinted"), styled_tile(music, &themes[0], "tinted"));
+        assert_eq!((t1.glyph_top.clone(), t1.glyph_bottom.clone()), (t2.glyph_top, t2.glyph_bottom), "tinted: one colour for every app");
+        assert_ne!(t1.glyph_top, styled_tile(files, &themes[1], "tinted").glyph_top, "...the theme's accent");
+        let lum = |h: &str| { let c = rgb(h); 0.2126 * c.0 + 0.7152 * c.1 + 0.0722 * c.2 };
+        assert!(lum(&dark.top) < 70.0 && lum(&dark.bottom) < 40.0, "a dark tile: {} {}", dark.top, dark.bottom);
+        let glyph = icons::all().into_iter().find(|i| i.name == "folder").unwrap();
+        let svg = tile_svg(files, &glyph, &dark);
+        assert!(svg.contains("gradientUnits=\"userSpaceOnUse\"") && !svg.contains("currentColor\" stroke=\"none\""), "fills use the glyph gradient");
     }
 
     #[test]

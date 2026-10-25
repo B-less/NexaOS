@@ -1,0 +1,12 @@
+[Icon Theme]
+Name=NexaHexa-nebula-tinted
+Comment=NexaOS icons, tinted style, for the nebula theme
+Inherits=NexaHexa,Adwaita,hicolor
+Directories=scalable/apps
+
+[scalable/apps]
+Context=Applications
+Size=128
+MinSize=8
+MaxSize=512
+Type=Scalable

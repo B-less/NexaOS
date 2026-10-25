@@ -15,21 +15,21 @@ def check(label, cond, detail=""):
 
 # ---- themes
 home = tempfile.mkdtemp()
-check("defaults with no saved settings", themes.load_settings(home) == {"theme": "horizon", "opacity": themes.DEFAULT_OPACITY, "glass": True})
+check("defaults with no saved settings", themes.load_settings(home) == {"theme": "horizon", "opacity": themes.DEFAULT_OPACITY, "glass": True, "icon_style": "colour"})
 applied = themes.apply("nebula", 0.5, home=home, reload=False)
-check("apply returns what it applied", applied == {"theme": "nebula", "opacity": 0.5, "glass": True}, str(applied))
+check("apply returns what it applied", applied == {"theme": "nebula", "opacity": 0.5, "glass": True, "icon_style": "colour"}, str(applied))
 for rel in ("waybar/style.css", "mako/config", "foot/foot.ini", "sway/config.d/20-nexa-theme.conf",
             "gtk-3.0/settings.ini", "hypr/nexa-theme.conf", "swaylock/config", "nexa/theme.json"):
     check(f"apply writes ~/.config/{rel}", os.path.isfile(os.path.join(home, ".config", rel)))
 css = open(os.path.join(home, ".config/waybar/style.css")).read()
 check("bar uses the theme accent and transparency",
       themes.THEMES["nebula"]["accent"] in css and "rgba(22, 10, 36, 0.50)" in css, css[:200])
-check("settings persist", themes.load_settings(home) == {"theme": "nebula", "opacity": 0.5, "glass": True})
+check("settings persist", themes.load_settings(home) == {"theme": "nebula", "opacity": 0.5, "glass": True, "icon_style": "colour"})
 themes.apply(None, None, home=home, reload=False)
 check("apply --saved reuses the saved theme", themes.load_settings(home)["theme"] == "nebula")
 themes.apply("not-a-theme", 7, home=home, reload=False)
 s = themes.load_settings(home)
-check("unknown theme keeps the current one; opacity is clamped", s == {"theme": "nebula", "opacity": themes.MAX_OPACITY, "glass": True}, str(s))
+check("unknown theme keeps the current one; opacity is clamped", s == {"theme": "nebula", "opacity": themes.MAX_OPACITY, "glass": True, "icon_style": "colour"}, str(s))
 themes.apply(None, None, home=home, reload=False, glass=False)
 check("glass windows can be turned off and stay off", themes.load_settings(home)["glass"] is False)
 themes.apply("nebula", None, home=home, reload=False)

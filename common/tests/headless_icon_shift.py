@@ -24,4 +24,11 @@ info = Gtk.IconTheme.get_default().lookup_icon("nexa-files", 128, 0)
 path = info.get_filename() if info else ""
 ok = first == "NexaHexa-horizon" and after == "NexaHexa-aurora" and "NexaHexa-aurora" in path
 print(("PASS" if ok else "FAIL") + f" icons follow the theme: {first} -> {after} ({path})")
-sys.exit(0 if ok else 1)
+subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, '/src/common'); from nexa_common import themes; themes.apply(icon_style='tinted', reload=False)"], check=True)
+pump(2.0)
+styled = settings.get_property("gtk-icon-theme-name")
+info = Gtk.IconTheme.get_default().lookup_icon("nexa-files", 128, 0)
+path2 = info.get_filename() if info else ""
+ok2 = styled == "NexaHexa-aurora-tinted" and "NexaHexa-aurora-tinted" in path2
+print(("PASS" if ok2 else "FAIL") + f" icon style Tinted switches live: {styled} ({path2})")
+sys.exit(0 if ok and ok2 else 1)

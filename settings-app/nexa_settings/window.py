@@ -223,6 +223,22 @@ class SettingsWindow(Gtk.Window):
         glass_row.pack_start(self._glass, False, False, 0)
         page.pack_start(glass_row, False, False, 0)
 
+        # App icons: full colour, dark, or tinted in the theme's accent
+        # (NexaHexa icons; they also follow the theme).
+        icons_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        icons_row.pack_start(self._field_label("App icons: full colour, dark, or tinted in the theme's colour"), True, True, 0)
+        self._icon_style = Gtk.ComboBoxText(valign=Gtk.Align.CENTER)
+        for key, label in (("colour", "Colour"), ("dark", "Dark"), ("tinted", "Tinted")):
+            self._icon_style.append(key, label)
+        self._icon_style.set_active_id(saved.get("icon_style", "colour"))
+        if themes.icon_styles_available():
+            self._icon_style.connect("changed", lambda c: themes.apply(icon_style=c.get_active_id()))
+        else:
+            self._icon_style.set_sensitive(False)
+            self._icon_style.set_tooltip_text("Comes with the NexaHexa icons, which aren't installed yet")
+        icons_row.pack_start(self._icon_style, False, False, 0)
+        page.pack_start(icons_row, False, False, 0)
+
         apply_btn = Gtk.Button(label="Apply Theme")
         apply_btn.set_name("actionbtn")
         apply_btn.set_halign(Gtk.Align.START)

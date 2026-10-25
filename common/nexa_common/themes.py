@@ -107,8 +107,9 @@ def load_settings(home=None):
         data = {}
     name = data.get("theme") if data.get("theme") in THEMES else DEFAULT_THEME
     glass = data.get("glass", DEFAULT_GLASS)
+    style = data.get("icon_style") if data.get("icon_style") in ICON_STYLES else "colour"
     return {"theme": name, "opacity": clamp_opacity(data.get("opacity", DEFAULT_OPACITY)),
-            "glass": glass if isinstance(glass, bool) else DEFAULT_GLASS}
+            "glass": glass if isinstance(glass, bool) else DEFAULT_GLASS, "icon_style": style}
 
 
 def _hex(rgb):
@@ -408,12 +409,17 @@ general {{
 # (NexaHexa-<theme>: app tiles tinted to match). Used once it is installed in
 # one of these folders; until then the icons stay Adwaita.
 ICON_DIRS = ("/usr/share/icons", "/usr/local/share/icons")
+# How app icons look (Settings > Personalization): full colour, dark (a dark
+# hexagon, the glyph in the app's colours) or tinted (every glyph in the
+# theme's accent).
+ICON_STYLES = ("colour", "dark", "tinted")
 
 
-def icon_theme_for(name, home=None):
-    """The icon theme that goes with theme `name`."""
+def icon_theme_for(name, home=None, style="colour"):
+    """The icon theme that goes with theme `name` in icon style `style`."""
     dirs = list(ICON_DIRS) + [os.path.join(home or _home(), ".local", "share", "icons")]
-    for candidate in (f"NexaHexa-{name}", "NexaHexa"):
+    wanted = ([f"NexaHexa-{name}-{style}"] if style in ICON_STYLES and style != "colour" else []) + [f"NexaHexa-{name}", "NexaHexa"]
+    for candidate in wanted:
         if any(os.path.isfile(os.path.join(d, candidate, "index.theme")) for d in dirs):
             return candidate
     return "Adwaita"
@@ -432,7 +438,8 @@ def follow_icon_theme(home=None):
         return None
     if settings is None:
         return None
-    wanted = icon_theme_for(load_settings(home)["theme"], home)
+    current = load_settings(home)
+    wanted = icon_theme_for(current["theme"], home, current["icon_style"])
     if settings.get_property("gtk-icon-theme-name") != wanted:
         settings.set_property("gtk-icon-theme-name", wanted)
     return wanted
@@ -535,19 +542,25 @@ def merge_gtk_css(existing, block):
     return block + ("\n" + existing if existing.strip() else "")
 
 
-def apply(name=None, opacity=None, home=None, reload=True, glass=None):
+def icon_styles_available(home=None):
+    """True when the NexaHexa icons are installed (the icon style matters)."""
+    return icon_theme_for(load_settings(home)["theme"], home) != "Adwaita"
+
+
+def apply(name=None, opacity=None, home=None, reload=True, glass=None, icon_style=None):
     """Render and install the theme; returns the settings that were applied."""
     current = load_settings(home)
     name = name if name in THEMES else current["theme"]
     opacity = clamp_opacity(current["opacity"] if opacity is None else opacity)
     glass = current["glass"] if glass is None else bool(glass)
+    icon_style = icon_style if icon_style in ICON_STYLES else current["icon_style"]
     t = THEMES[name]
     cfg = _config_dir(home)
     _write(os.path.join(cfg, "waybar", "style.css"), waybar_css(t, opacity))
     _write(os.path.join(cfg, "mako", "config"), mako_config(t, opacity))
     _write(os.path.join(cfg, "foot", "foot.ini"), foot_ini(t, opacity))
     _write(os.path.join(cfg, "sway", "config.d", "20-nexa-theme.conf"), sway_conf(t))
-    _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t, icon_theme_for(name, home)))
+    _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t, icon_theme_for(name, home, icon_style)))
     css_path = os.path.join(cfg, "gtk-3.0", "gtk.css")
     try:
         with open(css_path) as f:
@@ -558,13 +571,14 @@ def apply(name=None, opacity=None, home=None, reload=True, glass=None):
     _write(os.path.join(cfg, "hypr", "nexa-theme.conf"), hypr_conf(t))
     _write(os.path.join(cfg, "swaylock", "config"), swaylock_conf(t))
     _write(os.path.join(_data_dir(home), "gtksourceview-4", "styles", "nexa.xml"), sourceview_scheme(t))
-    _write(settings_path(home), json.dumps({"theme": name, "opacity": round(opacity, 2), "glass": glass}) + "\n")
+    _write(settings_path(home), json.dumps({"theme": name, "opacity": round(opacity, 2), "glass": glass,
+                                            "icon_style": icon_style}) + "\n")
     if reload:
         _quiet(["pkill", "-USR2", "-x", "waybar"])   # reload style
         _quiet(["makoctl", "reload"])
         from . import compositor
         compositor.reload()
-    return {"theme": name, "opacity": opacity, "glass": glass}
+    return {"theme": name, "opacity": opacity, "glass": glass, "icon_style": icon_style}
 
 
 def main(argv):
