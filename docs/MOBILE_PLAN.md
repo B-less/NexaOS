@@ -105,6 +105,12 @@ drives layer already are). On top:
 - Rust tools cross-compile to `aarch64-unknown-linux-musl` (the build
   container gains the target); C tools build in an aarch64 Alpine container.
 
+## 6b. PC and phone together
+
+**Nexa Link** (docs/NEXA_LINK.md): once paired, the PC and the phone connect
+by themselves - notifications, calls and texts on the PC, files, find my
+phone - encrypted, no cloud, every feature a separate permission.
+
 ## 7. Phases
 
 | Phase | What | Done when |
