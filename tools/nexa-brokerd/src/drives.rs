@@ -22,11 +22,15 @@ pub struct Tree {
     pub mounts: PathBuf,
     /// Where mount/umount/blkid/logger come from ("" = PATH); tests use fakes.
     pub tools: PathBuf,
+    /// The OS installer marks the disk it is writing to here
+    /// (/run/nexa-install/<disk>): such a disk is never mounted meanwhile.
+    pub installing: PathBuf,
 }
 
 impl Tree {
     pub fn real() -> Tree {
-        Tree { sys: "/sys".into(), dev: "/dev".into(), media: "/media".into(), mounts: "/proc/mounts".into(), tools: PathBuf::new() }
+        Tree { sys: "/sys".into(), dev: "/dev".into(), media: "/media".into(), mounts: "/proc/mounts".into(), tools: PathBuf::new(),
+               installing: "/run/nexa-install".into() }
     }
 
     fn tool(&self, name: &str) -> Command {
@@ -195,9 +199,19 @@ fn options(fstype: &str) -> String {
     }
 }
 
+/// Is NexaOS being installed onto this drive right now?
+fn being_installed(t: &Tree, k: &str) -> bool {
+    t.installing.join(t.disk_of(k)).exists()
+}
+
 pub fn mount(t: &Tree, k: &str) -> Result<Value, String> {
     if let Some(why) = t.refusal(k) {
         return Err(why.into());
+    }
+    if being_installed(t, k) {
+        // The installer is partitioning it: an auto-mount here made the
+        // installer fail with "drive busy" (and could corrupt the install).
+        return Err("NexaOS is being installed on this drive.".into());
     }
     if !t.is_partition(k) && !t.partitions_of(k).is_empty() {
         return Err("This disk is partitioned - open one of its partitions instead.".into());
@@ -468,7 +482,7 @@ mod tests {
             fs::write(bin.join(n), body).unwrap();
             fs::set_permissions(bin.join(n), fs::Permissions::from_mode(0o755)).unwrap();
         }
-        (Tree { sys: r.join("sys"), dev: "/dev".into(), media: r.join("media"), mounts, tools: bin }, r)
+        (Tree { sys: r.join("sys"), dev: "/dev".into(), media: r.join("media"), mounts, tools: bin, installing: r.join("run/nexa-install") }, r)
     }
 
     fn calls(r: &Path) -> String {
@@ -603,6 +617,18 @@ mod tests {
     fn settle_a_real_device() {
         let dev = std::env::var("NEXA_SETTLE_DEV").expect("NEXA_SETTLE_DEV");
         println!("{}", settle(Path::new(&dev)));
+    }
+
+    #[test]
+    fn never_mounts_a_drive_being_installed_to() {
+        let (t, r) = fake("installing");
+        fs::create_dir_all(r.join("run/nexa-install")).unwrap();
+        fs::write(r.join("run/nexa-install/sdb"), "").unwrap();
+        let v = added(&t, "sdb1");
+        assert!(v["skipped"].as_str().unwrap_or("").contains("being installed"), "{v}");
+        assert!(calls(&r).is_empty() || !calls(&r).contains("mount -t"), "{}", calls(&r));
+        fs::remove_file(r.join("run/nexa-install/sdb")).unwrap();
+        assert!(added(&t, "sdb1").get("mountpoint").is_some(), "mounted again once the install is over");
     }
 
     #[test]

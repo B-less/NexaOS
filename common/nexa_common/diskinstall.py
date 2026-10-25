@@ -17,6 +17,11 @@ import time
 SYS = "/sys"
 DEV = "/dev"
 PROC_MOUNTS = "/proc/mounts"
+PROC_SWAPS = "/proc/swaps"
+# The disk being installed to is marked here for the whole install, so the
+# USB auto-mount (nexa-brokerd drive-added) leaves it and its new
+# partitions alone; it used to mount them and the install failed "busy".
+INSTALL_MARKS = "/run/nexa-install"
 TARGET_ROOT = "/mnt/nexa-install"
 # Where the live initramfs leaves the ISO/USB medium mounted (see
 # build-initramfs.sh). In a live session "/" is an overlay, not a disk, so
@@ -177,12 +182,16 @@ def partition_disk(disk_name):
         time.sleep(0.5)
     else:
         raise InstallError("The kernel didn't pick up the new partitions in time.")
+    # New partitions start where old ones were: clear old filesystem
+    # signatures (a stick that held a system before) before formatting.
+    for part in (esp, root):
+        _sh(["wipefs", "-a", part], check=False)
     return {"esp": esp, "root": root}
 
 
 def format_partitions(esp, root):
     _sh(["mkfs.vfat", "-F32", "-n", ESP_LABEL, esp])
-    _sh(["mkfs.ext4", "-q", "-L", ROOT_LABEL, root])
+    _sh(["mkfs.ext4", "-q", "-F", "-L", ROOT_LABEL, root])
 
 
 def mount_target(root, esp, mountpoint=None):
@@ -193,6 +202,37 @@ def mount_target(root, esp, mountpoint=None):
     os.makedirs(esp_mount, exist_ok=True)
     _sh(["mount", esp, esp_mount])
     return esp_mount
+
+
+def release_disk(disk_name):
+    """Close everything open on the target disk: plugged in, a USB stick is
+    mounted at /media/<name> at once (and may hold swap), and wipefs/parted
+    then fail with "Device or resource busy". Deepest mounts first; a lazy
+    unmount if a normal one is refused."""
+    disk_dev = f"{DEV}/{disk_name}"
+
+    def on_disk(src):
+        rest = src[len(disk_dev):]
+        return src == disk_dev or (src.startswith(disk_dev) and rest.lstrip("p").isdigit())
+
+    for src, mnt in sorted(_mounts(), key=lambda m: -len(m[1])):
+        if not on_disk(src):
+            continue
+        if _sh(["umount", mnt], check=False).returncode != 0:
+            _sh(["umount", "-l", mnt], check=False)
+        if mnt.startswith("/media/"):
+            try:
+                os.rmdir(mnt)
+            except OSError:
+                pass
+    try:
+        with open(PROC_SWAPS) as f:
+            swaps = [line.split()[0] for line in f.readlines()[1:] if line.strip()]
+    except OSError:
+        swaps = []
+    for dev in swaps:
+        if on_disk(dev):
+            _sh(["swapoff", dev], check=False)
 
 
 def unmount_target(mountpoint=None):
@@ -463,7 +503,14 @@ def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_st
     if username is not None:
         validate_username(username)
     mountpoint = TARGET_ROOT
+    mark = os.path.join(INSTALL_MARKS, disk_name)
     try:
+        os.makedirs(INSTALL_MARKS, exist_ok=True)
+        open(mark, "w").close()
+    except OSError:
+        mark = None
+    try:
+        release_disk(disk_name)
         report("partition")
         parts = partition_disk(disk_name)
         report("format")
@@ -490,4 +537,9 @@ def run_install(disk_name, hostname=None, zone=None, keyboard_layout=None, on_st
     finally:
         report("unmount")
         unmount_target(mountpoint)
+        if mark:
+            try:
+                os.remove(mark)
+            except OSError:
+                pass
     return {"installed_to": f"{DEV}/{disk_name}"}

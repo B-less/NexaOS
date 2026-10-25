@@ -120,6 +120,7 @@ def fake_run(argv, **kw):
     if argv[0] == "wipefs" and "fail-partition" in os.environ.get("NEXA_TEST", ""):
         return subprocess.CompletedProcess(argv, 1, stdout="", stderr="boom")
     if argv[0] == "parted":
+        marked_during.append(os.path.exists(os.path.join(di.INSTALL_MARKS, "sdb")))
         # simulate the kernel creating partition device nodes, like the real
         # loopback test showed happens after parted + partprobe
         disk = argv[2]
@@ -127,6 +128,9 @@ def fake_run(argv, **kw):
         open(disk + "3", "w").close()
     return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 di._run = fake_run
+marked_during = []
+di.INSTALL_MARKS = os.path.join(tmp, "run-nexa-install")
+di.PROC_SWAPS = os.path.join(tmp, "swaps")
 
 class FakePopen:
     """Stands in for clone_system()'s two real tar processes so the test
@@ -165,6 +169,24 @@ check("happy path visits every stage in order",
 check("happy path result names the installed disk", result == {"installed_to": f"{di.DEV}/sdb"}, str(result))
 
 check("no password given -> chpasswd never runs", not any(c[0] == "chpasswd" for c in calls), str(calls))
+
+# A USB stick plugged in is auto-mounted at once (and may hold swap): the
+# install closes all of it before wiping, and marks the disk meanwhile so
+# the auto-mount doesn't open the new partitions ("drive busy").
+open(procm, "w").write(f"overlay / overlay rw 0 0\n{dev}/sdb1 /media/STICK vfat rw 0 0\n{dev}/sdb2 /media/STICK/inner ext4 rw 0 0\n{dev}/sdc1 /media/OTHER vfat rw 0 0\n")
+open(di.PROC_SWAPS, "w").write(f"Filename Type Size Used Priority\n{dev}/sdb3 partition 1024 0 -2\n")
+calls.clear(); stages.clear(); marked_during.clear()
+di.run_install("sdb", hostname="h", on_stage=stages.append)
+first_wipe = next(i for i, c in enumerate(calls) if c[0] == "wipefs")
+released = calls[:first_wipe]
+check("the stick's mounts are closed (deepest first) and its swap is off before anything is wiped",
+      released[:2] == [["umount", "/media/STICK/inner"], ["umount", "/media/STICK"]] and ["swapoff", f"{dev}/sdb3"] in released, str(released))
+check("another drive is left alone", not any("/media/OTHER" in c for c in released), str(released))
+check("the disk is marked as being installed to while partitioning, and unmarked after",
+      marked_during == [True] and not os.path.exists(os.path.join(di.INSTALL_MARKS, "sdb")), str(marked_during))
+check("the new partitions' old signatures are cleared", [c for c in calls if c[0] == "wipefs"][1:] == [["wipefs", "-a", f"{dev}/sdb2"], ["wipefs", "-a", f"{dev}/sdb3"]],
+      str([c for c in calls if c[0] == "wipefs"]))
+open(procm, "w").write("overlay / overlay rw 0 0\n")
 
 for bad, why in (("", "empty"), ("abc", "too short"), ("good\npass", "newline")):
     check(f"validate_password rejects {why}", raises(di.validate_password, bad) is not None)
