@@ -89,6 +89,15 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [ ] M4-M6: private index, screen OCR, offline voice
 - [ ] Download the model on the HP and time real answers there
 
+## 4d. Nexa Mobile (plan: docs/MOBILE_PLAN.md, 2026-10-25)
+- [ ] P0 aarch64 builds + `postmarketos-ui-nexa` (NexaOS as a postmarketOS UI), QEMU aarch64 image
+- [ ] P1 reference phone (OnePlus 6/6T): boot, Wi-Fi, touch, shell, rotation, on-screen keyboard *(needs the phone)*
+- [ ] P2 phone shell: honeycomb home, status bar, quick settings, gestures, lock screen, notifications
+- [ ] P3 calls, SMS, mobile data, emergency calls, wake on call *(needs a SIM)*
+- [ ] P4 battery and sensors (a measured full day)
+- [ ] P5 every Nexa app at phone size; aarch64 packages in the Store; Camera
+- [ ] P6 release: encrypted by default, signed A/B updates, flashing guide (`nexa-flash`, Rust)
+
 ## 5. Hardware
 - [~] Bluetooth: kernel + bluez + Bluetooth audio + bt-probe firmware re-bind + Settings page with pairing agent (tested against a mock BlueZ; needs a real adapter: HP test)
 - [~] Budget laptops (KA Tech TM1 report 2026-10-20: display and sound work, touchpad and Wi-Fi don't; **verified with the next ISO build** + the TM1's hardware report): kernel now has the GPIO/pin controllers of Celeron/Pentium Silver and Atom chips (Gemini Lake, Apollo Lake, Bay Trail, Cherry Trail, Elkhart Lake, Lakefield, Lynx Point) that I2C touchpads need for their interrupt, Intel LPSS, Elantech/Sentelic PS/2, Synaptics RMI4, Elan/ALPS HID touchpads, Wi-Fi on the SD bus (SDHCI-ACPI; Realtek rtw88 SDIO, MediaTek mt7921s/mt7663s, Marvell mwifiex) and more USB Wi-Fi (rtw88/rtw89 USB, mt7601u, ath9k_htc, rtl8xxxu), old Intel cards (iwldvm), ath12k; firmware packages ath12k, ath9k_htc, mrvl, qca. wifi-probe and the broker's repair_wifi also re-offer unbound SD-bus and USB Wi-Fi. `nexa-doctor hardware --text` (Rust) lists every part with its ID and driver and says which have none (saved to ~/nexa-hardware-report.txt; the assistant can run it). Not possible without loadable modules: rtl8723bs (staging, module-only)
