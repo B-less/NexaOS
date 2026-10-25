@@ -331,6 +331,10 @@ test-nexa-link-ui: native
 test-files-drag: native
 	@sh scripts/test-files-drag.sh
 
+# The Living Field (Settings' front page) with the real services running.
+test-living-field: native
+	@sh scripts/test-living-field.sh
+
 # The top bar's "Hide when not in use" with the real bar in a headless Sway.
 test-topbar: native
 	@sh scripts/test-topbar.sh

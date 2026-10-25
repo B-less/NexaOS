@@ -69,7 +69,7 @@ run taskmgr      taskmgr         nexa_taskmgr
 run desktop-icons desktop-icons  nexa_desktop_icons
 run editor       text-editor     nexa_edit
 run volume       volume-mixer    nexa_volume
-for page in personalization bluetooth vpn system users updates startup time power privacy assistant about; do
+for page in overview personalization bluetooth vpn system users updates startup time power privacy assistant about; do
     run settings-$page settings-app nexa_settings $page
 done
 for panel in nexus control dock foryou drives; do

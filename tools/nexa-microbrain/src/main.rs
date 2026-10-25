@@ -134,7 +134,17 @@ fn sampler(tx: SyncSender<Msg>, interval: Arc<AtomicU64>) {
     // NEXA_MICROBRAIN_INTERVAL: a fixed sample interval (tests).
     let fixed = std::env::var("NEXA_MICROBRAIN_INTERVAL").ok().and_then(|v| v.parse::<u64>().ok());
     let mut prev = None;
+    // The first sample at once (Settings asks for numbers right away), the
+    // rest when woken or when the interval is up.
+    let mut first = true;
     loop {
+        if first {
+            first = false;
+            let s = resources::sample(&paths, &mut prev, now());
+            if tx.try_send(Msg::Event(Event::Sample(s))).is_err() {
+                return;
+            }
+        }
         let wait_ms = (fixed.unwrap_or_else(|| interval.load(Ordering::Relaxed).max(2)).max(1) * 1000) as i32;
         match &trigger {
             Some(f) => {

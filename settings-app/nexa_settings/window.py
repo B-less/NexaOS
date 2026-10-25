@@ -11,6 +11,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from . import privileged
 from .connections import BluetoothPage, VpnPage
+from .field import CSS as FIELD_CSS, LivingField
 from .link_page import LinkPage
 from .privacy_page import PrivacyPage
 from .system_pages import StartupPage, UpdatesPage, UsersPage
@@ -50,7 +51,7 @@ WALLPAPER_GALLERY = "/usr/share/backgrounds/nexaos/gallery"
 LOGIN_REQUIRED = "/etc/nexa/login-required"  # written by the OS installer
 SKIP_LOGIN_LOCK = os.path.expanduser("~/.config/nexa/skip-login-lock")
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
-PAGES = ("Personalization", "Bluetooth", "Nexa Link", "VPN", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
+PAGES = ("Overview", "Personalization", "Bluetooth", "Nexa Link", "VPN", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
 
 
 TOPBAR_FILE = os.path.expanduser("~/.config/nexa/topbar")
@@ -117,6 +118,9 @@ class SettingsWindow(Gtk.Window):
         content.pack_start(self.stack, True, True, 0)
         root.pack_start(content, True, True, 0)
 
+        # The Living Field (docs/LIVING_INTERFACE.md): the front page.
+        self.field = LivingField(self)
+        self.stack.add_named(self.field, "Overview")
         self.stack.add_named(self._scrolled(self._build_appearance_page()), "Personalization")
         self.bluetooth_page = BluetoothPage(self)
         self.stack.add_named(self._scrolled(self.bluetooth_page.page), "Bluetooth")
@@ -139,11 +143,11 @@ class SettingsWindow(Gtk.Window):
         self.stack.add_named(self._scrolled(self._build_about_page()), "About")
 
         provider = Gtk.CssProvider()
-        provider.load_from_data(CSS)
+        provider.load_from_data(CSS + FIELD_CSS)
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
         )
-        self._on_nav(None, "Personalization")
+        self._on_nav(None, "Overview")
 
     def _on_nav(self, _btn, name):
         if name == "Privacy":
