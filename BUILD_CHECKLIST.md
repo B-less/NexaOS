@@ -2,8 +2,8 @@
 
 Status as of 2026-10-11. Legend:
 
-- `[x]` done — confirmed from files/config in the repo, or boot-tested in an earlier session (marked *tested earlier*)
-- `[~]` partly done, or done but the result was never recorded — needs a re-check
+- `[x]` done: confirmed from files/config in the repo, or boot-tested in an earlier session (marked *tested earlier*)
+- `[~]` partly done, or done but the result was never recorded, so it needs a re-check
 - `[ ]` not done
 
 **Progress: 50 of 93 done, 23 partial → ~66%** (partial counts as half)
@@ -18,14 +18,14 @@ Status as of 2026-10-11. Legend:
 - [x] Install targets: `EFI`, `EFI_STUB`, `EFI_PARTITION`, `SATA_AHCI`, `BLK_DEV_NVME`, `USB_XHCI_HCD`, `USB_STORAGE`
 - [x] WiFi/audio: `IWLWIFI`, `MAC80211_HWSIM`, `SND_HDA_INTEL`
 - [x] `dist/bzImage` built (10 MB)
-- [x] Kernel boots under UEFI (OVMF) with simpledrm framebuffer — *tested earlier*
+- [x] Kernel boots under UEFI (OVMF) with simpledrm framebuffer (*tested earlier*)
 
 ## 2. Build system
 
 - [x] Makefile targets: `kernel rootfs initramfs disk gui apps iso boot boot-gui docker test all`
 - [x] Docker build environment (`Dockerfile`, `make docker`)
 - [x] Build settings centralised in `build.conf`
-- [~] CI workflow exists (`.github/workflows/ci.yml`) but has never run — no git remote yet
+- [~] CI workflow exists (`.github/workflows/ci.yml`) but has never run (no git remote yet)
 
 ## 3. Root filesystem (Alpine 3.19)
 
@@ -38,9 +38,9 @@ Status as of 2026-10-11. Legend:
 
 ## 4. Boot (QEMU)
 
-- [x] Serial boot to login shell — *tested earlier*
-- [x] GUI boot to Sway + Waybar desktop — *tested earlier*
-- [x] Framebuffer desktop fallback (`nexa-fbdesktop`) when no GPU driver — *tested earlier*
+- [x] Serial boot to login shell (*tested earlier*)
+- [x] GUI boot to Sway + Waybar desktop (*tested earlier*)
+- [x] Framebuffer desktop fallback (`nexa-fbdesktop`) when no GPU driver (*tested earlier*)
 - [x] Boot splash, lock screen
 
 ## 5. Desktop & apps
@@ -56,7 +56,7 @@ Status as of 2026-10-11. Legend:
 
 ## 6. Networking
 
-- [x] Wired DHCP + ping in QEMU — *tested earlier*
+- [x] Wired DHCP + ping in QEMU (*tested earlier*)
 - [x] WiFi backend over iwd D-Bus, no root needed (`common/nexa_common/wifi.py`, mock-iwd tests)
 - [x] Network settings app
 - [x] `wifi-probe` service re-probes devices once firmware is available
@@ -67,15 +67,15 @@ Status as of 2026-10-11. Legend:
 - [x] `.nexa` package installer (`installer/nexa_installer`)
 - [x] Software center
 - [x] Online repo with a test package (`online_repo/test-app`)
-- [~] Repo is local only — no hosted package server yet
+- [~] Repo is local only; no hosted package server yet
 
 ## 8. Live ISO
 
 - [x] `scripts/build-iso.sh` (isolinux + xorriso)
 - [x] `dist/NexaOS-3.1.0.iso` built (2.1 GB, BIOS boot)
 - [x] Hybrid ISO with UEFI GRUB + `nexa.live` USB search (2026-10-11). Test ISO with a stub nexa.img boots: BIOS CD, BIOS USB, UEFI USB (Rufus DD), UEFI FAT32 USB (Rufus ISO mode), UEFI SATA CD. Needs `make iso` with the real image
-- [ ] Rebuild the ISO — it (09-26) is older than `nexa.img` and `initramfs` (09-27)
-- [x] Flash with Rufus and boot a real PC (Secure Boot off: GRUB is unsigned) — HP EliteBook 840 G6
+- [ ] Rebuild the ISO: it (09-26) is older than `nexa.img` and `initramfs` (09-27)
+- [x] Flash with Rufus and boot a real PC (Secure Boot off: GRUB is unsigned) on the HP EliteBook 840 G6
 - [x] Installer never offers the live USB stick as a target (`/mnt/nexa-live`, unit-tested)
 
 ## 9. OS installer (`installer-os/nexa_setup`)
@@ -95,16 +95,16 @@ Status as of 2026-10-11. Legend:
 - [x] `.nexa` packages can't overwrite or delete what they didn't install (root helpers, system code, system commands), can't leak files through `icon`, can't inject desktop-entry lines (2026-10-11, `common/tests/test_package_helper.py`)
 - [x] `make test` runs the real host test suites (it only printed "passed" before)
 - [ ] doas helpers are all `nopass`; once accounts have passwords, root-equivalent ones (package installs) should ask for it
-- [~] sshd off by default (opt-in with `rc-update add sshd`) — needs rebuild
-- [~] Firewall: nftables, incoming blocked except replies; kernel netfilter enabled — needs kernel + image rebuild
-- [~] Kernel hardening sysctls (kptr/dmesg restrict, link protections, no redirects, syncookies) — needs rebuild
+- [~] sshd off by default (opt-in with `rc-update add sshd`); needs rebuild
+- [~] Firewall: nftables, incoming blocked except replies; kernel netfilter enabled; needs kernel + image rebuild
+- [~] Kernel hardening sysctls (kptr/dmesg restrict, link protections, no redirects, syncookies); needs rebuild
 - [ ] Desktop auto-logs in as `user` on boot, so the password only guards SSH/console/lock screen
 - [~] Alpine 3.19 is end-of-life: moving to 3.24.2 (see Roadmap)
 - [ ] Package server URL is QEMU-only (`PKG_SERVER_URL=http://10.0.2.2:8080`, plain HTTP)
 
 ## 11. Real-hardware drivers (kernel is monolithic, so each needs a rebuild)
 
-- [~] (config done 2026-10-11, needs kernel build + real-PC test) GPU: no `DRM_I915`/`DRM_XE`/`DRM_AMDGPU`/`DRM_NOUVEAU` — real PCs get only the UEFI framebuffer (fixed resolution, no brightness, CPU rendering); BIOS-mode boots may get no graphics
+- [~] (config done 2026-10-11, needs kernel build + real-PC test) GPU: no `DRM_I915`/`DRM_XE`/`DRM_AMDGPU`/`DRM_NOUVEAU`, so real PCs get only the UEFI framebuffer (fixed resolution, no brightness, CPU rendering); BIOS-mode boots may get no graphics
 - [~] (config done) Ethernet: no `R8169` (Realtek, the most common), no `IGB`
 - [~] (config done; Broadcom/Realtek/MediaTek/Atheros firmware added) WiFi: only Intel (`IWLWIFI`) and `ATH9K`; no Realtek `RTW88/RTW89`, MediaTek `MT7921E/MT7925E`, Atheros `ATH10K/11K/12K`, Broadcom `BRCMFMAC`
 - [~] (config done, incl. `PINCTRL`, `PCI_MSI` which was also off) Laptop touchpads: no `I2C_HID_ACPI`, `HID_MULTITOUCH`, `I2C_DESIGNWARE_*`
@@ -115,7 +115,7 @@ Status as of 2026-10-11. Legend:
 
 - [ ] Nexa AI: default model `claude-sonnet-5` is a generation old (current: `claude-opus-5-5` / `claude-sonnet-5-5`), and `max_tokens=1024` truncates replies now that thinking is on by default
 
-## 14. Laptop basics (batch 1, 2026-10-11) — code done, needs rebuild + HP test
+## 14. Laptop basics (batch 1, 2026-10-11): code done, needs rebuild + HP test
 
 - [~] Clock in the top bar (was hidden: no /etc/localtime; now UTC default)
 - [~] Battery + brightness in the top bar; low-battery warnings at 15% / 5%
@@ -134,7 +134,7 @@ Status as of 2026-10-11. Legend:
 - [ ] System monitor app with its own name and keyboard shortcut (like Ctrl+Shift+Esc)
 - [~] macOS-style polish phase A (needs rebuild + HP test): apps follow the theme with live switching; start menu/Control Centre fade+slide animation; Dock with magnification, running dots, launch bounce; desktop icons removed. Checked in headless sway
 - [ ] Phase A remaining: translucent app windows, micro-animations in apps, Launchpad
-- [~] Phase B: Hyprland session on GPU machines (window pop-in/out, workspace slide, blur behind bar/Dock/panels, rounded corners, shadows, 3-finger workspace swipe, themed gradient borders); Sway on other machines and as automatic fallback. Config passes `Hyprland --verify-config` (0.54.3); never run for real yet (no GPU here) — first run is the HP
+- [~] Phase B: Hyprland session on GPU machines (window pop-in/out, workspace slide, blur behind bar/Dock/panels, rounded corners, shadows, 3-finger workspace swipe, themed gradient borders); Sway on other machines and as automatic fallback. Config passes `Hyprland --verify-config` (0.54.3); never run for real yet (no GPU here). The first run will be on the HP
 - [ ] Browser: turn WebKit's sandbox on by default (currently off, untested with real sites)
 - [ ] Further hardening (AppArmor, signed boot, sandboxing)
 

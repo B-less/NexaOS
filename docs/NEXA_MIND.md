@@ -1,4 +1,4 @@
-# Nexa Mind — the on-device AI, from the hardware up
+# Nexa Mind: the on-device AI, from the hardware up
 
 Written 2026-10-13. Nexa Mind is the part of NexaOS that understands and
 acts: a language model that runs on the laptop itself, a private index of
@@ -10,13 +10,13 @@ files leaves the machine unless you send it.
 This document goes layer by layer, bottom up. Numbers in "Measured on the reference machine" were measured there;
 the rest are targets.
 
-**Reference machine:** HP EliteBook 840 G6 — Intel Core i5-8365U (4 cores /
+**Reference machine:** HP EliteBook 840 G6, Intel Core i5-8365U (4 cores /
 8 threads, AVX2 + FMA, no AVX-512, no NPU), Intel UHD 620, 8 GB RAM.
 NexaOS has to be good on this, not on a workstation.
 
 ---
 
-## L0 — Kernel and hardware
+## L0. Kernel and hardware
 
 What the model needs from the machine, and what the kernel must provide
 so the AI never makes the laptop feel slow.
@@ -35,7 +35,7 @@ so the AI never makes the laptop feel slow.
 | Memory headroom | zram swap (already on) so a model load never freezes the desktop | ZRAM: on |
 | GPU (optional) | Vulkan back-end on the UHD 620 (`libggml-vulkan`); only used if the benchmark shows it beating the CPU | DRM_I915: on |
 
-## L1 — Inference runtime
+## L1. Inference runtime
 
 **llama.cpp**, as packaged by Alpine (`llama.cpp`, `llama-server`,
 `libggml-cpu`, `libggml-vulkan`, `whisper.cpp`). No Python ML stack, no
@@ -43,7 +43,7 @@ GPU drivers to ship: one C++ server, ~14 MB.
 
 - `llama-server` runs as the system service **`nexa-mind`**, as its own
   user, in its own cgroup, listening on a **Unix socket**
-  (`/run/nexa-mind/llm.sock`, group `nexa-mind`, mode 0660) — never a TCP
+  (`/run/nexa-mind/llm.sock`, group `nexa-mind`, mode 0660). Never a TCP
   port, so nothing on the network can reach it.
 - OpenAI-compatible API with **tool calling** (`--jinja`), **streaming**,
   and **embeddings** (a second, tiny embedding model on its own socket).
@@ -96,13 +96,13 @@ What follows from it:
 - 7B-class models (~4× slower) are for 16 GB+ machines with patience or a
   real GPU.
 
-## L2 — The Nexa Mind service
+## L2. The Nexa Mind service
 
 `nexa-mindd`, one per user session, is the only thing apps talk to. It
 owns: the request queue, the user's context index, tool execution, and
 the connection to the model server (local) or Claude (online, optional).
 
-- **API:** D-Bus session service `os.nexa.Mind1` — `Ask(text, context) →
+- **API:** D-Bus session service `os.nexa.Mind1`: `Ask(text, context) →
   request id`, streamed `Token`/`ToolCall`/`Done` signals, `Cancel`,
   `Search(query)`, `Status()`. Apps never see the model socket.
 - **Priorities:** interactive questions pre-empt background work; one
@@ -116,7 +116,7 @@ the connection to the model server (local) or Claude (online, optional).
   answer, shows exactly what will be sent, and never includes indexed file
   content unless you tick it.
 
-## L3 — Tools and the permission broker
+## L3. Tools and the permission broker
 
 The assistant acts through the same tool layer NexaOS already has
 (`nexa_ai/tools.py`), upgraded from "read vs control" to **capabilities**:
@@ -142,7 +142,7 @@ The assistant acts through the same tool layer NexaOS already has
   capability names, seccomp, no network unless `net.fetch`); privileged
   steps still go through the existing doas helpers.
 
-## L4 — Context engine (your private index)
+## L4. Context engine (your private index)
 
 - **What:** text, Markdown and code files, PDFs (poppler), Office files
   (text extracted from the XML), images (OCR via tesseract), optionally
@@ -157,13 +157,13 @@ The assistant acts through the same tool layer NexaOS already has
 - **Uses:** Nexus search finds files by meaning ("the invoice from the
   phone shop"), the assistant answers from your documents with citations
   (file + page), and nothing ever leaves the machine.
-- **Control:** pause indexing, exclude folders, wipe the index — in Settings.
+- **Control:** pause indexing, exclude folders, wipe the index, all in Settings.
 
-## L5 — Where you meet it
+## L5. Where you meet it
 
 | Surface | What |
 |---|---|
-| **Nexus** | the search box: apps, settings, sums, and "Ask Nexa" (done) — answers stream in place, file results from the index |
+| **Nexus** | the search box: apps, settings, sums, and "Ask Nexa" (done); answers stream in place, file results from the index |
 | **Assistant window** | conversations, tool actions with approvals, model switch (local / Claude) |
 | **Super+Shift+Space** | quick-ask bubble over any app |
 | **Screen** | "Copy text from screen" and "Ask about this screen": a region screenshot (grim) → OCR → into the question |
@@ -301,7 +301,7 @@ daemon), and the `KERNELD=` live-boot check.
 |---|---|---|
 | M1 ✅ | **Runtime** (done 2026-10-13, `tools/nexa-mindd`, Rust): llama.cpp in the image, model manager with SHA-256 check, `nexa-mind` service on a Unix socket, auto-tune; the assistant's agent talks to it (tool calls included) | offline question answered with a tool call, in QEMU and on the HP |
 | M2 🔧 | **Kernel** (code done 2026-10-18, `tools/nexa-kerneld`; kernel built with the next ISO): PSI, UCLAMP_TASK, POWERCAP/RAPL, THP (madvise), process connector; cgroup for the model; app-in-front boost; assistant tools for pressure, energy and crashes | readings via the assistant; model throttled under load (Pulse view still to do) |
-| M3 | **Rust tool runner** (`nexa-tools`) + **permission broker** + audit log + untrusted-content guard. Tools: files (read, write/edit with **undo** — every write keeps the previous version — create, rename, move, copy, delete to a recoverable Nexa trash, search by name and by meaning), documents (summarise, extract text from PDF/Office/images), organise (sort a folder, batch rename, duplicates; shows the whole plan first), apps and web (open, read a page as untrusted), settings (Wi-Fi, Bluetooth, VPN, theme, brightness, volume, Do Not Disturb via the same services Settings uses), system (status, logs, services, packages, power), screen (copy text, ask about it). Each call runs under Landlock limited to the folders it names. | tests: injected file text can't trigger a silent action; a write is undoable; a sandboxed call can't read `~/.ssh` |
+| M3 | **Rust tool runner** (`nexa-tools`) + **permission broker** + audit log + untrusted-content guard. Tools: files (read, write/edit with **undo**, since every write keeps the previous version; create, rename, move, copy, delete to a recoverable Nexa trash, search by name and by meaning), documents (summarise, extract text from PDF/Office/images), organise (sort a folder, batch rename, duplicates; shows the whole plan first), apps and web (open, read a page as untrusted), settings (Wi-Fi, Bluetooth, VPN, theme, brightness, volume, Do Not Disturb via the same services Settings uses), system (status, logs, services, packages, power), screen (copy text, ask about it). Each call runs under Landlock limited to the folders it names. | tests: injected file text can't trigger a silent action; a write is undoable; a sandboxed call can't read `~/.ssh` |
 | M4 | **Context index** (text, PDF) + Nexus file search by meaning | finds a file by describing it |
 | M5 | **Screen**: copy text from screen, ask about screen | OCR round trip test |
 | M6 | **Voice**: push-to-talk in and out | spoken question answered offline |

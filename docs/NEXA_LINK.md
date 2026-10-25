@@ -1,7 +1,7 @@
 # Nexa Link: your PC and your phone, connected (design, 2026-10-25)
 
 NexaOS on the PC and Nexa Mobile (docs/MOBILE_PLAN.md) find each other and
-connect **automatically** - but only after you have paired them once, only
+connect **automatically**, but only after you have paired them once, only
 with each other, and only for what you allowed. Nothing goes through a
 server or the internet.
 
@@ -15,7 +15,7 @@ server or the internet.
 | Send files and links either way (the receiver accepts; saved to Downloads) | on, asks each time |
 | Find my phone (rings it, even on silent) | on |
 | Media controls (pause the phone's music from the PC) | on |
-| Shared clipboard | **off** - and never anything marked as a password |
+| Shared clipboard | **off**, and never anything marked as a password |
 | Use the phone as a remote / touchpad, or the PC's keyboard on the phone | **off**; asks every session |
 | Continue where you were (open the page or file the other device has open) | on |
 
@@ -23,14 +23,14 @@ server or the internet.
 
 Automatic means: two devices **you already paired** connect by themselves
 when they are near (same trusted network, or Bluetooth). A device you never
-paired never gets anything. What made the best-known Linux-phone link, KDE
-Connect, unsafe at times - and the rule here that rules each one out:
+paired never gets anything. KDE Connect, the best-known Linux-phone link,
+has had security holes; here is each one and the Nexa Link rule against it:
 
 | Lesson (KDE Connect) | Nexa Link rule |
 |---|---|
 | An unpaired device could connect: the identity sent before encryption wasn't checked against the one inside it ([CVE-2025-66270](https://www.sentinelone.com/vulnerability-database/cve-2025-66270/)) | A device **is** its public key (Ed25519). There is no separate "device ID" to trust: the encrypted handshake proves the key, and only keys pinned at pairing are accepted. Unknown keys are dropped before a single message is read |
 | The pairing code was short and fixed, so an attacker could make keys until the code matched ([CVE-2025-32898](https://kde.org/info/security/advisory-20250418-3.txt)) | Pairing by **QR code** (the PC shows its key; the phone scans it) or a code that mixes **fresh random values from both devices** (it changes every attempt), confirmed on both screens within 60 s |
-| Unauthenticated discovery packets could fake names or unpair devices ([CVE-2025-32899](https://nvd.nist.gov/vuln/detail/cve-2025-32899), [CVE-2025-32900](https://kde.org/info/security/advisory-20250418-2.txt)) | Discovery messages **change nothing** - they only say "a paired device may be here", as a rotating code only your paired devices can recognise (strangers on the network can't even tell it's you). Names, unpairing and everything else happen only inside the encrypted channel |
+| Unauthenticated discovery packets could fake names or unpair devices ([CVE-2025-32899](https://nvd.nist.gov/vuln/detail/cve-2025-32899), [CVE-2025-32900](https://kde.org/info/security/advisory-20250418-2.txt)) | Discovery messages **change nothing**. They only say "a paired device may be here", as a rotating code only your paired devices can recognise (strangers on the network can't even tell it's you). Names, unpairing and everything else happen only inside the encrypted channel |
 | Certificate errors were ignored for unknown peers ([CVE-2020-26164](https://seclists.org/oss-sec/2020/q4/56)) | No "accept anyway" path exists in the code |
 
 And beyond those:

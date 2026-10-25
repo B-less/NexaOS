@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.2.0 — 2026-10-12
+## 3.2.0 (2026-10-12)
 
 Everything since the 3.1.0 import. Tested in QEMU (BIOS and UEFI); the
 first real-hardware boot (HP EliteBook 840 G6) worked for USB boot, Wi-Fi

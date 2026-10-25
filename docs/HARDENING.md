@@ -22,7 +22,7 @@ plan, in the order it pays off.
   refused; WebRTC and DNS prefetching off; private and Tor windows.
 - **VPN files** that would run commands as root are refused.
 
-## Step 1 — kernel self-protection (done in 3.2.0)
+## Step 1: kernel self-protection (done in 3.2.0)
 
 The Kernel Self Protection Project's baseline options, now on.
 They cost little (a few % on allocation-heavy work at most) and break
@@ -38,7 +38,7 @@ nothing a desktop uses:
 | `SECURITY_YAMA` (+ `kernel.yama.ptrace_scope=1`) | a process can only debug its own children, so malware running as you can't read the browser's or the keyring's memory |
 | `IO_STRICT_DEVMEM` | `/dev/mem` can't touch device memory a driver owns |
 
-## Step 2 — confine the root helpers with Landlock (next)
+## Step 2: confine the root helpers with Landlock (next)
 
 Landlock is already in the kernel and needs no profiles, policy language or
 daemon: a program restricts *itself*. Each `nexa-*-helper` would, right after
@@ -50,7 +50,7 @@ Python has no Landlock module, but it is three syscalls through `ctypes`;
 one shared `nexa_common/landlock.py` covers every helper. Test: a helper
 that tries to open `/etc/shadow` after restricting itself must fail.
 
-## Step 3 — AppArmor for the apps that face the internet
+## Step 3: AppArmor for the apps that face the internet
 
 AppArmor confines programs by path. It suits NexaOS better than SELinux
 (Alpine ships `apparmor`, `apparmor-utils`; profiles are readable text).
@@ -64,7 +64,7 @@ under a named profile: the browser may read/write `~/Downloads` and its own
 data directory, not `~/.ssh` or other apps' data. Start in complain mode,
 collect denials on real use (HP test), then enforce.
 
-## Step 4 — verified boot
+## Step 4: verified boot
 
 Today Secure Boot must be off. Options:
 
@@ -88,7 +88,7 @@ Today Secure Boot must be off. Options:
    the assistant). Still to do: sealing a disk-encryption key to the
    measured boot chain.
 
-## Step 5 — disk encryption
+## Step 5: disk encryption
 
 The installer currently writes a plain ext4 root. LUKS2 (`dm-crypt`,
 `cryptsetup` in the initramfs, a passphrase prompt in the boot animation)

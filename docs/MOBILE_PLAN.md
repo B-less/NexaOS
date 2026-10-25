@@ -19,8 +19,8 @@ cellular and camera not working yet
 ([AlternativeTo](https://alternativeto.net/news/2025/8/postmarketos-adds-fairphone-6-iphone-x-major-apple-and-vr-support)).
 
 **Decision: mainline Linux, built on postmarketOS's device ports.** The other
-road - Droidian or Ubuntu Touch, running the phone's own Android drivers
-through Halium/libhybris - makes more hardware work today, but depends on
+road is Droidian or Ubuntu Touch, which run the phone's own Android drivers
+through Halium/libhybris. It makes more hardware work today, but depends on
 closed drivers and a kernel that stops getting updates when the maker drops
 the phone; KDE's Plasma Mobile moved away from it
 ([Liliputing](https://liliputing.com/mobile-linux-distributions/),
@@ -59,7 +59,7 @@ drives layer already are). On top:
   Patterns) at the top, swipe up for Nexus (search, all apps, ask Nexa).
 - **Status bar** (time, signal, Wi-Fi, battery) and, swiped down, **quick
   settings**: Wi-Fi, mobile data, Bluetooth, airplane, flashlight,
-  brightness, rotation lock, Do not disturb - glass, edge-lit, the theme's
+  brightness, rotation lock, Do not disturb. Glass, edge-lit, the theme's
   colours.
 - **Gestures:** swipe up home, swipe up and hold for open apps (cards),
   swipe from the edge to go back. **Lock screen** with notifications and
@@ -68,7 +68,7 @@ drives layer already are). On top:
 - **On-screen keyboard**: an existing Wayland input-method keyboard first
   (squeekboard or stevia), themed; a Nexa keyboard (Rust, with word
   suggestions from the on-device model) later.
-- **Same look as the PC**: themes, glass, icon styles, NexaHexa - one design.
+- **Same look as the PC**: themes, glass, icon styles, NexaHexa. One design.
 
 ## 4. Phone things the PC never needed
 
@@ -85,12 +85,12 @@ drives layer already are). On top:
 ## 5. Security and privacy (same rules as the PC)
 
 - Every root action through **nexa-brokerd**; apps confined by **nexa-run**
-  (Landlock) with the same `.nexa` permissions - plus `phone`, `sms`,
+  (Landlock) with the same `.nexa` permissions, plus `phone`, `sms`,
   `contacts`, `location` (already in the list), `camera`.
 - **Disk encryption on by default** (a phone gets lost): unlocked with the PIN
   at boot by an on-screen unlocker in the initramfs (unl0kr, from
   postmarketOS), later bound to hardware where the phone allows.
-- Signed images and A/B updates (TODO I6) - a phone must never be bricked by
+- Signed images and A/B updates (TODO I6). A phone must never be bricked by
   an update.
 - Nexa Mind stays on the phone (a smaller model; nothing sent anywhere).
 
@@ -108,8 +108,8 @@ drives layer already are). On top:
 ## 6b. PC and phone together
 
 **Nexa Link** (docs/NEXA_LINK.md): once paired, the PC and the phone connect
-by themselves - notifications, calls and texts on the PC, files, find my
-phone - encrypted, no cloud, every feature a separate permission.
+by themselves: notifications, calls and texts on the PC, files, find my
+phone. Encrypted, no cloud, every feature a separate permission.
 
 ## 7. Phases
 
@@ -125,7 +125,7 @@ phone - encrypted, no cloud, every feature a separate permission.
 
 ## 8. What it needs from you
 
-- A **OnePlus 6 or 6T** (used) as the reference phone - it can be fully
+- A **OnePlus 6 or 6T** (used) as the reference phone. It can be fully
   flashed back to Android if needed.
 - A spare SIM for P3.
 - The PC system first: the batch of fixes waiting for the next ISO build.

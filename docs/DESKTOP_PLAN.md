@@ -18,7 +18,7 @@ in a **honeycomb**, the pointy-top hexagon that is the NexaOS mark.
   Drives appear on their own while plugged in.
 - **Clusters, not clutter.** Items of one kind can gather into a
   **cluster**: a hexagon flower of up to seven cells (one in the middle, six
-  around it) - "Pictures", "Documents", "Apps", "Today". A cluster folds
+  around it), such as "Pictures", "Documents", "Apps", "Today". A cluster folds
   into one cell with a count, and opens in place when clicked. The desktop
   offers to cluster when it gets crowded; nothing moves without you.
 - **Zones.** The top-left corner is for drives, the top-right for the For

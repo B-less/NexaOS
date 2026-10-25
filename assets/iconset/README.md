@@ -33,7 +33,7 @@ but on NexaOS's hexagon:
 - **Dark** (`NexaHexa-<theme>-dark`): a dark hexagon in the theme's depth,
   the glyph in the app's own colours;
 - **Tinted** (`NexaHexa-<theme>-tinted`): the same dark hexagon, every glyph
-  in the theme's accent - one colour across the desktop.
+  in the theme's accent: one colour across the desktop.
 
 Dark tiles have a faint light edge so they keep their shape on a dark
 desktop, and the NexaOS mark takes the theme's accent in every style.
@@ -65,7 +65,7 @@ glyph, names are unique and every shape stays inside the grid.
    GTK's settings.ini **and** to GSettings' keyfile
    (`~/.config/glib-2.0/settings/keyfile`, `icon-theme`): on Wayland GTK 3
    reads the icon theme from GSettings, and NexaOS has no dconf, so the
-   session runs with `GSETTINGS_BACKEND=keyfile`. Every GTK app - ours or
-   not - picks it up, and follows a change live.
+   session runs with `GSETTINGS_BACKEND=keyfile`. Every GTK app, ours or
+   not, picks it up, and follows a change live.
 3. Nexus and the For you card show a NexaHexa tile as it is (no hexagon
    drawn behind it), with an accent outline when it's lit.

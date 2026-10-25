@@ -1,4 +1,4 @@
-# Nexa Patterns — learning how you use the computer, and getting ahead of you
+# Nexa Patterns: learning how you use the computer, and getting ahead of you
 
 Written 2026-10-18; **phases 1 and 2 built the same day** (see 9). A plan for NexaOS to learn each person's habits on the
 laptop itself, adapt to them, and make useful predictions: the app you're
@@ -198,12 +198,12 @@ rule, the ISO is built once for the whole batch.
 
 | Phase | Builds | Done when (tests) |
 |---|---|---|
-| **P1 — Journal and controls** | `nexa-patternd` (journal, decay, forget, export, pause); `nexa-kerneld` `subscribe` (own-uid events only); Settings > Privacy > Patterns (on/off, forget, export) | events recorded only when on; forget really deletes (journal and counts); private windows and excluded apps never recorded; another account's events never arrive |
-| **P2 — Next app, on the desktop** | time habits, Markov chains, the ranker; the desktop "For you" card (apps, then files) and Launchpad's "Suggested" row; Why? / Don't suggest / Hide for today | replaying a synthetic month of usage gives top-3 accuracy ≥ 60% on its last week; explanations match the counts; the card shows nothing below the threshold, sits under windows (headless Sway screenshot test), and a dismissed app doesn't come back |
-| **P3 — Faster starts** | preloader (readahead of predicted apps' executables and libraries, memory-pressure aware); AI model warm-up at usual assistant times | measured cold-start time of a predicted app drops (target −30% on the HP); preloading stops when memory PSI rises |
-| **P4 — Battery and brightness** | battery profile and forecast in the bar and on the desktop card; learned brightness/volume curves, offered first | forecast error under 20 min on replayed real logs; brightness offer appears only after 10 consistent changes and turns off at the next manual change |
-| **P5 — Routines and the assistant** | routine mining when idle; routine offers on the desktop card; `my_patterns` assistant tool and the opt-in context summary | a planted daily routine in synthetic data is found within 5 days; three dismissals retire it; the summary contains no file names or window titles |
-| **P6 — Wider view (optional)** | file-open patterns for every app (`FANOTIFY`), Files "Likely next" folders | needs a kernel option; done only if P1–P5 prove useful |
+| **P1: Journal and controls** | `nexa-patternd` (journal, decay, forget, export, pause); `nexa-kerneld` `subscribe` (own-uid events only); Settings > Privacy > Patterns (on/off, forget, export) | events recorded only when on; forget really deletes (journal and counts); private windows and excluded apps never recorded; another account's events never arrive |
+| **P2: Next app, on the desktop** | time habits, Markov chains, the ranker; the desktop "For you" card (apps, then files) and Launchpad's "Suggested" row; Why? / Don't suggest / Hide for today | replaying a synthetic month of usage gives top-3 accuracy ≥ 60% on its last week; explanations match the counts; the card shows nothing below the threshold, sits under windows (headless Sway screenshot test), and a dismissed app doesn't come back |
+| **P3: Faster starts** | preloader (readahead of predicted apps' executables and libraries, memory-pressure aware); AI model warm-up at usual assistant times | measured cold-start time of a predicted app drops (target −30% on the HP); preloading stops when memory PSI rises |
+| **P4: Battery and brightness** | battery profile and forecast in the bar and on the desktop card; learned brightness/volume curves, offered first | forecast error under 20 min on replayed real logs; brightness offer appears only after 10 consistent changes and turns off at the next manual change |
+| **P5: Routines and the assistant** | routine mining when idle; routine offers on the desktop card; `my_patterns` assistant tool and the opt-in context summary | a planted daily routine in synthetic data is found within 5 days; three dismissals retire it; the summary contains no file names or window titles |
+| **P6: Wider view (optional)** | file-open patterns for every app (`FANOTIFY`), Files "Likely next" folders | needs a kernel option; done only if P1–P5 prove useful |
 
 **Evaluation tool:** `nexa-patternd replay <journal>` runs the models over
 a recorded or synthetic journal and prints accuracy, calibration
@@ -266,16 +266,16 @@ Sway, with screenshots).
 ## 10. Phase 3: faster starts (built)
 
 - **What an app needs:** when an app has been in front for 5 s, the
-  daemon notes the system files it has loaded - its program and libraries
+  daemon notes the system files it has loaded: its program and libraries
   from `/proc/<pid>/maps`, and for NexaOS's Python apps their package plus
-  `nexa_common` and `gi` - in `~/.local/share/nexa-patterns/apps/<app>.files`
+  `nexa_common` and `gi`. They go in `~/.local/share/nexa-patterns/apps/<app>.files`
   (system folders only, refreshed weekly). Landlock forbids a confined
   process from reading other processes' maps, so a small helper started
   before confinement (`nexa-patternd maps-helper`) answers only "pid ->
   loaded system files".
 - **Getting ahead:** every minute, apps at least 30% likely to be next and
   not already running are read into the page cache (readahead(2)), at most
-  once per half hour each, up to 300 MB per app - only with a quarter of RAM
+  once per half hour each, up to 300 MB per app, and only with a quarter of RAM
   left free, no memory pressure, and on mains or 30%+ battery. Settings >
   Privacy > Patterns > "Faster app starts" switches it off.
 - **The assistant:** when it's likely next (and on mains or 50%+ battery),

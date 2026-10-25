@@ -1,4 +1,4 @@
-# NexaOS — design and roadmap ("the dream OS")
+# NexaOS: design and roadmap ("the dream OS")
 
 Written 2026-10-13. NexaOS 3.2.0 is a working Alpine-based desktop. This is
 the plan to make it an OS with its own identity, a private offline
@@ -14,15 +14,15 @@ check.
 Today several parts follow other systems closely: a magnifying Dock and a
 "Launchpad" (macOS), a "Control Centre" (macOS), a Start menu (Windows),
 window buttons in the Windows position. Layout ideas themselves are not
-owned by anyone, but **names and recognisable trade dress are** —
-"Launchpad", "Control Center", "Mission Control", "Spotlight", "Start" are
-trademarks — and copying them makes NexaOS look like an imitation. (This
+owned by anyone, but **names and recognisable trade dress are**.
+"Launchpad", "Control Center", "Mission Control", "Spotlight" and "Start"
+are trademarks, and copying them makes NexaOS look like an imitation. (This
 is a design decision, not legal advice.)
 
 ### The Nexa design language: "Hexa"
 
 Built from the hexagon in the boot animation and the constellation
-wallpapers — shapes nobody else uses.
+wallpapers: shapes nobody else uses.
 
 | Element | Today | Nexa design |
 |---|---|---|
@@ -45,7 +45,7 @@ screen and the compositor config, so the whole system changes together.
 
 ## 2. What makes NexaOS different
 
-1. **Nexa Mind — a private assistant that works offline.**
+1. **Nexa Mind, a private assistant that works offline.**
    - Local model through `llama.cpp` (in Alpine): a small model (1–3 B
      parameters, ~1–2 GB, downloaded from Settings, never preinstalled) runs
      on the CPU; Claude remains an optional online mode for harder tasks.
@@ -53,7 +53,7 @@ screen and the compositor config, so the whole system changes together.
    - System actions with explicit permission (the existing tool layer).
    - "Ask about this screen" and **copy text from anything** (`tesseract` OCR).
    - Local index of your files so it can answer "where's the invoice from
-     March?" — nothing leaves the machine.
+     March?" Nothing leaves the machine.
 2. **Privacy Center.** One page that shows and controls, per app: internet
    (normal / VPN only / Tor only / offline), camera, microphone, location,
    files; Tor windows and VPN built in.
@@ -67,7 +67,7 @@ screen and the compositor config, so the whole system changes together.
 
 ---
 
-## 3. Settings — every page
+## 3. Settings, page by page
 
 Each page has a search entry in Settings' own search, and the assistant can
 open it ("open display settings").
@@ -124,8 +124,8 @@ Discord, Steam.
 ## 5. Quality: debugging what exists
 
 Static analysis (ruff, all 158 Python files): clean except six harmless
-warnings in one test. The real bugs are behavioural — like the lock screen
-that could not unlock and the terminal that could not be dragged — so:
+warnings in one test. The real bugs are behavioural, like the lock screen
+that could not unlock and the terminal that could not be dragged. So:
 
 1. **Every app, every page, screenshotted** in headless Sway, light and dark
    theme, at 100 % and 150 % scaling; app logs checked for errors.
