@@ -313,6 +313,11 @@ test-store-app: native nexa-apps
 test-titlebar: nexa-apps
 	@sh scripts/test-titlebar.sh
 
+# Nexa MicroBrain as a running service: socket, idle footprint, reaction
+# to memory pressure, modes, restart and a damaged settings file.
+test-microbrain: native
+	@sh scripts/test-microbrain.sh
+
 # Nexa Link between three machines (a PC, a phone, a stranger) on a private
 # Docker network: pairing, Nexa-only signals, files, Nexa Drop, Forget.
 test-nexa-link: native

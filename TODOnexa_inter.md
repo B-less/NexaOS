@@ -46,21 +46,21 @@ user processes to "free RAM", claims we can't back with a measurement.
 
 ## 3. Phase 0: baseline before any change
 
-- [ ] Run and record: `make test`, `sh scripts/build-native.sh test`, `make test-files-app test-titlebar test-locker test-nexa-link test-nexa-link-ui test-topbar test-files-drag`, the app sweep, and `scripts/test-live-boot.py` (health report).
-- [ ] Measure today's idle RSS/PSS of the per-user services (`nexa-patternd`, `nexa-kerneld`, `nexa-linkd`, `nexa-doctor watch`, shell parts) in a 4 GB QEMU VM: the starting line MicroBrain is judged against.
-- [ ] Write the integration map: which service owns which data, events and actions (docs/MICROBRAIN.md).
+- [x] Run and record (2026-10-25: all green): `make test`, `sh scripts/build-native.sh test`, `make test-files-app test-titlebar test-locker test-nexa-link test-nexa-link-ui test-topbar test-files-drag`, the app sweep, and `scripts/test-live-boot.py` (health report).
+- [x] Measure today's idle RSS/PSS of the per-user services (`nexa-patternd`, `nexa-kerneld`, `nexa-linkd`, `nexa-doctor watch`, shell parts) in a 4 GB QEMU VM: the starting line MicroBrain is judged against.
+- [x] Write the integration map: which service owns which data, events and actions (docs/MICROBRAIN.md), with the baseline table.
 
 ## 4. Core: `tools/nexa-microbrain` (Rust)
 
 - [ ] Event collector: app launch/exit and focus (from `nexa-kerneld focus-watch` and `nexa-patternd`, not a second watcher), PSI (cpu/memory/io), `/proc/meminfo`, disk free, battery, network (netlink), USB (the broker's `/run/nexa/drives.json`), package transactions (broker audit), settings changes.
-- [ ] Event router with typed messages and bounded queues; drop-oldest + a counter on overflow.
+- [x] Event router with typed messages and bounded queues (a full queue drops the sample; requests get "busy").
 - [ ] Decision engine: rules, thresholds with hysteresis, confidence, user preferences, policy checks.
-- [ ] Memory engine: local store with migrations, retention limits, size cap, corruption handling (rebuild from scratch rather than crash).
+- [x] Memory engine: versioned JSON documents with migrations, a size cap, damaged files set aside (store.rs, tested).
 - [ ] Action engine: every action declared (id, argument validation, permissions, approval needed, timeout, rollback if any, audit line). No shell strings.
 - [ ] Agent coordinator: the five agents (section 5, feature 8) as components in one process.
-- [ ] IPC: `$XDG_RUNTIME_DIR/nexa-microbrain.sock`, 0600, peer uid checked (`nexa_sys::peer`), JSON lines like the other services.
-- [ ] Landlock-confined like `nexa-patternd`; Nexa Doctor restarts it, with a crash-loop limit.
-- [ ] Resource profile chosen at start from RAM: 2 GB / 4 GB / 8 GB+ (section 8), overridable in Settings.
+- [x] IPC: `$XDG_RUNTIME_DIR/nexa-microbrain.sock`, 0600, peer uid checked, JSON lines, 64 KB line limit.
+- [x] Landlock-confined; starts with both sessions; Nexa Doctor restarts it (its crash-loop limit).
+- [x] Resource profile chosen at start from RAM: 2 GB / 4 GB / 8 GB+, overridable (`config`).
 
 ## 5. The 12 features
 
@@ -78,8 +78,8 @@ Each: **exists** = what we build on; **build** = new work; **test** = done when.
 
 ### 3. FutureLoad (pressure prediction)
 - Exists: PSI triggers and OOM-kill events in `nexa-kerneld`; Pulse shows CPU/memory/disk.
-- Build: [ ] EMAs + trend over PSI, available RAM, swap-in rate, disk free, per-app growth; [ ] predictions with confidence; [ ] hysteresis and a quiet period so wobbling numbers never spam; [ ] "about 1.2 GB of caches may be recoverable" (estimate, said as one).
-- Test: [ ] simulated rising memory pressure → warning and mitigation; [ ] fluctuating input → no notification storm.
+- Build: [x] EMAs + trend over PSI, available RAM, disk free (swap-in rate and per-app growth still to do); [x] predictions with confidence; [x] hysteresis and a quiet period so wobbling numbers never spam; [ ] "about 1.2 GB of caches may be recoverable" (estimate, said as one).
+- Test: [x] simulated rising memory pressure → warning and mitigation; [x] fluctuating input → no notification storm (unit tests + `make test-microbrain`).
 
 ### 4. PocketWorkspace (save and restore a working set)
 - Exists: the compositor layer (`nexa_common.compositor`) lists and places windows; app ids match .desktop files.
@@ -102,8 +102,8 @@ Each: **exists** = what we build on; **build** = new work; **test** = done when.
 - Test: [ ] a disallowed broker request is refused, logged and shown; [ ] an unprivileged program can't pose as the broker (socket owner, peer creds) or skip authorization. Folded into Nexa Defender (section 6).
 
 ### 8. NanoAgents (five small agents, one process)
-- Build: [ ] Performance, Security, File, Maintenance, Learning agents as components with typed messages, bounded queues, timeouts and permission checks; [ ] no reasoning loops, no shell; [ ] Agent Control Center page (what each did and why).
-- Test: [ ] synthetic low-memory event → scan deferred, foreground app untouched, the UI explains it.
+- Build: [~] Performance and Maintenance agents built and tested; Security, File, Learning come with their features. Agents are components with typed messages, bounded queues, timeouts and permission checks; [ ] no reasoning loops, no shell; [ ] Agent Control Center page (what each did and why).
+- Test: [x] synthetic low-memory event → scan deferred and resumed, the decision recorded with why (the UI part comes with Settings > Intelligence).
 
 ### 9. OfflineFirst (network-aware transfers)
 - Exists: Store downloads (signed, checked), Nexa Link transfers.
@@ -122,8 +122,8 @@ Each: **exists** = what we build on; **build** = new work; **test** = done when.
 
 ### 12. AdaptivePulse (resource modes)
 - Exists: `nexa-kerneld` CPU floor for the app in front and the AI cgroup cap; power profiles in Settings > Power.
-- Build: [ ] Balanced / Low resource / Battery saver / Performance / Automatic; [ ] applied through cgroup weights, nice/ionice, deferring our own background jobs (indexing, scans, preloading); [ ] never kill a user process; never touch CPU frequency except through existing kernel interfaces.
-- Test: [ ] high memory pressure → background work waits; pressure gone → it resumes.
+- Build: [x] Balanced / Low resource / Battery saver / Performance / Automatic (pulse.rs); [x] deferring MicroBrain's own background jobs; [ ] applied to other services too (Patterns' preloading, nice/ionice of NexaOS's own background work); [ ] never kill a user process; never touch CPU frequency except through existing kernel interfaces.
+- Test: [x] high memory pressure → background work waits; pressure gone → it resumes.
 
 ## 6. Nexa Defender (new: protecting the system and the PC)
 
@@ -186,6 +186,7 @@ Features:
 - [ ] Updates scheduled for when the PC is usually idle and on mains (HabitCore + broker `system_update`).
 - [ ] Boot report: what made this boot slower than usual (OpenRC timings + preload).
 - [ ] A low-RAM guard before the kernel OOM killer: warn and offer to close or freeze, using PSI (`nexa-kerneld`).
+- [ ] One process for the Python desktop parts (Dock, For you card, drives, Nexa Link pop-ups): measured ~100 MB PSS for the four today, most of it repeated Python + GTK; one process would save an estimated 60-70 MB. The biggest win for 2 GB PCs.
 - [ ] Nexa Link + MicroBrain: "your phone's battery is low" and workspace hand-off between two NexaOS PCs.
 
 ## 10. Settings > Intelligence (and where each screen lives)

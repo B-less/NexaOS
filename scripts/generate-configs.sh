@@ -1119,6 +1119,8 @@ exec nexa-battery-watch
 exec nexa-kerneld focus-watch
 # Nexa Patterns (off until switched on in Settings > Privacy) and its desktop card.
 exec nexa-patternd serve
+# Nexa MicroBrain: pressure forecasts, resource modes, background-work budget.
+exec nexa-microbrain serve
 exec nexa-foryou
 # USB sticks and SD cards on the desktop (nexa_shell drives).
 exec nexa-drives
@@ -1239,6 +1241,7 @@ exec-once = nexa-idle
 exec-once = nexa-battery-watch
 exec-once = nexa-kerneld focus-watch
 exec-once = nexa-patternd serve
+exec-once = nexa-microbrain serve
 exec-once = nexa-foryou
 exec-once = nexa-drives
 exec-once = nexa-linkd serve

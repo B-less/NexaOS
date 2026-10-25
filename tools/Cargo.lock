@@ -442,6 +442,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-microbrain"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "nexa-mindd"
 version = "0.1.0"
 dependencies = [

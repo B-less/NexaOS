@@ -174,7 +174,7 @@ def main(argv):
         checks = ([] if no_checks else list(CHECKS)) + ([f"echo EXTRA_BEGIN; {extra}; echo EXTRA_END"] if extra else [])
         # One command per line: BusyBox's line editor stops at ~2 KB.
         s.sendall(("\n".join(checks) + f"\necho {marker}\n").encode())
-        end = time.time() + (120 if extra else 20)
+        end = time.time() + (int(os.environ.get("NEXA_RUN_WAIT", "300")) if extra else 20)  # --run may wait for the desktop
         while time.time() < end and buf.count(marker.encode()) < 2:
             pump(1)
         text = buf.decode(errors="replace").replace("\r", "")
