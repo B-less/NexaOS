@@ -393,6 +393,13 @@ start() {
             began=$(date +%s)
             /usr/local/bin/nexa-session --wayland-only >>/var/log/nexa-session.log 2>&1
             [ -f /run/nexa-session.stop ] && break
+            echo "$(date '+%F %T') session ended after $(( $(date +%s) - began )) s; starting a new one" >>/var/log/nexa-session.log
+            # Logging out ends everything the old session started: its
+            # background services otherwise kept running, pointed at the
+            # old desktop, and failed in a loop next to the new copies.
+            pkill -TERM -U 1000 2>/dev/null || true
+            sleep 1
+            pkill -KILL -U 1000 2>/dev/null || true
             if [ $(( $(date +%s) - began )) -lt 10 ]; then quick=$((quick + 1)); else quick=0; fi
             if [ $quick -ge 5 ]; then
                 echo "nexa-session: ended 5 times in a row within 10 s; not starting it again" >>/var/log/nexa-session.log

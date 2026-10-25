@@ -174,9 +174,16 @@ def logout():
             pass
     except OSError:
         pass
+    # The compositor quits before it can answer, so "no reply" is normal
+    # here: success means the command could be sent at all.
     wm = which()
-    if wm == "hyprland":
-        return _hypr("exit")
-    if wm == "sway":
-        return _sway("exit")
-    return False
+    argv = {"hyprland": ["hyprctl", "dispatch", "exit"], "sway": ["swaymsg", "exit"]}.get(wm)
+    if not argv:
+        return False
+    try:
+        _run(argv, capture_output=True, text=True, timeout=3)
+    except OSError:
+        return False
+    except subprocess.SubprocessError:
+        pass
+    return True
