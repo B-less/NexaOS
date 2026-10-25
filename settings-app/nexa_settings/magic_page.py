@@ -48,7 +48,7 @@ FEATURE_TEXT = {
     "surprise": "Surprise: an occasional useful tip (opt-in)",
     "gestures": "GestureKeys: mouse gestures while holding a key",
 }
-BUILT = set()  # features with real behaviour behind them (grows as they land)
+BUILT = {"why"}  # features with real behaviour behind them (grows as they land)
 
 
 def _preview_png(style, w=320, h=180):

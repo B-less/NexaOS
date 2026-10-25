@@ -32,6 +32,8 @@ pub struct Sample {
     pub disk_total_mb: u64,
     pub battery: Option<u8>,
     pub on_battery: bool,
+    /// Programs the kernel has ended for lack of memory since boot (/proc/vmstat oom_kill).
+    pub oom_kills: u64,
 }
 
 pub struct Paths {
@@ -132,6 +134,8 @@ pub fn sample(p: &Paths, prev_cpu: &mut Option<(u64, u64)>, now: u64) -> Sample 
         disk_total_mb,
         battery,
         on_battery,
+        oom_kills: fs::read_to_string(p.proc_root.join("vmstat")).unwrap_or_default().lines()
+            .find_map(|l| l.strip_prefix("oom_kill ")).and_then(|v| v.trim().parse().ok()).unwrap_or(0),
     }
 }
 
@@ -255,6 +259,9 @@ pub struct Monitor {
     pub cpu: Ema,
     history: VecDeque<Sample>,
     cap: usize,
+    /// When the kernel ended programs for lack of memory: (after, by, how many);
+    /// it happened between those two sample times. The last 20.
+    pub ooms: VecDeque<(u64, u64, u64)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -269,6 +276,7 @@ impl Monitor {
         Monitor {
             last: None, mem_level: Level::Normal, cpu_level: Level::Normal, disk_low: false,
             psi_mem: Ema::new(0.4), cpu: Ema::new(0.3), history: VecDeque::with_capacity(cap), cap: cap.max(4),
+            ooms: VecDeque::new(),
         }
     }
 
@@ -306,6 +314,14 @@ impl Monitor {
         }
         if self.history.len() == self.cap {
             self.history.pop_front();
+        }
+        if let Some(prev) = &self.last {
+            if s.oom_kills > prev.oom_kills {
+                if self.ooms.len() >= 20 {
+                    self.ooms.pop_front();
+                }
+                self.ooms.push_back((prev.at, s.at, s.oom_kills - prev.oom_kills));
+            }
         }
         self.history.push_back(s.clone());
         self.last = Some(s);

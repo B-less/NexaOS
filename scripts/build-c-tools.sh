@@ -29,5 +29,11 @@ make -s -C /src/tools-c/nexa-living nexa-living-preview
 install -m 0755 /src/tools-c/nexa-living/nexa-living-preview /src/build/native/nexa-living-preview
 rm -f /src/tools-c/nexa-living/nexa-living-preview
 echo "built nexa-living-preview: $(stat -c %s /src/build/native/nexa-living-preview) bytes"
-chown -R "$OWNER" /src/build/native
+# Test helpers: build/test, never staged into the image.
+mkdir -p /src/build/test /tmp/vp
+wayland-scanner client-header /usr/share/wlr-protocols/unstable/wlr-virtual-pointer-unstable-v1.xml /tmp/vp/virtual-pointer.h
+wayland-scanner private-code /usr/share/wlr-protocols/unstable/wlr-virtual-pointer-unstable-v1.xml /tmp/vp/virtual-pointer.c
+cc -O2 -Wall -Wextra -Wno-unused-parameter -I/tmp/vp -o /src/build/test/nexa-vpointer /src/common/tests/c/vpointer.c /tmp/vp/virtual-pointer.c $(pkg-config --cflags --libs wayland-client)
+echo "built nexa-vpointer (tests only): $(stat -c %s /src/build/test/nexa-vpointer) bytes"
+chown -R "$OWNER" /src/build/native /src/build/test
 '

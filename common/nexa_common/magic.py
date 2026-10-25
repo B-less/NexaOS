@@ -15,6 +15,7 @@ import copy
 import json
 import os
 import socket
+import time
 
 VERSION = 1
 
@@ -192,8 +193,22 @@ def click(app, x, y):
     return send(f"click {app} {x:.0f} {y:.0f}")
 
 
+_last_level = {}
+
+
 def level(app, value):
-    return send(f"level {app} {max(0.0, min(1.0, value)):.3f}")
+    """Real activity (0..1) for this app's background; the renderer keeps it
+    5 s. Called as often as an app likes: the same value again within 2 s, or
+    a small change within 0.3 s, isn't sent."""
+    v = max(0.0, min(1.0, float(value)))
+    t = time.monotonic()
+    last = _last_level.get(app)
+    if last is not None:
+        dt, dv = t - last[0], abs(v - last[1])
+        if (dv < 0.02 and dt < 2.0) or (dv < 0.1 and dt < 0.3):
+            return False
+    _last_level[app] = (t, v)
+    return send(f"level {app} {v:.3f}")
 
 
 def stats():

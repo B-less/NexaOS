@@ -3,13 +3,14 @@ network graphs. Replaces Nexa Tasks and Nexa System Monitor."""
 import os
 import signal
 import sys
+import threading
 from collections import deque
 
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango
 
-from nexa_common import compositor, desktopapps, themes
+from nexa_common import brain, compositor, desktopapps, exits, magic, themes
 from nexa_common.titlebar import attach_titlebar
 
 from . import stats
@@ -32,7 +33,15 @@ treeview header button { background-image: none; background-color: @nexa_surface
 #card-value { color: @nexa_text; font-size: 15pt; font-weight: bold; }
 #card-detail { color: @nexa_muted; font-size: 9pt; }
 #statusbar { color: @nexa_muted; font-size: 9pt; }
+#why-proven { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 8px; padding: 1px 8px; font-size: 8pt; font-weight: bold; }
+#why-possible { color: @nexa_muted; border: 1px solid @nexa_muted; border-radius: 8px; padding: 0 7px; font-size: 8pt; }
+#why-text { color: @nexa_text; }
+#why-evidence { color: @nexa_muted; font-size: 8pt; }
+#why-row { background-image: none; background-color: @nexa_surface; border-radius: 10px; }
 """
+
+WHY_TOPICS = [("slow", "Slow"), ("crash", "An app closed"), ("memory", "Memory"), ("network", "No internet"),
+              ("stopped", "Something stopped")]
 
 INTERVAL_S = 1
 HISTORY = 60
@@ -150,6 +159,7 @@ class PulseWindow(Gtk.Window):
         self.notebook = Gtk.Notebook()
         self.notebook.append_page(self._processes_page(), Gtk.Label(label="Processes"))
         self.notebook.append_page(self._performance_page(), Gtk.Label(label="Performance"))
+        self.notebook.append_page(self._why_page(), Gtk.Label(label="Why?"))
         self.add(self.notebook)
         self.connect("key-press-event", self._on_key)
 
@@ -281,8 +291,11 @@ class PulseWindow(Gtk.Window):
         if pid == os.getpid():
             self.destroy()
             return
+        model, it = self.view.get_selection().get_selected()
+        name = model[it][COL_NAME] if it else str(pid)
         try:
             os.kill(pid, sig)
+            exits.note_ended(name, pid, sig)  # so Why knows it was you
         except ProcessLookupError:
             pass
         except PermissionError:
@@ -295,6 +308,80 @@ class PulseWindow(Gtk.Window):
                                    buttons=Gtk.ButtonsType.OK, text=text)
         dialog.run()
         dialog.destroy()
+
+    # ---- Why (Magic Layer: tools/nexa-microbrain/src/why.rs) -------------
+
+    def _why_page(self):
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        page.set_border_width(14)
+        intro = Gtk.Label(xalign=0, wrap=True)
+        intro.set_text("Ask why, and Nexa MicroBrain looks at the evidence. \u201cProven\u201d means it was measured or "
+                       "recorded when it happened; \u201cpossible\u201d means it fits, but isn't shown to be the cause.")
+        intro.set_name("card-detail")
+        page.pack_start(intro, False, False, 0)
+        row = Gtk.Box(spacing=6)
+        self._why_buttons = {}
+        for topic, label in WHY_TOPICS:
+            b = Gtk.Button(label=label)
+            b.set_name("toolbtn")
+            b.connect("clicked", lambda _b, t=topic: self.ask_why(t))
+            row.pack_start(b, False, False, 0)
+            self._why_buttons[topic] = b
+        page.pack_start(row, False, False, 0)
+        self._why_status = Gtk.Label(xalign=0)
+        self._why_status.set_name("statusbar")
+        page.pack_start(self._why_status, False, False, 0)
+        self._why_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(self._why_list)
+        page.pack_start(scroll, True, True, 0)
+        return page
+
+    def ask_why(self, topic):
+        self.notebook.set_current_page(2)
+        self._why_status.set_text("Looking\u2026")
+        for b in self._why_buttons.values():
+            b.set_sensitive(False)
+
+        def work():
+            try:
+                reply, error = brain.request("why", timeout=6, topic=topic), None
+            except brain.BrainError as e:
+                reply, error = None, str(e)
+            GLib.idle_add(self._show_why, reply, error)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_why(self, reply, error):
+        for b in self._why_buttons.values():
+            b.set_sensitive(True)
+        for child in self._why_list.get_children():
+            child.destroy()
+        if error:
+            self._why_status.set_text(error)
+            return False
+        import time as _time
+        self._why_status.set_text(f"{reply.get('title', '')} \u00b7 checked at {_time.strftime('%H:%M:%S')}")
+        for f in reply.get("findings", []):
+            box = Gtk.Box(spacing=10)
+            box.set_name("why-row")
+            box.set_border_width(10)
+            badge = Gtk.Label(label="Proven" if f.get("certainty") == "proven" else "Possible")
+            badge.set_name("why-proven" if f.get("certainty") == "proven" else "why-possible")
+            badge.set_valign(Gtk.Align.START)
+            box.pack_start(badge, False, False, 0)
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            text = Gtk.Label(label=f.get("text", ""), xalign=0, wrap=True)
+            text.set_name("why-text")
+            ev = Gtk.Label(label=f.get("evidence", ""), xalign=0, wrap=True)
+            ev.set_name("why-evidence")
+            col.pack_start(text, False, False, 0)
+            col.pack_start(ev, False, False, 0)
+            box.pack_start(col, True, True, 0)
+            self._why_list.pack_start(box, False, False, 0)
+        self._why_list.show_all()
+        return False
 
     # ---- Performance -----------------------------------------------------
 
@@ -326,6 +413,7 @@ class PulseWindow(Gtk.Window):
 
         self.cpu_card.graph.push(cpu_pct)
         self.cpu_card.value.set_text(f"{cpu_pct:.0f}%")
+        magic.level("nexa-pulse", cpu_pct / 100)  # its Energy Pulse follows the load
         self.cpu_card.detail.set_text(f"{os.cpu_count()} cores · {len(procs)} processes")
 
         mem_pct, used_mb, total_mb = stats.memory()
@@ -355,4 +443,8 @@ def main():
     win.show_all()
     if "--performance" in sys.argv[1:]:
         win.notebook.set_current_page(1)
+    if "--why" in sys.argv[1:]:
+        i = sys.argv.index("--why")
+        topic = sys.argv[i + 1] if i + 1 < len(sys.argv) else "slow"
+        win.ask_why(topic if topic in dict(WHY_TOPICS) else "slow")
     Gtk.main()

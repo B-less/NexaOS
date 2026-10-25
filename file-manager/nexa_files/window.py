@@ -20,7 +20,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, Gio, GLib, GdkPixbuf, GObject
 
 from . import engine, fileops, thumbs
-from nexa_common import removable, themes
+from nexa_common import magic, removable, themes
 from nexa_common.titlebar import attach_titlebar
 
 ICON_SIZES = [16, 20, 24, 32, 48, 64]
@@ -1219,6 +1219,7 @@ class FileManagerWindow(Gtk.Window):
         self.progress.show()
         self.cancel_btn.show()
         self.progress.set_fraction(min(1.0, p["done"] / total) if total else 0)
+        magic.level("nexa-files", 0.5 + 0.5 * (min(1.0, p["done"] / total) if total else 0))
         if p.get("finishing"):
             self.progress.set_fraction(1.0)
             self.status.set_text(f"{label}: finishing writing to the drive...")

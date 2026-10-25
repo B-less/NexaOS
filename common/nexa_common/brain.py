@@ -70,15 +70,18 @@ def launch(app_id, paths=()):
         raise BrainError(f"{app_id} isn't installed.")
     info = Gio.DesktopAppInfo.new_from_filename(path)
     files = [Gio.File.new_for_path(p) for p in paths if os.path.exists(p)]
-    if files and info.supports_files():
-        info.launch(files, None)
-    else:
-        info.launch([], None)
+    uris = [f.get_uri() for f in files] if files and info.supports_files() else []
+    from gi.repository import GLib
+    from . import exits
+    # Started by us and not reaped by GLib, so Why can see how it ended.
+    info.launch_uris_as_manager(uris, None, GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.DO_NOT_REAP_CHILD,
+                                None, None, lambda _info, pid, *_a: exits.watch_pid(pid, app_id), None)
 
 
 def _spawn(argv):
+    from . import exits
     try:
-        subprocess.Popen(argv, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        exits.watch(subprocess.Popen(argv, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
     except OSError as e:
         raise BrainError(f"Couldn't start {argv[0]}: {e}") from None
 

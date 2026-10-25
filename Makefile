@@ -356,6 +356,11 @@ test-locker: native
 test-living: native
 	@sh scripts/test-living.sh
 
+# Why (Magic Layer): the real MicroBrain on a real /proc, real crashes,
+# kills, a paused program, a busy loop, networking and none; Pulse's tab.
+test-why: native
+	@sh scripts/test-why.sh
+
 # Settings > Magic Layer driven like a person, with the real renderer.
 test-magic-page: native
 	@sh scripts/test-magic-page.sh

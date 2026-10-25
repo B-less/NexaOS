@@ -229,7 +229,20 @@ fn answers(t: &[String], out: &mut Vec<Hit>) {
         out.push(hit("Battery health", "Charge, wear and whether it's charging", json!({"type": "answer", "topic": "battery"}), 0.85));
     }
     if any(t, &["memory", "ram"]) && any(t, &["using", "used", "free", "left", "much", "full"]) {
-        out.push(hit("What's using the memory?", "Memory now and the forecast", json!({"type": "answer", "topic": "slow"}), 0.86));
+        out.push(hit("What's using the memory?", "The biggest programs, and whether memory ran out", json!({"type": "answer", "topic": "memory"}), 0.86));
+    }
+    // Why (Magic Layer).
+    if any(t, &["crash", "crashed", "crashing", "closed", "disappeared", "vanished", "quit"])
+        || (any(t, &["why"]) && any(t, &["close", "closes", "died"])) {
+        out.push(hit("Why did an app close?", "Crashes, memory running out, or something ending it", json!({"type": "answer", "topic": "crash"}), 0.9));
+    }
+    if (any(t, &["internet", "online", "wifi", "network", "connection", "connected", "offline", "dns"])
+        && any(t, &["no", "not", "isn't", "cant", "can't", "cannot", "why", "broken", "down", "working", "offline"]))
+        || any(t, &["offline"]) {
+        out.push(hit("Why is there no internet?", "Adapter, address, route and DNS, checked now", json!({"type": "answer", "topic": "network"}), 0.9));
+    }
+    if any(t, &["stopped", "paused", "frozen"]) || (any(t, &["why"]) && any(t, &["stop", "waiting"])) {
+        out.push(hit("Why did something stop?", "Paused programs, waiting jobs and what MicroBrain did", json!({"type": "answer", "topic": "stopped"}), 0.84));
     }
 }
 
@@ -346,6 +359,10 @@ mod tests {
         assert_eq!(top("brightness 40"), json!({"type": "brightness", "value": 40}));
         assert_eq!(top("why is my computer slow?"), json!({"type": "answer", "topic": "slow"}));
         assert_eq!(top("show battery health"), json!({"type": "answer", "topic": "battery"}));
+        assert_eq!(top("why did files crash"), json!({"type": "answer", "topic": "crash"}));
+        assert_eq!(top("why is there no internet"), json!({"type": "answer", "topic": "network"}));
+        assert_eq!(top("wifi not working"), json!({"type": "answer", "topic": "network"}));
+        assert_eq!(top("how much memory is used"), json!({"type": "answer", "topic": "memory"}));
         assert_eq!(top("activate coding workspace"), json!({"type": "workspace", "name": "Coding"}));
         assert_eq!(top("pause background scans"), json!({"type": "mode", "mode": "low-resource"}));
         assert_eq!(top("open calculator"), json!({"type": "launch", "app": "nexa-calc"}));

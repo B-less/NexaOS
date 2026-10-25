@@ -22,6 +22,7 @@ _provider = None
 _palette = None
 _monitor = None
 _magic_monitor = None
+_living = False  # this app has a living background (nexa-living) right now
 _colors = {}            # the theme's colours as RGB tuples, for drawing
 _hex_buttons = []       # drawing areas to repaint when the theme changes
 
@@ -39,6 +40,8 @@ def _load_palette(*_args):
     # A living background (nexa-living) shows through this app's glass, so
     # an app that has one gets glass, at least as clear as the setting says.
     living = magic.window_alpha(GLib.get_prgname() or "")
+    global _living
+    _living = living is not None
     if living is not None:
         glass = living if glass is None else min(glass, living)
     t = themes.THEMES[settings["theme"]]
@@ -290,4 +293,21 @@ def attach_titlebar(window, title):
         window.set_visual(visual)
     _fit_to_screen(window)
     window.connect("realize", _fit_to_screen)
+    # Clicks ripple in the app's living background. Seen before any button
+    # takes them (capture phase) and never claimed, so nothing changes for
+    # the app; one small message, only when the app has a background.
+    press = Gtk.GestureMultiPress.new(window)
+    press.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+    press.connect("pressed", _ripple, window, bar)
+    window._nexa_press = press  # kept alive with the window
     return bar
+
+
+def _ripple(_gesture, _n, x, y, window, bar):
+    if not _living:
+        return
+    # GTK counts from the edge of its shadow; the compositor (and so the
+    # renderer) from the window's visible frame, where the title bar starts.
+    off = bar.translate_coordinates(window, 0, 0) if bar.get_realized() else None
+    ox, oy = off if off else (0, 0)
+    magic.click(GLib.get_prgname() or "", x - ox, y - oy)

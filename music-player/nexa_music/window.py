@@ -6,6 +6,7 @@ gi.require_version("Gst", "1.0")
 from gi.repository import Gtk, Gdk, GLib, Gst
 
 from .player import Player
+from nexa_common import magic
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -144,6 +145,8 @@ class MusicWindow(Gtk.Window):
         return btn
 
     def _show_playing(self, playing):
+        self._playing = playing
+        magic.level("nexa-music", 0.7 if playing else 0.0)
         icon = "media-playback-pause-symbolic" if playing else "media-playback-start-symbolic"
         self.play_btn.set_image(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR))
         self.play_btn.set_tooltip_text("Pause" if playing else "Play")
@@ -261,6 +264,8 @@ class MusicWindow(Gtk.Window):
         return False
 
     def _tick(self):
+        if getattr(self, "_playing", False):
+            magic.level("nexa-music", 0.7)  # its background moves with the music
         if not self._seeking:
             pos = self.player.get_position()
             dur = self.player.get_duration()

@@ -50,8 +50,8 @@ third-party apps' insides; recording screen content; a resident AI model.
 - [x] Renderer: layer-shell background surface per output, frame clock, quality caps, damage tracking (pixman regions), static fallback.
 - [x] The ten styles: Cyber Circuit, Quantum Flow, Neural Network, Holographic Grid, Digital Rain, Cosmic Nebula, Energy Pulse, Orbital Field, Living Geometry, Nexa Signature.
 - [x] Window regions from the compositor (Sway IPC events + a 4 Hz look while animating; Hyprland sockets, unverified): per-app style inside each first-party window, brighter when focused, still when not, nothing for hidden windows.
-- [x] App events: open (fade-in), click (ripple), level (real activity). Apps sending them: next.
-- [ ] Real data: Energy Pulse in Pulse from MicroBrain load.
+- [x] App events: open (fade-in), click (ripple), level (real activity). Every Nexa app sends its clicks (title bar code; tested with a real pointer, `nexa-vpointer`); Pulse (CPU load), Music (playing), Files (copy progress), Assistant (thinking) send levels.
+- [x] Real data: Energy Pulse in Pulse follows the CPU load Pulse measures.
 - [x] Policy: MicroBrain mode / battery / reduced motion (also Interface DNA motion none) / 2 GB → quality; measured frame time steps down after 2 s slow, up after 10 s fast.
 - [ ] Apps: Settings first, then Files, Pulse, Store, Assistant, Music, others; foot via its alpha.
 - [x] Test: `make test-living` (15 checks + measurements), `make test-magic-page` (16).
@@ -61,7 +61,7 @@ third-party apps' insides; recording screen content; a resident AI model.
 - [ ] Orbit (radial actions by context; keyboard equivalent)
 - [ ] Rewind (timeline of reversible settings changes)
 - [ ] FileTrail (where did I move it: nexa-fileops journal)
-- [ ] Why (slow / crash / memory / network / stopped task, from real evidence, proven vs possible)
+- [x] Why (slow / crash / memory / network / stopped task, from real evidence, proven vs possible): why.rs in MicroBrain, exit records from the desktop, Pulse's Why tab, Nexus answers, Settings switch; `make test-why`.
 
 ### Phase 5: workspace and interaction
 - [ ] Gravity · [ ] Hold · [ ] Thread · [ ] Tomorrow · [ ] GestureKeys

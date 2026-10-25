@@ -74,5 +74,6 @@ def command(exec_line):
 def launch(exec_line):
     argv = command(exec_line)
     if argv:
-        subprocess.Popen(argv, start_new_session=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        from . import exits
+        exits.watch(subprocess.Popen(argv, start_new_session=True,
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))

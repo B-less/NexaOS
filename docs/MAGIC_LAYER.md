@@ -34,8 +34,11 @@ The plan, with what's done and what isn't: [TODOnexa_magic.md](../TODOnexa_magic
   steps it back up.
 - **Theme**: the colours are the theme's (accent, second accent, text,
   background); changing the theme recolours the backgrounds at once.
-- **Apps can add to it** (`nexa_common.magic`): `click(app, x, y)` (a
-  ripple), `level(app, 0..1)` (real activity, e.g. load or playback).
+- **Apps add to it** (`nexa_common.magic`): every Nexa app's clicks ripple
+  in its background (the title bar code watches presses before any button
+  takes them, and only sends when the app has a background); `level(app,
+  0..1)` is real activity: Pulse sends the CPU load, Music playback, Files
+  how far a copy is, the Assistant while it thinks. Only changes are sent.
 - **Other apps** keep the theme's look: their insides can't be changed from
   outside.
 
@@ -55,6 +58,43 @@ One frame of each style at 1000x700 (`nexa-living-preview --bench`, before
 the static-part caches: the real renderer is cheaper): see the table in the
 commit "Living Visual Engine". Not yet measured: real hardware (Intel UHD 620
 with Hyprland), the 2 GB VM, battery drain.
+
+## Why
+
+"Why is it slow? Why did that app close? Why is there no internet?"
+answered from evidence, in Nexa Pulse (the **Why?** tab, or `nexa-pulse
+--why crash`) and in Nexus (type "why did files crash", "wifi not
+working"). Each finding is marked:
+
+- **Proven**: measured just now, or written down when it happened.
+- **Possible**: fits what is seen, but isn't shown to be the cause.
+
+| Question | What it looks at |
+|---|---|
+| Slow | processor use per program (measured over 0.4 s), the kernel's pressure figures (CPU, memory, disk), swap, free space, MicroBrain's mode, processes waiting on a device, processor speed and temperature |
+| An app closed | how apps started from the desktop ended (crash signal, error code, killed), the kernel's out-of-memory count at that moment, MicroBrain's decisions, and Pulse's record when you ended it yourself |
+| Memory | in use / available, the five biggest programs, swap, the trend, out-of-memory events today |
+| No internet | adapters, Wi-Fi switches (rfkill), cable, address (DHCP), default route, DNS server, then one DNS question (example.org, 3 tries) |
+| Something stopped | paused programs (state T), programs waiting on a device, MicroBrain's waiting jobs and recent decisions, apps that ended in the last 30 minutes |
+
+How it's built: `tools/nexa-microbrain/src/why.rs` (Rust, inside the
+MicroBrain service that already runs; Landlocked, no new process). The
+desktop is the parent of the apps it starts, so `nexa_common.exits` sees how
+they end with a GLib child watch and writes only abnormal ends to
+`~/.local/state/nexa/exits.jsonl` (private folder, at most a few hundred
+lines, nothing about what the app did). The kernel's `oom_kill` count is
+sampled with MicroBrain's usual sample. Nothing leaves the computer except
+the DNS question, to the DNS server the system already uses.
+
+Not covered: apps started some other way (a terminal, Files' "open with")
+aren't in the record of how apps ended; "possible" findings stay possible.
+
+Switch: Settings > Magic Layer > Why (on by default; MicroBrain checks it on
+every question). Tests: `make test-why` (15 checks, real processes and
+networking), `cargo test -p nexa-microbrain` (why.rs), `test_exits.py`.
+Measured: MicroBrain stays at about 1.2 MB RSS after answering every kind
+of question (container, 2026-10-25); a "slow" answer takes 0.4 s, "no
+internet" up to 3 s when DNS doesn't answer.
 
 ### Files
 

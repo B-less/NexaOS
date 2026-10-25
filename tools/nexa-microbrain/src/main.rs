@@ -12,6 +12,7 @@
 //!   nexa-microbrain config [FEATURE on|off]
 //!   nexa-microbrain ask WORDS...        ZeroSearch: what those words would do
 //!   nexa-microbrain answer slow|battery
+//!   nexa-microbrain why slow|crash|memory|network|stopped   Why: the evidence
 //!   nexa-microbrain workspaces | suggestions
 //!
 //! Talks to Settings over $XDG_RUNTIME_DIR/nexa-microbrain.sock (0600,
@@ -22,12 +23,14 @@ mod agents;
 mod apps;
 mod config;
 mod habit;
+mod magic;
 mod pulse;
 mod resources;
 mod scheduler;
 mod features;
 mod search;
 mod store;
+mod why;
 mod workspace;
 
 use agents::{Coordinator, Event, Notice};
@@ -440,6 +443,7 @@ fn main() {
         ["forget-history"] => request(json!({"cmd": "forget-history"})).and_then(print),
         ["ask", words @ ..] if !words.is_empty() => request(json!({"cmd": "ask", "query": words.join(" ")})).and_then(print),
         ["answer", topic] => request(json!({"cmd": "answer", "topic": topic})).and_then(print),
+        ["why", topic] => request(json!({"cmd": "why", "topic": topic})).and_then(print),
         ["workspaces"] => request(json!({"cmd": "workspaces"})).and_then(print),
         ["suggestions"] => request(json!({"cmd": "suggestions"})).and_then(print),
         ["mode"] => request(json!({"cmd": "mode"})).and_then(print),
@@ -448,7 +452,7 @@ fn main() {
         ["config", feature, on @ ("on" | "off")] => request(json!({"cmd": "config", "feature": feature, "on": *on == "on"})).and_then(print),
         _ => {
             eprintln!("usage: nexa-microbrain serve | status | resources | mode [MODE] | agents | decisions | jobs [cancel ID] |\n       \
-                       config [FEATURE on|off] | ask WORDS... | answer slow|battery | workspaces | suggestions | forget-history");
+                       config [FEATURE on|off] | ask WORDS... | answer slow|battery | why slow|crash|memory|network|stopped | workspaces | suggestions | forget-history");
             std::process::exit(2);
         }
     };

@@ -6,7 +6,7 @@ from gi.repository import Gtk, GLib, Gdk
 
 from . import agent, client, local_fallback, tools
 from .cli import backend_label, load_config, make_logger, pick_backend
-from nexa_common import actionui, design
+from nexa_common import actionui, design, magic
 from nexa_common.titlebar import attach_titlebar
 
 CSS = b"""
@@ -187,6 +187,14 @@ class NexaAssistantWindow(Gtk.Window):
         # Reading back up stops the auto-follow until the next message.
         self._follow = adj.get_value() + adj.get_page_size() >= adj.get_upper() - 4
 
+    def _thinking_beat(self):
+        # Its Neural Network fires faster while it thinks.
+        if self._thinking_row is None:
+            magic.level("nexa-ai-gui", 0.0)
+            return False
+        magic.level("nexa-ai-gui", 1.0)
+        return True
+
     def _clear_thinking(self):
         if self._thinking_row is not None:
             self._thinking_row.destroy()
@@ -202,6 +210,8 @@ class NexaAssistantWindow(Gtk.Window):
         self._pending_tools = []
         thinking = self._add_bubble("thinking…", "sys", extra_class="bubble-thinking")
         self._thinking_row = thinking.get_parent()
+        self._thinking_beat()
+        GLib.timeout_add_seconds(2, self._thinking_beat)
         threading.Thread(target=self._worker, args=(query,), daemon=True).start()
 
     def _on_agent_event(self, kind, payload):

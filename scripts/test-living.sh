@@ -10,7 +10,7 @@ set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
 version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
 image=nexa-apptest:${version%.*}
-[ -x "$repo/build/native/nexa-living" ] || { echo "build it first: make native"; exit 1; }
+[ -x "$repo/build/native/nexa-living" ] && [ -x "$repo/build/test/nexa-vpointer" ] || { echo "build it first: make native"; exit 1; }
 out=${1:-$repo/dist/living-test}
 mkdir -p "$out"
 docker run --rm --cap-add SYS_NICE -v "$repo:/src:ro" -v "$(cd "$out" && pwd):/out" -e HOME=/root "$image" sh -c '
@@ -115,6 +115,12 @@ mg "magic.set_living(quality=\"static\")"; sleep 7
 shot r1; mg "magic.click(\"nexa-calc\", 60, 200)"; sleep 0.25; shot r2
 grim /out/3b-ripple.png
 [ "$(diff_in r1 r2 900 300 $CW $CH)" -gt 0 ] && pass "a click sent by the app ripples in its window" || fail "click"
+# A real click (the pointer, on the calculator title): the app sends it itself.
+sleep 1.2; shot p1
+/src/build/test/nexa-vpointer 1366 768 move $((900 + CW / 2)) 318 wait 150 click
+sleep 0.15; shot p2
+d=$(diff_in p1 p2 900 340 $CW $((CH - 40)))
+[ "$d" -gt 0 ] && pass "clicking in an app ripples its background ($d)" || fail "pointer click" "$d"
 
 # Static: drawn once, then nothing.
 mg "magic.set_living(quality=\"static\")"; sleep 7

@@ -105,4 +105,11 @@ lv = saved()
 check("Restore the defaults", lv.get("enabled") is True and lv.get("quality") == "auto" and lv["apps"]["nexa-files"] == "circuit")
 check("...and the controls show them", p.enabled.get_active() and p.quality.get_active_id() == "auto"
       and p.app_combos["nexa-files"].get_active_id() == "circuit")
+# A Magic Layer feature that is built has a real switch (Why).
+check("Why has a switch, on by default", "why" in p.feature_switches and p.feature_switches["why"].get_active())
+p.feature_switches["why"].set_active(False)
+pump(1, lambda: False)
+check("...that turns it off in magic.json (MicroBrain reads it)",
+      magic.load()["features"]["why"]["enabled"] is False)
+p.feature_switches["why"].set_active(True)
 sys.exit(1 if failures else 0)

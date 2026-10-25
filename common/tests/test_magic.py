@@ -50,4 +50,16 @@ check("quality off: nobody styled", magic.app_style("nexa-files", home) is None)
 magic.reset("living", home)
 check("reset", magic.load(home)["living"]["quality"] == "auto" and magic.app_style("nexa-calc", home) == "geometry")
 check("send without a renderer is harmless", magic.notify() is False)
+
+# Activity levels: apps call level() every tick; only changes go out.
+sent = []
+magic.send = lambda m: sent.append(m) or True
+magic.level("nexa-pulse", 0.30)
+magic.level("nexa-pulse", 0.31)   # same, just now: not sent
+magic.level("nexa-pulse", 0.32)
+magic.level("nexa-pulse", 0.90)   # a big change: sent at once
+magic.level("nexa-music", 0.70)   # another app: its own
+magic.level("nexa-music", 5)      # clamped
+check("levels: only changes are sent, clamped", sent == ["level nexa-pulse 0.300", "level nexa-pulse 0.900",
+                                                          "level nexa-music 0.700", "level nexa-music 1.000"])
 sys.exit(1 if failures else 0)

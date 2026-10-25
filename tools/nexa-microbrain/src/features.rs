@@ -2,7 +2,8 @@
 //! PocketWorkspace, HabitCore) and the Learning agent.
 //!
 //!   {"cmd": "ask", "query": "open downloads"}            ZeroSearch results
-//!   {"cmd": "answer", "topic": "slow" | "battery"}         a plain-language answer
+//!   {"cmd": "answer", "topic": "slow" | "battery" | ...}   a plain-language answer
+//!   {"cmd": "why", "topic": "slow" | "crash" | ...}        Why: proven / possible findings (why.rs)
 //!   {"cmd": "workspaces"}                                  the saved workspaces
 //!   {"cmd": "workspace-save", "name", "windows", "folder"} save what's on screen
 //!   {"cmd": "workspace-plan", "name"}                      what restoring does
@@ -115,8 +116,24 @@ pub fn handle(req: &Value, c: &mut Coordinator, cfg: &mut Config, store: &Store,
         "answer" => match req["topic"].as_str().unwrap_or("") {
             "slow" => json!({"ok": true, "text": slow_answer(c)}),
             "battery" => json!({"ok": true, "text": battery_answer(&crate::resources::Paths::real().sys_root)}),
+            t @ ("crash" | "memory" | "network" | "stopped") if crate::magic::enabled(&home, "why") => {
+                let f = crate::why::answer(t, c, &crate::why::Sources::real(home.clone()), now()).unwrap_or_default();
+                json!({"ok": true, "text": crate::why::as_text(&f)})
+            }
             _ => json!({"ok": false, "error": "No answer for that."}),
         },
+        // Why (Magic Layer): findings marked proven or possible.
+        "why" if crate::magic::enabled(&home, "why") => {
+            let topic = req["topic"].as_str().unwrap_or("");
+            match crate::why::answer(topic, c, &crate::why::Sources::real(home.clone()), now()) {
+                Some(f) => {
+                    let title = crate::why::TOPICS.iter().find(|(t, _)| *t == topic).map(|(_, n)| *n).unwrap_or("");
+                    json!({"ok": true, "topic": topic, "title": title, "findings": f, "at": now()})
+                }
+                None => json!({"ok": false, "error": "Why can answer: slow, crash, memory, network, stopped."}),
+            }
+        }
+        "why" => json!({"ok": false, "error": "Why is switched off in Settings > Magic Layer."}),
         "workspaces" => {
             let ws: Workspaces = store.load();
             json!({"ok": true, "workspaces": ws.0})
