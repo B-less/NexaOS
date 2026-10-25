@@ -313,6 +313,11 @@ test-store-app: native nexa-apps
 test-titlebar: nexa-apps
 	@sh scripts/test-titlebar.sh
 
+# Nexa Link between three machines (a PC, a phone, a stranger) on a private
+# Docker network: pairing, Nexa-only signals, files, Nexa Drop, Forget.
+test-nexa-link: native
+	@sh scripts/test-nexa-link.sh
+
 # App icons clicked on the icon itself (Nexus, the desktop card, the Store).
 test-tile-clicks:
 	@sh scripts/test-tile-clicks.sh

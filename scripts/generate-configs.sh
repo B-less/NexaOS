@@ -854,6 +854,11 @@ table inet filter {
         # DHCP replies to this machine's own requests.
         udp sport 67 udp dport 68 accept
         udp sport 547 udp dport 546 accept
+        # Nexa Link (nexa-linkd): its signals and connections (47420) and
+        # pairing (47421), from the local network only. The daemon drops a
+        # device it isn't paired with before reading a single message.
+        ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 } meta l4proto { tcp, udp } th dport { 47420, 47421 } accept
+        ip6 saddr fe80::/10 meta l4proto { tcp, udp } th dport { 47420, 47421 } accept
     }
     chain forward {
         type filter hook forward priority 0; policy drop;
@@ -1117,6 +1122,8 @@ exec nexa-patternd serve
 exec nexa-foryou
 # USB sticks and SD cards on the desktop (nexa_shell drives).
 exec nexa-drives
+# Nexa Link: paired devices find each other (silent until one is paired).
+exec nexa-linkd serve
 # Nexa Doctor: restarts desktop parts that stop, fixes common problems.
 exec nexa-doctor watch
 
@@ -1232,6 +1239,7 @@ exec-once = nexa-kerneld focus-watch
 exec-once = nexa-patternd serve
 exec-once = nexa-foryou
 exec-once = nexa-drives
+exec-once = nexa-linkd serve
 exec-once = nexa-doctor watch
 exec-once = nexa-keyboard-layout
 

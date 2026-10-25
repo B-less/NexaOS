@@ -100,7 +100,10 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [ ] P5 every Nexa app at phone size; aarch64 packages in the Store; Camera
 - [ ] P6 release: encrypted by default, signed A/B updates, flashing guide (`nexa-flash`, Rust)
 
-- [ ] Nexa Link (design: docs/NEXA_LINK.md): PC and phone connect automatically once paired (QR), Noise-encrypted with pinned keys, discovery that changes nothing, per-feature permissions, no cloud; `nexa-linkd` (Rust). L1 pairing + channel (PC to PC first) ... L6 fuzzing and an outside review
+- [~] Nexa Link (design: docs/NEXA_LINK.md): PC and phone connect automatically once paired (QR), Noise-encrypted with pinned keys, discovery that changes nothing, per-feature permissions, no cloud; `nexa-linkd` (Rust). L1 pairing + channel (PC to PC first) ... L6 fuzzing and an outside review
+  - [x] L1 built (2026-10-25): `nexa-linkd` (Rust, snow/Noise XX): device keys, pairing by code with the same six digits on both screens, Nexa-only signals (random 32 bytes to anything else), files asked and checksummed and never overwriting, Nexa Drop (receive from any Nexa device for a few minutes, each item asked), Forget; Landlock; firewall opens 47420/47421 to the local network only; starts with the session. `make test-nexa-link` (3 machines)
+  - [ ] Settings > Nexa Link page (QR, devices, permissions, Drop switch) and the "accept this file?" notification
+  - [ ] L2-L6: find my phone, battery, notifications, calls (needs Nexa Mobile), clipboard, fuzzing, outside review
 
 ## 5. Hardware
 - [~] Bluetooth: kernel + bluez + Bluetooth audio + bt-probe firmware re-bind + Settings page with pairing agent (tested against a mock BlueZ; needs a real adapter: HP test)

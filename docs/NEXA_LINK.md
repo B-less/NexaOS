@@ -55,6 +55,28 @@ And beyond those:
 What it can't protect against: someone holding your **unlocked** phone, or
 a bug we haven't found (hence Rust, fuzzing, and features off by default).
 
+## 2b. Nexa-only signals, and Nexa Drop
+
+Nexa Link talks only to Nexa. On the local network each device sends a
+short signal every 3 s: 32 bytes, 16 random and a 16-byte tag made with a
+key the two devices agreed on when they paired (HMAC-SHA256 over a
+5-minute window, the sender's public key and the random part). A paired
+device recognises it as "my PC is here". To any other phone, laptop or
+sniffer it is random bytes that never repeat: no name, no device id, no
+fixed MAC-like value to follow someone with. A recorded signal stops
+working after a few minutes.
+
+**Nexa Drop** sends to a Nexa device you haven't paired with, like
+handing over a photo to someone nearby. The receiver turns on "Receive
+from any Nexa device" for a few minutes (off again by itself). Its signal
+then uses a key every Nexa device knows, so nearby Nexa devices list it;
+to everything else it's still random bytes. Who it is comes only inside
+the encrypted channel, and every item is asked on screen ("Photo from
+Kofi's phone: Save / Decline"); an unpaired device can never send without
+that question. Honest limit: anyone running NexaOS's (open) code can tell
+that *a* device is taking drops while it is on; with it off, only paired
+devices know you're there.
+
 ## 3. How it is built
 
 - **`nexa-linkd` (Rust)**: device keys (`~/.local/share/nexa-link`, 0600),
@@ -72,7 +94,7 @@ a bug we haven't found (hence Rust, fuzzing, and features off by default).
 
 | Phase | What | Done when |
 |---|---|---|
-| L1 | Keys, QR pairing, Noise channel, discovery with rotating codes; PC to PC first (two QEMU machines) | an unpaired device and a replayed or forged packet are refused (tests) |
+| L1 | Keys, QR pairing, Noise channel, discovery with rotating codes, files with Nexa Drop; PC to PC first | **built (2026-10-25)**: `nexa-linkd` (Rust), `make test-nexa-link` pairs a PC and a phone on a private network with a stranger listening: same six digits on both, signals random to the stranger, files asked and checksummed, the stranger refused, Drop asked first, Forget cuts off at once |
 | L2 | Files, links, find my phone, battery | headless test between two machines |
 | L3 | Notifications and replies, media controls | |
 | L4 | Calls and texts from the PC (with Nexa Mobile P3) | a call answered on the PC |
