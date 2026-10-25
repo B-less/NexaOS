@@ -107,7 +107,9 @@ class Dock(Gtk.ApplicationWindow):
         GLib.timeout_add(1500, self._refresh_running)
         self._theme_monitor = Gio.File.new_for_path(themes.settings_path()).monitor_file(
             Gio.FileMonitorFlags.NONE, None)
-        self._theme_monitor.connect("changed", lambda *_a: (self._load_theme(), self.area.queue_draw()))
+        self._theme_monitor.connect("changed", lambda *_a: (self._load_theme(), self._reload_icons()))
+        # Also when GTK's icon theme changes by itself (GSettings' keyfile).
+        Gtk.IconTheme.get_default().connect("changed", lambda *_a: GLib.idle_add(self._reload_icons))
         self.area.connect("size-allocate", lambda *_a: self.pointer_x is None and self._set_input_region(False))
         # For screenshots/tests: pretend the pointer rests at this x position.
         preview_x = os.environ.get("NEXA_DOCK_PREVIEW_X")
@@ -139,6 +141,17 @@ class Dock(Gtk.ApplicationWindow):
         }
         self.colours["light"] = themes.EDGE_LIGHT[s["glass_tint"]] * 2 if s["glass"] else 0.18
 
+    def _reload_icons(self, *_a):
+        """The icon set changed (a theme or the App icons style in Settings):
+        load every icon again - the Dock draws its own, kept as pictures,
+        so they didn't change with the rest of the desktop."""
+        for it in self.items:
+            if it.get("icon"):
+                it["pixbuf"] = self._icon(it["icon"])
+        if hasattr(self, "area"):
+            self.area.queue_draw()
+        return False
+
     def _icon(self, name):
         theme = Gtk.IconTheme.get_default()
         for candidate in (name, "application-x-executable"):
@@ -161,7 +174,7 @@ class Dock(Gtk.ApplicationWindow):
         if app_id == START_ID:
             return {"id": START_ID, "name": "NexaOS", "pixbuf": None, "pinned": True,
                     "running": False, "scale": 1.0, "bounce": None}
-        return {"id": app_id, "name": app["name"], "exec": app["exec"], "pixbuf": self._icon(app["icon"]),
+        return {"id": app_id, "name": app["name"], "exec": app["exec"], "icon": app["icon"], "pixbuf": self._icon(app["icon"]),
                 "pinned": pinned, "running": False, "scale": 1.0, "bounce": None}
 
     def _rebuild(self, running_ids):

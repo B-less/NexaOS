@@ -101,6 +101,7 @@ class DesktopCard(Gtk.Window):
         self._load_theme()
         self._theme_monitor = Gio.File.new_for_path(themes.settings_path()).monitor_file(Gio.FileMonitorFlags.NONE, None)
         self._theme_monitor.connect("changed", lambda *_a: self._load_theme())
+        Gtk.IconTheme.get_default().connect("changed", lambda *_a: hasattr(self, "card") and GLib.idle_add(self.refresh))
         # Settings > Privacy changes show at once.
         self._cfg_monitor = Gio.File.new_for_path(patterns.config_path()).monitor_file(Gio.FileMonitorFlags.NONE, None)
         self._cfg_monitor.connect("changed", lambda *_a: GLib.timeout_add(300, self.refresh))
@@ -126,6 +127,10 @@ class DesktopCard(Gtk.Window):
         self.accent = _rgb(t["accent"])
         self.provider.load_from_data(card_css(t, themes.app_palette(t)).encode())
         self.queue_draw()
+        # The app icons too (a new icon set: theme or App icons style), now
+        # rather than at the next refresh.
+        if hasattr(self, "card"):
+            GLib.idle_add(self.refresh)
 
     def _tick(self):
         self.refresh()
