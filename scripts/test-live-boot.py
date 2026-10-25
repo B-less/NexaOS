@@ -44,7 +44,7 @@ CHECKS = (
     # every boot, racing D-Bus: "Permission denied" for the user).
     # One seatd and one system bus, from OpenRC (the session once started
     # its own copies when it came up before them).
-    'echo SEATD=$(rc-service seatd status 2>&1 | grep -o "started\\|stopped\\|crashed"),$(pgrep -x seatd | wc -l),dbus:$(pgrep -x dbus-daemon | wc -l)',
+    'echo SEATD=$(rc-service seatd status 2>&1 | grep -o "started\\|stopped\\|crashed"),$(pidof seatd | wc -w),dbus:$(pgrep -x dbus-daemon | wc -l)',
     'echo IWD=$(rc-service iwd status 2>&1 | grep -o "started\\|stopped\\|crashed"),$(su user -c "iwctl device list" >/dev/null 2>&1 && echo user-ok || echo user-refused)',
     'echo WIREGUARD=$(ip link add nexatest type wireguard 2>&1 && ip link del nexatest && echo ok)',
     'echo POLICY_ROUTING=$(ip rule show | grep -c .)',

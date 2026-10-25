@@ -459,23 +459,11 @@ depend() {
 
 start() {
     ebegin "Starting network interfaces (DHCP)"
-    local path iface
+    local path
+    # Adapters that appear later (USB Ethernet, a driver reloaded) get the
+    # same through udev (70-nexa-net.rules).
     for path in /sys/class/net/*; do
-        iface=$(basename "$path")
-        case "$iface" in
-            lo|sit0) continue ;;
-        esac
-        # Wireless interfaces belong to iwd (it runs its own DHCP once
-        # associated, see /etc/iwd/main.conf); udhcpc on an unassociated
-        # radio would just spin and fight iwd for the interface.
-        if [ -d "$path/wireless" ] || [ -d "$path/phy80211" ]; then
-            continue
-        fi
-        ip link set "$iface" up 2>/dev/null
-        # In the background from the first moment: waiting here for a lease
-        # (or for a cable that isn't plugged in) held up the whole boot by
-        # ~16 s, desktop included. The address arrives a moment later.
-        udhcpc -i "$iface" -b -p "/run/udhcpc.$iface.pid" -x "hostname:$(cat /etc/hostname 2>/dev/null || echo nexa)" >/dev/null 2>&1 &
+        /usr/local/bin/nexa-net-up "$(basename "$path")"
     done
     eend 0
 }
@@ -492,6 +480,38 @@ stop() {
 }
 NETDHCP_EOF
     chmod +x "$MNT_DIR/etc/init.d/netdhcp"
+
+    mkdir -p "$MNT_DIR/usr/local/bin" "$MNT_DIR/etc/udev/rules.d"
+    cat > "$MNT_DIR/usr/local/bin/nexa-net-up" << 'NETUP_EOF'
+#!/bin/sh
+# Bring up one wired interface and ask for an address (DHCP), once.
+# Called for every interface at boot (netdhcp) and by udev when one appears.
+iface=${1:-}
+path=/sys/class/net/$iface
+[ -n "$iface" ] && [ -d "$path" ] || exit 0
+case "$iface" in lo|sit*) exit 0 ;; esac
+# Wireless interfaces belong to iwd (it runs its own DHCP once associated,
+# see /etc/iwd/main.conf); udhcpc on an unassociated radio would just spin
+# and fight iwd for the interface.
+[ -d "$path/wireless" ] || [ -d "$path/phy80211" ] && exit 0
+# Ethernet-type links only (type 1): not the Wi-Fi simulator's monitor
+# interface (hwsim0, built into the kernel for tests), WireGuard or other
+# virtual links, where udhcpc only spins.
+[ "$(cat "$path/type" 2>/dev/null)" = 1 ] || exit 0
+ip link set "$iface" up 2>/dev/null
+pid=/run/udhcpc.$iface.pid
+[ -f "$pid" ] && kill -0 "$(cat "$pid")" 2>/dev/null && exit 0
+# In the background from the first moment: waiting for a lease (or for a
+# cable that isn't plugged in) held up the whole boot by ~16 s.
+setsid udhcpc -i "$iface" -b -p "$pid" -x "hostname:$(cat /etc/hostname 2>/dev/null || echo nexa)" </dev/null >/dev/null 2>&1 &
+exit 0
+NETUP_EOF
+    chmod +x "$MNT_DIR/usr/local/bin/nexa-net-up"
+    cat > "$MNT_DIR/etc/udev/rules.d/70-nexa-net.rules" << 'NETRULES_EOF'
+# A wired adapter that appears after boot (USB Ethernet, a reloaded driver)
+# is brought up and asks for an address, as at boot (netdhcp).
+ACTION=="add", SUBSYSTEM=="net", RUN+="/usr/local/bin/nexa-net-up %k"
+NETRULES_EOF
     [ -x "$MNT_DIR/etc/init.d/netdhcp" ] && ln -sf /etc/init.d/netdhcp "$MNT_DIR/etc/runlevels/default/netdhcp"
 
     echo "[*] Generating WiFi (iwd) configuration..."
@@ -535,7 +555,10 @@ attach_loop() {
         missing=0
         for dev in /sys/bus/pci/devices/*; do
             case "$(cat "$dev/class" 2>/dev/null)" in 0x02*) ;; *) continue ;; esac
-            [ -d "$dev/net" ] || [ -d "$dev/ieee80211" ] && continue
+            # The interface may sit one level down (virtio-net:
+            # <pci>/virtio0/net): resetting that driver took a working
+            # wired adapter down for good.
+            [ -n "$(ls -d "$dev"/net "$dev"/*/net "$dev"/ieee80211 2>/dev/null)" ] && continue
             missing=1
             id=${dev##*/}
             case "$done_ids" in *" $id "*) continue ;; esac
