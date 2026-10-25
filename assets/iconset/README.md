@@ -1,7 +1,8 @@
-# NexaHexa: the NexaOS icon set (for future use)
+# NexaHexa: the NexaOS icon set
 
-Not switched on yet: the OS still uses its current icons. This set is ready
-for when NexaOS moves to its own icon theme.
+In the image since 2026-10-25 (scripts/stage-iconset.sh puts every set in
+/usr/share/icons); the current theme and icon style pick one at login and
+on every change.
 
 ![preview](preview.png)
 
@@ -56,10 +57,15 @@ Change a shape, a colour or the stroke width there and rebuild:
 Its tests check that symbolic icons have no strokes, every app has its
 glyph, names are unique and every shape stays inside the grid.
 
-## Switching it on later
+## How it is switched on
 
-1. Copy `NexaHexa/` to `/usr/share/icons/NexaHexa` in the image (a stage
-   script) and run `gtk-update-icon-cache` on it.
-2. Set `gtk-icon-theme-name = NexaHexa` (themes.py writes the GTK
-   settings); `Inherits=Adwaita,hicolor` covers anything not in the set.
-3. App icons with the same names as today's replace them automatically.
+1. `scripts/stage-iconset.sh` copies NexaHexa and its 15 theme/style sets
+   to /usr/share/icons; build-disk-image.sh builds their caches.
+2. `themes.apply()` (at login and on every change) writes the set to
+   GTK's settings.ini **and** to GSettings' keyfile
+   (`~/.config/glib-2.0/settings/keyfile`, `icon-theme`): on Wayland GTK 3
+   reads the icon theme from GSettings, and NexaOS has no dconf, so the
+   session runs with `GSETTINGS_BACKEND=keyfile`. Every GTK app - ours or
+   not - picks it up, and follows a change live.
+3. Nexus and the For you card show a NexaHexa tile as it is (no hexagon
+   drawn behind it), with an accent outline when it's lit.

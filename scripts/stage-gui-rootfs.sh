@@ -96,6 +96,10 @@ chown -R 1000:1000 "$rootfs/usr/share/backgrounds/nexaos"
 mkdir -p "$rootfs/usr/local/lib"
 printf '%s\n' \
     'export GDK_BACKEND=wayland' \
+    '# GSettings in a plain file (~/.config/glib-2.0/settings/keyfile): there is' \
+    '# no dconf, and on Wayland GTK takes the icon theme from GSettings, not' \
+    '# settings.ini. nexa-theme writes it; GTK follows a change live.' \
+    'export GSETTINGS_BACKEND=keyfile' \
     'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"' \
     'if [ -z "${WAYLAND_DISPLAY:-}" ]; then' \
     '    for sock in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do' \

@@ -337,7 +337,7 @@ if command -v sway >/dev/null 2>&1; then
         # its argument.
         DBUS_RUN="dbus-run-session --"
         command -v dbus-run-session >/dev/null 2>&1 || DBUS_RUN=""
-        exec su "$NEXA_USER" -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; exec $DBUS_RUN /usr/local/bin/nexa-desktop"
+        exec su "$NEXA_USER" -c "unset WAYLAND_DISPLAY; export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR'; export LIBSEAT_BACKEND='${LIBSEAT_BACKEND:-}'; export WLR_BACKENDS='$WLR_BACKENDS'; export WLR_RENDERER='$WLR_RENDERER'; export XDG_SESSION_TYPE=wayland; export GSETTINGS_BACKEND=keyfile; exec $DBUS_RUN /usr/local/bin/nexa-desktop"
     fi
 
     unset WAYLAND_DISPLAY

@@ -445,6 +445,23 @@ def follow_icon_theme(home=None):
     return wanted
 
 
+def hexa_tile(icon_name):
+    """True when `icon_name` resolves to a NexaHexa app tile (already a
+    hexagon): Nexus and the desktop then show it as it is, without drawing
+    their own hexagon behind it (a hexagon inside a hexagon)."""
+    if not icon_name or not str(icon_name).startswith("nexa-"):
+        return False
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk
+        theme = Gtk.IconTheme.get_default()
+        info = theme.lookup_icon(icon_name, 64, 0) if theme else None
+    except (ImportError, ValueError):
+        return False
+    return bool(info and "/NexaHexa" in (info.get_filename() or ""))
+
+
 def gtk_settings(t, icon_theme="Adwaita"):
     """~/.config/gtk-3.0/settings.ini: without it GTK falls back to its light
     default, so dialogs, file pickers, menus and scrollbars came up light
@@ -542,6 +559,43 @@ def merge_gtk_css(existing, block):
     return block + ("\n" + existing if existing.strip() else "")
 
 
+GSETTINGS_KEYFILE = os.path.join("glib-2.0", "settings", "keyfile")
+
+
+def gsettings_keyfile(path, values):
+    """Set keys of [org/gnome/desktop/interface] in GLib's keyfile settings
+    store (GSETTINGS_BACKEND=keyfile, set for the whole session: there is no
+    dconf). On Wayland GTK takes the icon theme from GSettings and ignores
+    settings.ini for it; running apps follow a change to this file live.
+    Everything else in the file is kept."""
+    section = "[org/gnome/desktop/interface]"
+    try:
+        with open(path) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    out, in_section, seen, done = [], False, False, set()
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            if in_section:
+                out += [f"{k}={v}" for k, v in values.items() if k not in done]
+                done.update(values)
+            in_section = stripped == section
+            seen = seen or in_section
+        elif in_section and "=" in stripped and stripped.split("=", 1)[0].strip() in values:
+            key = stripped.split("=", 1)[0].strip()
+            out.append(f"{key}={values[key]}")
+            done.add(key)
+            continue
+        out.append(line)
+    if in_section:
+        out += [f"{k}={v}" for k, v in values.items() if k not in done]
+    elif not seen:
+        out += ([""] if out else []) + [section] + [f"{k}={v}" for k, v in values.items()]
+    _write(path, "\n".join(out) + "\n")
+
+
 def icon_styles_available(home=None):
     """True when the NexaHexa icons are installed (the icon style matters)."""
     return icon_theme_for(load_settings(home)["theme"], home) != "Adwaita"
@@ -560,7 +614,10 @@ def apply(name=None, opacity=None, home=None, reload=True, glass=None, icon_styl
     _write(os.path.join(cfg, "mako", "config"), mako_config(t, opacity))
     _write(os.path.join(cfg, "foot", "foot.ini"), foot_ini(t, opacity))
     _write(os.path.join(cfg, "sway", "config.d", "20-nexa-theme.conf"), sway_conf(t))
-    _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t, icon_theme_for(name, home, icon_style)))
+    icon_theme = icon_theme_for(name, home, icon_style)
+    _write(os.path.join(cfg, "gtk-3.0", "settings.ini"), gtk_settings(t, icon_theme))
+    gsettings_keyfile(os.path.join(cfg, GSETTINGS_KEYFILE),
+                      {"icon-theme": f"'{icon_theme}'", "color-scheme": "'prefer-dark'" if t["dark"] else "'default'"})
     css_path = os.path.join(cfg, "gtk-3.0", "gtk.css")
     try:
         with open(css_path) as f:

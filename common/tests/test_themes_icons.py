@@ -29,4 +29,11 @@ check("choosing Dark is saved and goes to settings.ini",
 themes.apply("nebula", home=home, reload=False)
 check("changing the theme keeps the icon style", themes.load_settings(home)["icon_style"] == "dark")
 check("an unknown style is ignored", themes.apply(icon_style="sparkly", home=home, reload=False)["icon_style"] == "dark")
+kf = os.path.join(home, ".config", "glib-2.0", "settings", "keyfile")
+open(kf, "w").write("[org/gnome/other]\nkept=true\n\n[org/gnome/desktop/interface]\nicon-theme='Old'\nfont-name='Inter 10'\n")
+themes.apply("aurora", home=home, reload=False)
+text = open(kf).read()
+check("the icon theme also goes to GSettings' keyfile (GTK on Wayland reads it there)",
+      "icon-theme='NexaHexa-aurora-dark'" in text and "color-scheme='prefer-dark'" in text, text)
+check("...keeping everything else in it", "[org/gnome/other]" in text and "kept=true" in text and "font-name='Inter 10'" in text and "'Old'" not in text, text)
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)

@@ -57,11 +57,15 @@ class HexIcon(Gtk.Overlay):
         area.connect("draw", self._draw)
         self.add(area)
         image = Gtk.Image.new_from_icon_name(icon_name or "application-x-executable", Gtk.IconSize.DIALOG)
-        image.set_pixel_size(ICON_PX - 10)
+        # A NexaHexa tile is a hexagon already: full size, nothing behind it.
+        self.tile = themes.hexa_tile(icon_name)
+        image.set_pixel_size(HEX_R * 2 if self.tile else ICON_PX - 10)
         self.add_overlay(image)
 
     def _draw(self, area, cr):
         import math
+        if self.tile:
+            return False
         w, h = area.get_allocated_width(), area.get_allocated_height()
         cx, cy, r = w / 2, h / 2, min(w, h) / 2 - 1
         cr.new_path()

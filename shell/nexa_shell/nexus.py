@@ -77,7 +77,10 @@ class HexTile(Gtk.Button):
         area.connect("draw", self._draw_hex)
         overlay.add(area)
         image = Gtk.Image.new_from_icon_name(app["icon"], Gtk.IconSize.DIALOG)
-        image.set_pixel_size(ICON_PX)
+        # A NexaHexa tile is a hexagon already: shown full size, no hexagon
+        # drawn behind it (only an outline when it's lit).
+        self.tile = themes.hexa_tile(app["icon"])
+        image.set_pixel_size(TILE_HEX_R * 2 - 2 if self.tile else ICON_PX)
         overlay.add_overlay(image)
         box.pack_start(overlay, False, False, 0)
         name = Gtk.Label(label=app["name"])
@@ -121,6 +124,17 @@ class HexTile(Gtk.Button):
     def _draw_hex(self, area, cr):
         w, h = area.get_allocated_width(), area.get_allocated_height()
         hot = self._hot()
+        if self.tile:
+            if hot:
+                pts = design.hex_points(w / 2, h / 2, min(w, h) / 2 - 1)
+                cr.move_to(*pts[0])
+                for p in pts[1:]:
+                    cr.line_to(*p)
+                cr.close_path()
+                cr.set_source_rgba(*self.colours["accent"], 0.95)
+                cr.set_line_width(2.5)
+                cr.stroke()
+            return False
         pts = design.hex_points(w / 2, h / 2, min(w, h) / 2 - 2)
         cr.move_to(*pts[0])
         for p in pts[1:]:
