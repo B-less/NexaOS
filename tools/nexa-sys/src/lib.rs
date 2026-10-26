@@ -2,3 +2,5 @@
 pub mod sandbox;
 pub mod peer;
 pub mod preload;
+pub mod magic;
+pub mod filetrail;

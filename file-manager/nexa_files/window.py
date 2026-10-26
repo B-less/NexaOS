@@ -236,8 +236,12 @@ class FileManagerWindow(Gtk.Window):
         self.home_btn = self._toolbtn("Home", self._on_home, "Home folder (Alt+Home)")
         self.trash_btn = self._toolbtn("Trash", self._on_show_trash, "What you deleted; restore it from here")
         self.devices_btn = self._toolbtn("Devices", self._on_devices, "USB drives and SD cards")
-        for b in (self.back_btn, self.forward_btn, self.up_btn, self.home_btn, self.trash_btn, self.devices_btn):
+        # FileTrail (Magic Layer): where things went.
+        self.trail_btn = self._toolbtn("Trail", self._on_trail, "Where did it go? Everything Files moved, renamed, copied or put in the Trash")
+        for b in (self.back_btn, self.forward_btn, self.up_btn, self.home_btn, self.trash_btn, self.devices_btn, self.trail_btn):
             toolbar.pack_start(b, False, False, 0)
+        self.trail_btn.set_no_show_all(True)
+        self.trail_btn.set_visible(magic.feature("filetrail").get("enabled", True))
 
         self.path_entry = Gtk.Entry()
         self.path_entry.set_name("pathentry")
@@ -1145,6 +1149,22 @@ class FileManagerWindow(Gtk.Window):
 
     def _on_show_trash(self, _btn):
         self._navigate(TRASH)
+
+    def _on_trail(self, _btn):
+        from .trail_window import TrailWindow
+        if getattr(self, "_trail_win", None) is None:
+            self._trail_win = TrailWindow(self, self.show_path, self._refresh)
+            self._trail_win.connect("destroy", lambda *_a: setattr(self, "_trail_win", None))
+        self._trail_win.show_all()
+        self._trail_win.present()
+
+    def show_path(self, path):
+        """Open the folder holding `path`, with it selected."""
+        folder = os.path.dirname(path)
+        if os.path.isdir(folder):
+            self._navigate(folder)
+            self._refresh(select=[path])
+            self.present()
 
     def _on_path_entered(self, entry):
         text = entry.get_text().strip()

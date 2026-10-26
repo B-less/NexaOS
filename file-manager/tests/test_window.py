@@ -385,6 +385,29 @@ if shot:
     os.system(f"grim {shot.replace('.png', '-grid-home.png')}")
 key(Gdk.KEY_1, ctrl=True)
 check("Ctrl+1 back to the list", not win.is_grid and win.views.get_visible_child_name() == "list")
+# FileTrail: what this test did through the engine is on the trail.
+check("the Trail button is there (FileTrail on by default)", win.trail_btn.get_visible())
+win.trail_btn.clicked()
+pump(1.0, until=lambda: getattr(win, "_trail_win", None) is not None and win._trail_win.items)
+tw = getattr(win, "_trail_win", None)
+items = tw.items if tw else []
+check("Trail lists what Files did in this test", len(items) >= 3, f"{len(items)} {[i['kind'] for i in items[:6]]}")
+kinds = {i["kind"] for i in items}
+check("...moves or renames, the Trash, new things", kinds & {"moved", "renamed"} and "trashed" in kinds, str(kinds))
+pump(0.4)
+if shot:
+    os.system(f"grim {shot.replace('.png', '-trail.png')}")
+here = [i for i in items if i["status"] == "here" and os.path.dirname(i["now"]) != win.path]
+if here:
+    tw.show_cb(here[0]["now"])
+    pump(0.5)
+    sel = [i["path"] for i in win._selected()]
+    check("Show opens its folder with it selected", win.path == os.path.dirname(here[0]["now"]) and here[0]["now"] in sel,
+          f"{win.path} {sel}")
+tw.search.set_text("zzz-no-such-name")
+pump(0.6, until=lambda: not tw.items)
+check("searching by name narrows it", tw.items == [] and "Nothing by that name" in tw.status.get_text())
+tw.destroy()
 check("no error dialogs along the way", not errors, str(errors))
 shutil.rmtree(HOME, ignore_errors=True)
 print(f"\n{len(failures)} failure(s)")

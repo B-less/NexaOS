@@ -105,3 +105,13 @@ def undo(steps):
 
 def size(paths):
     return run("size", paths=list(paths))
+
+
+def trail(query="", limit=200):
+    """FileTrail: changes Files made, newest first, each followed to where
+    the thing is now (tools/nexa-sys/src/filetrail.rs)."""
+    return run("trail", query=query, limit=limit)["items"]
+
+
+def trail_forget():
+    return run("trail_forget")

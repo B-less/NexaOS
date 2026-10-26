@@ -96,6 +96,32 @@ Measured: MicroBrain stays at about 1.2 MB RSS after answering every kind
 of question (container, 2026-10-25); a "slow" answer takes 0.4 s, "no
 internet" up to 3 s when DNS doesn't answer.
 
+## FileTrail
+
+"Where did I move it?" Files' engine (nexa-fileops) writes down every change
+it makes: moved, renamed, copied, put in the Trash, restored, deleted for
+good, the Trash emptied. Then anything can follow a file from where it was
+to where it is now, through later moves of it or of a folder it's in.
+
+- In Files: **Trail** in the toolbar ("Where did it go?"): search by part of
+  a name, **Show** (opens its folder with it selected), **Put it back**
+  (where it was; from the Trash too), **Forget all of it**.
+- In Nexus: "where did I put the report" answers "report.pdf is in
+  Work/Docs" and opens that folder.
+- Honest when it can't know: something moved outside Files reads "Not there
+  any more: moved or deleted outside Files"; an emptied Trash says so.
+
+Built in Rust: `nexa_sys::filetrail` (the journal, trimming, following),
+used by nexa-fileops (writing; the journal is opened before it confines
+itself with Landlock, so its sandbox stays as tight) and MicroBrain (Nexus
+answers). The journal, `~/.local/state/nexa/filetrail.jsonl`, keeps names
+and places only, never contents: the last 2000 changes, 1 MB at most, 0600
+in a 0700 folder. Switch: Settings > Magic Layer > FileTrail (on by
+default); when off, nothing is written. Tests: `test_filetrail.py` (15,
+the real engine), Files' window test (Trail, Show, search), `cargo test -p
+nexa-sys` (following, bound, privacy). Measured: a trail question takes
+about 2 ms (start nexa-fileops, read, follow).
+
 ### Files
 
 - `tools-c/nexa-living/`: the renderer (`nexa-living.c`), the styles

@@ -246,6 +246,42 @@ fn answers(t: &[String], out: &mut Vec<Hit>) {
     }
 }
 
+/// FileTrail (Magic Layer): "where did I put report", "where is the invoice".
+fn trail(t: &[String], home: &Path, out: &mut Vec<Hit>) {
+    if !any(t, &["where", "moved", "went", "lost", "missing"]) || !crate::magic::enabled(home, "filetrail") {
+        return;
+    }
+    const FILLER: &[&str] = &["where", "did", "do", "moved", "move", "went", "put", "find", "lost", "missing", "file", "files",
+                              "folder", "gone", "are", "last", "has", "have", "was", "in"];
+    let words: Vec<&str> = t.iter().map(String::as_str).filter(|w| !FILLER.contains(w)).collect();
+    let Some(longest) = words.iter().max_by_key(|w| w.len()) else { return };
+    let place = |p: &str| {
+        let folder = Path::new(p).parent().map(|d| d.to_path_buf()).unwrap_or_default();
+        if folder == home { "your home folder".to_string() } else {
+            folder.strip_prefix(home).map(|r| r.display().to_string()).unwrap_or_else(|_| folder.display().to_string())
+        }
+    };
+    let found = nexa_sys::filetrail::trail(home, longest, 50).into_iter()
+        .filter(|i| { let n = i["name"].as_str().unwrap_or("").to_lowercase(); words.iter().all(|w| n.contains(w)) });
+    for item in found.take(2) {
+        let (name, kind, at) = (item["name"].as_str().unwrap_or(""), item["kind"].as_str().unwrap_or(""), item["at"].as_u64().unwrap_or(0));
+        let now = item["now"].as_str().unwrap_or("");
+        let when = format!("{kind} {}", crate::why::clock(at));
+        match item["status"].as_str() {
+            Some("here") => {
+                let folder = Path::new(now).parent().map(|d| d.display().to_string()).unwrap_or_default();
+                out.push(hit(format!("{name} is in {}", place(now)), format!("{when} \u{b7} FileTrail"),
+                             json!({"type": "open_path", "path": folder}), 0.95));
+            }
+            Some("in-trash") => out.push(hit(format!("{name} is in the Trash"), format!("{when} \u{b7} FileTrail"),
+                                             json!({"type": "open_path", "path": home.join(".local/share/Trash/files")}), 0.9)),
+            _ => out.push(hit(format!("{name}: not where Files last put it"),
+                              format!("Last {when} to {} \u{b7} FileTrail", place(item["to"].as_str().unwrap_or(""))),
+                              json!({"type": "open_path", "path": Path::new(item["to"].as_str().unwrap_or("/")).parent().unwrap_or(home)}), 0.7)),
+        }
+    }
+}
+
 fn workspaces(t: &[String], list: &[Workspace], out: &mut Vec<Hit>) {
     let asked = any(t, &["workspace", "workspaces", "activate", "restore", "switch", "project"]);
     if any(t, &["save", "new", "create", "make"]) && any(t, &["workspace", "workspaces"]) {
@@ -306,6 +342,7 @@ pub fn ask(query: &str, all_apps: &BTreeMap<String, App>, list: &[Workspace], ho
         controls(&t, &mut out);
         modes(&t, &mut out);
         answers(&t, &mut out);
+        trail(&t, home, &mut out);
         workspaces(&t, list, &mut out);
         settings(&t, &mut out);
     }
@@ -370,6 +407,26 @@ mod tests {
         assert_eq!(top("lock the screen"), json!({"type": "lock"}));
         assert_eq!(top("bluetooth settings"), json!({"type": "settings", "page": "bluetooth"}));
         assert_eq!(top("save this workspace"), json!({"type": "settings", "page": "intelligence", "section": "workspaces"}));
+    }
+
+    #[test]
+    fn where_did_it_go_asks_filetrail() {
+        let home = std::env::temp_dir().join(format!("zs-trail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join("Work/Docs")).unwrap();
+        std::fs::write(home.join("Work/Docs/report.pdf"), b"x").unwrap();
+        if std::env::var_os("XDG_STATE_HOME").is_some() || std::env::var_os("XDG_CONFIG_HOME").is_some() {
+            return;
+        }
+        let mut f = nexa_sys::filetrail::open(&home).unwrap();
+        let p = |s: &str| home.join(s).display().to_string();
+        nexa_sys::filetrail::append(&mut f, "move", &[json!({"op": "moved", "from": p("Downloads/report.pdf"), "to": p("Work/Docs/report.pdf")})], None, 100);
+        drop(f);
+        let (apps, ws) = setup();
+        let r = ask("where did I put the report", &apps, &ws, &home);
+        assert_eq!(r.hits[0].title, "report.pdf is in Work/Docs", "{:?}", r.hits);
+        assert_eq!(r.hits[0].action, json!({"type": "open_path", "path": p("Work/Docs")}));
+        assert!(ask("where is the invoice", &apps, &ws, &home).hits.iter().all(|h| !h.subtitle.contains("FileTrail")));
     }
 
     #[test]

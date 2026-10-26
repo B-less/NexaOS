@@ -10,7 +10,11 @@
 //!
 //! Ops: copy, move (sources, dest_dir); duplicate, trash, delete, size
 //! (paths); rename (path, name); new_folder, new_file (dir, name); restore
-//! (items: paths inside a Trash); trash_list; empty_trash; undo (steps).
+//! (items: paths inside a Trash); trash_list; empty_trash; undo (steps);
+//! trail (query, limit): FileTrail, where things went; trail_forget.
+//!
+//! Every change is written to FileTrail's journal (nexa_sys::filetrail)
+//! unless it is switched off in Settings > Magic Layer.
 //!
 //! Nothing is ever overwritten (see ops.rs), and before doing anything the
 //! process confines itself with Landlock to the folders the request names,
@@ -43,6 +47,8 @@ enum Job {
     TrashList(Vec<PathBuf>),
     EmptyTrash(Vec<PathBuf>),
     Undo(Vec<Step>),
+    Trail { query: String, limit: usize },
+    TrailForget,
 }
 
 #[derive(Default)]
@@ -204,6 +210,21 @@ fn plan(req: &Value, home: &Path) -> Result<(Job, Access), String> {
             }
             Job::Undo(steps)
         }
+        "trail" => {
+            let d = nexa_sys::filetrail::dir(home);
+            if d.is_dir() {
+                a.read.push(d);
+            }
+            let query: String = req.get("query").and_then(Value::as_str).unwrap_or("").chars().take(200).collect();
+            Job::Trail { query, limit: req.get("limit").and_then(Value::as_u64).unwrap_or(200).min(2000) as usize }
+        }
+        "trail_forget" => {
+            let d = nexa_sys::filetrail::dir(home);
+            if d.is_dir() {
+                a.write.push(d);
+            }
+            Job::TrailForget
+        }
         other => return Err(format!("unknown op '{other}'")),
     };
     Ok((job, a))
@@ -296,17 +317,18 @@ fn run(job: Job, home: &Path) -> Result<Value, String> {
             outcome(format!("Moved {} to the Trash", items(n)), n, &failed, json!({"undo": undo}))
         }
         Job::Delete(ps) => {
-            let (mut n, mut failed) = (0, Failures::new());
+            let (mut deleted, mut failed) = (Vec::new(), Failures::new());
             for p in ps {
                 match ops::remove(&p) {
                     Ok(()) => {
                         trash::forget(&p);
-                        n += 1;
+                        deleted.push(p);
                     }
                     Err(e) => failed.push((p, ops::say(&e))),
                 }
             }
-            outcome(format!("Deleted {} for good", items(n)), n, &failed, json!({}))
+            let n = deleted.len();
+            outcome(format!("Deleted {} for good", items(n)), n, &failed, json!({"deleted": deleted}))
         }
         Job::Size(ps) => {
             let u = ops::usage(&ps);
@@ -359,24 +381,29 @@ fn run(job: Job, home: &Path) -> Result<Value, String> {
             Ok(json!({"done": format!("Emptied the Trash ({})", items(n as usize)), "failed": failures(&failed)}))
         }
         Job::Undo(steps) => {
-            let (mut n, mut failed) = (0, Failures::new());
+            // What was really done (for FileTrail): where things ended up.
+            let (mut n, mut failed, mut did) = (0, Failures::new(), Vec::new());
             for s in steps.into_iter().rev() {
                 let r = match &s {
-                    Step::Created { path } => trash::trash(path, &trash::trash_for(path, home)).map(|_| ()),
+                    Step::Created { path } => trash::trash(path, &trash::trash_for(path, home))
+                        .map(|st| did.push(serde_json::to_value(st).unwrap_or_default())),
                     Step::Moved { from, to } => fs::create_dir_all(parent(from)).and_then(|_| {
                         let is_dir = fs::symlink_metadata(to)?.is_dir();
                         place(&parent(from), from.file_name().unwrap_or_default(), false, is_dir,
-                              |t| ops::move_item(to, t, &mut Progress::new(0))).map(|_| ())
+                              |t| ops::move_item(to, t, &mut Progress::new(0)))
+                            .map(|t| did.push(json!({"op": "moved", "from": to, "to": t})))
                     }),
-                    Step::Trashed { trashed, .. } => trash::restore(trashed).map(|_| ()),
+                    Step::Trashed { trashed, .. } => trash::restore(trashed).map(|p| did.push(json!({"op": "restored", "to": p}))),
                 };
                 match r {
                     Ok(()) => n += 1,
                     Err(e) => failed.push((match s { Step::Created { path } => path, Step::Moved { to, .. } => to, Step::Trashed { path, .. } => path }, ops::say(&e))),
                 }
             }
-            outcome(format!("Undid {}", if n == 1 { "1 change".into() } else { format!("{n} changes") }), n, &failed, json!({}))
+            outcome(format!("Undid {}", if n == 1 { "1 change".into() } else { format!("{n} changes") }), n, &failed, json!({"did": did}))
         }
+        Job::Trail { query, limit } => Ok(json!({"items": nexa_sys::filetrail::trail(home, &query, limit)})),
+        Job::TrailForget => Ok(json!({"done": "FileTrail forgot every change", "forgot": nexa_sys::filetrail::forget(home)})),
     }
 }
 
@@ -429,8 +456,25 @@ fn handle(input: &[u8]) -> Result<Value, String> {
     let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("HOME is not set")?;
     let home = home.canonicalize().unwrap_or(home);
     let (job, access) = plan(&req, &home)?;
+    let op = req.get("op").and_then(Value::as_str).unwrap_or("").to_string();
+    let changes = !matches!(op.as_str(), "size" | "trash_list" | "trail" | "trail_forget");
+    // FileTrail's journal: opened before confining, so the sandbox stays as tight.
+    let mut journal = if changes { nexa_sys::filetrail::open(&home) } else { None };
     confine(&access)?;
-    run(job, &home)
+    let result = run(job, &home)?;
+    if let Some(f) = journal.as_mut() {
+        let steps: Vec<Value> = match op.as_str() {
+            "undo" => result["did"].as_array().cloned().unwrap_or_default(),
+            "restore" => result["restored"].as_array().into_iter().flatten().map(|p| json!({"op": "restored", "to": p})).collect(),
+            "delete" => result["deleted"].as_array().into_iter().flatten().map(|p| json!({"op": "deleted", "path": p})).collect(),
+            // Emptying the Trash: everything in it is gone for good.
+            "empty_trash" => vec![json!({"op": "emptied"})],
+            _ => result["undo"].as_array().cloned().unwrap_or_default(),
+        };
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        nexa_sys::filetrail::append(f, &op, &steps, req.get("sources").or_else(|| req.get("paths")), now);
+    }
+    Ok(result)
 }
 
 fn main() {
