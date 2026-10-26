@@ -34,6 +34,12 @@ until apk update --root "$ROOTFS_DIR"; do
     sleep $((tries * 10))
 done
 
+# Security and bug fixes for what is already installed (apk add alone only
+# installs what's missing, so an existing rootfs used to keep old versions
+# of OpenSSL, curl, musl... until it was rebuilt from scratch).
+echo "[*] upgrading installed packages"
+apk upgrade --root "$ROOTFS_DIR" --no-scripts
+
 echo "[*] installing core packages"
 apk add --root "$ROOTFS_DIR" --no-scripts $PKG_CORE
 

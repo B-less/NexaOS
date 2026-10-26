@@ -82,6 +82,7 @@ Thumbs.db
 
 # Generated trees / build outputs (rebuilt by build scripts)
 /kernel/linux-*/
+/kernel/*.tar.*
 /rootfs/
 /init_build/
 /iso_build/
