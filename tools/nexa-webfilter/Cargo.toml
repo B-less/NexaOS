@@ -1,0 +1,8 @@
+[package]
+name = "nexa-webfilter"
+version = "0.1.0"
+edition = "2021"
+description = "Nexa Browser's ad and tracker blocking: filter lists to WebKit content-blocker rules"
+
+[dependencies]
+serde_json = "1"

@@ -10,9 +10,10 @@ _SCHEME_ONLY = ("about:", "data:", "file:", "view-source:", "mailto:")
 _HOST_PORT = re.compile(r"^(localhost|[\w.-]+\.[a-z]{2,}|\d{1,3}(\.\d{1,3}){3})(:\d+)?(/.*)?$", re.I)
 
 
-def to_uri(text):
+def to_uri(text, search_url=SEARCH_URL):
     """'example.com' -> https://example.com, 'about:blank' stays, a local
-    path becomes a file:// URI, anything else is a DuckDuckGo search."""
+    path becomes a file:// URI, anything else is a search (DuckDuckGo
+    unless Settings picked another engine)."""
     text = text.strip()
     if not text:
         return HOME_URL
@@ -25,4 +26,4 @@ def to_uri(text):
     if " " not in text and _HOST_PORT.match(text):
         scheme = "http://" if text.lower().startswith("localhost") or re.match(r"^\d", text) else "https://"
         return scheme + text
-    return SEARCH_URL + quote(text, safe="")
+    return search_url + quote(text, safe="")

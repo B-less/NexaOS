@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>News</title>
+<p>Some news. <span class="ad-box" id="adbox">AN AD BOX</span></p>
+<script>
+window.R = {};
+function probe(id, src) {
+  const i = new Image();
+  i.onload = () => R[id] = "loaded"; i.onerror = () => R[id] = "blocked"; i.src = src + "?" + Date.now();
+}
+probe("ad", "http://doubleclick.net:8765/pixel.png");
+probe("own", "/pixel.png");
+setTimeout(() => R.adbox = getComputedStyle(document.getElementById("adbox")).display, 500);
+</script>

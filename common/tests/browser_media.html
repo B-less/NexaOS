@@ -1,0 +1,54 @@
+<!doctype html><meta charset="utf-8"><title>media test</title>
+<body style="background:#111;color:#eee;font:14px sans-serif">
+<div id="log"></div>
+<script>
+// Each clip: does it really play (time moves, a picture arrives)? Then
+// the codecs sites ask about (MediaSource.isTypeSupported), and streamed
+// playback (MSE), the way YouTube and most video sites play.
+const R = {types: {}, files: {}, mse: {}};
+const log = t => document.getElementById("log").insertAdjacentHTML("beforeend", t + "<br>");
+function watch(v, name, done) {
+  let t0 = null, finished = false;
+  const end = r => { if (!finished) { finished = true; done(r); } };
+  v.onerror = () => end({ok: false, error: v.error ? v.error.code + " " + (v.error.message || "") : "error"});
+  setTimeout(() => { t0 = v.currentTime; }, 1500);
+  setTimeout(() => end({ok: v.currentTime > (t0 || 0) + 0.5 && v.videoWidth > 0, time: +v.currentTime.toFixed(2),
+                        width: v.videoWidth, ready: v.readyState, error: v.error ? v.error.code : null}), 4500);
+}
+function file(name) {
+  return new Promise(res => {
+    const v = document.createElement("video"); v.muted = true; v.width = 160; v.src = name;
+    document.body.appendChild(v); watch(v, name, r => { R.files[name] = r; log(name + ": " + JSON.stringify(r)); res(); });
+    v.play().catch(e => {});
+  });
+}
+function mse(name, mime) {
+  return new Promise(res => {
+    if (!window.MediaSource || !MediaSource.isTypeSupported(mime)) { R.mse[name] = {ok: false, error: "not supported: " + mime}; return res(); }
+    const v = document.createElement("video"); v.muted = true; v.width = 160;
+    const ms = new MediaSource(); v.src = URL.createObjectURL(ms); document.body.appendChild(v);
+    ms.addEventListener("sourceopen", async () => {
+      try {
+        const sb = ms.addSourceBuffer(mime);
+        const buf = await (await fetch(name)).arrayBuffer();
+        sb.addEventListener("updateend", () => { try { ms.endOfStream(); } catch (e) {} });
+        sb.appendBuffer(buf);
+      } catch (e) { R.mse[name] = {ok: false, error: String(e)}; return res(); }
+    });
+    watch(v, name, r => { R.mse[name] = r; log("MSE " + name + ": " + JSON.stringify(r)); res(); });
+    v.play().catch(e => {});
+  });
+}
+(async () => {
+  const types = ['video/mp4; codecs="avc1.4d401f"', 'video/mp4; codecs="avc1.64001f"', 'video/webm; codecs="vp9"',
+                 'video/webm; codecs="vp09.00.10.08"', 'video/mp4; codecs="av01.0.05M.08"', 'video/webm; codecs="av01.0.05M.08"',
+                 'audio/mp4; codecs="mp4a.40.2"', 'audio/webm; codecs="opus"'];
+  for (const t of types) R.types[t] = window.MediaSource ? MediaSource.isTypeSupported(t) : "no MediaSource";
+  R.hls = document.createElement("video").canPlayType("application/vnd.apple.mpegurl");
+  for (const f of ["h264.mp4", "vp9.webm", "vp8.webm", "av1.webm", "hls.m3u8"]) await file(f);
+  await mse("frag.mp4", 'video/mp4; codecs="avc1.64001e, mp4a.40.2"');
+  await mse("vp9.webm", 'video/webm; codecs="vp9, opus"');
+  R.ua = navigator.userAgent;
+  document.title = "RESULTS:" + JSON.stringify(R);
+})();
+</script>

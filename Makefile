@@ -361,6 +361,11 @@ test-living: native
 test-why: native
 	@sh scripts/test-why.sh
 
+# Nexa Browser in the real system image: blocking, HTTPS-only, tabs,
+# permissions, pop-ups, video in every format, session restore.
+test-browser: native
+	@sh scripts/test-browser.sh
+
 # Rewind (Magic Layer): real MicroBrain watching real settings files.
 test-rewind: native
 	@sh scripts/test-rewind.sh

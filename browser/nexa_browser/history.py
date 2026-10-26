@@ -48,6 +48,18 @@ class History:
     def recent(self, limit=50):
         return self._rows(sorted(self.entries.items(), key=lambda kv: -kv[1]["last"])[:limit])
 
+    def top(self, limit=8):
+        """Most-visited pages (one per site), for the new-tab page."""
+        seen, out = set(), []
+        for u, e in sorted(self.entries.items(), key=lambda kv: (-kv[1]["visits"], -kv[1]["last"])):
+            site = u.split("://", 1)[-1].split("/", 1)[0]
+            if site not in seen:
+                seen.add(site)
+                out.append((u, e))
+            if len(out) >= limit:
+                break
+        return self._rows(out)
+
     def search(self, query, limit=8):
         """Entries whose URL or title contains every word of the query,
         most-visited first."""

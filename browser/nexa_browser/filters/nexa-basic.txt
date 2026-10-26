@@ -1,0 +1,94 @@
+! Nexa Browser's built-in blocking list: well-known advertising and
+! cross-site tracking services. Compiled by nexa-webfilter into WebKit's
+! content blocker. Bigger lists (EasyList, ...) can be added in the
+! browser's Settings; blocking can be switched off per site.
+!
+! Ad networks and exchanges
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||googletagservices.com^
+||adservice.google.com^
+||amazon-adsystem.com^
+||adnxs.com^
+||adsrvr.org^
+||criteo.com^
+||criteo.net^
+||taboola.com^
+||outbrain.com^
+||rubiconproject.com^
+||pubmatic.com^
+||openx.net^
+||casalemedia.com^
+||indexww.com^
+||smartadserver.com^
+||yieldmo.com^
+||teads.tv^
+||serving-sys.com^
+||media.net^
+||bidswitch.net^
+||mathtag.com^
+||adform.net^
+||sharethrough.com^
+||3lift.com^
+||triplelift.com^
+||gumgum.com^
+||zemanta.com^
+||revcontent.com^
+||mgid.com^
+||propellerads.com^
+||popads.net^
+||popcash.net^
+||adroll.com^
+||contextweb.com^
+||lijit.com^
+||sovrn.com^
+||33across.com^
+||yieldmanager.com^
+||ads.yahoo.com^
+||ads.linkedin.com^
+||ads.tiktok.com^
+||adcolony.com^
+||applovin.com^
+! Verification and measurement
+||moatads.com^
+||doubleverify.com^
+||adsafeprotected.com^
+||scorecardresearch.com^
+||quantserve.com^
+||imrworldwide.com^
+! Data brokers and cross-site profiles
+||rlcdn.com^
+||demdex.net^
+||everesttech.net^
+||krxd.net^
+||bluekai.com^
+||exelator.com^
+||agkn.com^
+||tapad.com^
+||crwdcntrl.net^
+! Analytics, session recording and pixels (only when another site loads them)
+||google-analytics.com^$third-party
+||googletagmanager.com^$third-party
+||hotjar.com^$third-party
+||clarity.ms^$third-party
+||fullstory.com^$third-party
+||mouseflow.com^$third-party
+||crazyegg.com^$third-party
+||mixpanel.com^$third-party
+||nr-data.net^$third-party
+||chartbeat.com^$third-party
+||chartbeat.net^$third-party
+||analytics.yahoo.com^
+||analytics.tiktok.com^
+||analytics.twitter.com^
+||ads-twitter.com^
+||bat.bing.com^
+||px.ads.linkedin.com^
+||snap.licdn.com^
+||tr.snapchat.com^
+||sc-static.net^$third-party
+||connect.facebook.net^$third-party
+||facebook.com/tr^$third-party
+||omtrdc.net^$third-party
+||2o7.net^

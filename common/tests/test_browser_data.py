@@ -4,7 +4,8 @@ The browser's history store and download helpers (no GTK, no WebKit)."""
 import os, stat, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "browser"))
-from nexa_browser import downloads, history, tor, urls
+os.environ["XDG_DATA_HOME"] = tempfile.mkdtemp()
+from nexa_browser import blocker, bookmarks, downloads, history, newtab, prefs, session, tor, urls
 
 failures = []
 def check(label, cond, detail=""):
@@ -92,5 +93,70 @@ for typed, expected in (
         ("", urls.HOME_URL),
         (HERE, "file://" + HERE)):
     check(f"address bar: {typed!r}", urls.to_uri(typed) == expected, urls.to_uri(typed))
+
+# ---- settings, bookmarks, session, new tab, blocking (the tabbed browser)
+pp = os.path.join(d, "prefs.json")
+P = prefs.Prefs(pp)
+check("prefs: defaults (HTTPS-only and blocking on)", P["https_only"] and P["block_ads"] and P["search"] == "duckduckgo")
+P.set("search", "brave")
+P.set_zoom("https://www.example.com/a", 1.25)
+P.set_permission("https://maps.example.org/x", "location", True)
+P.set_blocking("https://news.example.net/", False)
+Q = prefs.Prefs(pp)
+check("prefs: survive a restart, private file", Q["search"] == "brave" and stat.S_IMODE(os.stat(pp).st_mode) == 0o600)
+check("prefs: zoom per site (www. ignored)", Q.zoom_for("https://example.com/other") == 1.25 and Q.zoom_for("https://other.org") == 1.0)
+check("prefs: permission remembered per site, others ask", Q.permission("https://maps.example.org/y", "location") is True
+      and Q.permission("https://maps.example.org/y", "camera") is None)
+check("prefs: blocking off on one site and its subdomains", not Q.blocking_on("https://m.news.example.net/")
+      and Q.blocking_on("https://example.com/"))
+with open(pp, "w") as f:
+    f.write('{"search": "evil-engine", "https_only": "yes", "zoom": []}')
+R = prefs.Prefs(pp)
+check("prefs: bad values fall back to defaults", R["search"] == "duckduckgo" and R["https_only"] is True and R["zoom"] == {})
+check("address bar: searches with the chosen engine", urls.to_uri("nexa os", Q.search_url()).startswith("https://search.brave.com/search?q=nexa"))
+
+bp = os.path.join(d, "bm.json")
+B = bookmarks.Bookmarks(bp)
+check("bookmarks: add, has", B.add("https://alpinelinux.org/", "Alpine") and B.has("https://alpinelinux.org/"))
+check("bookmarks: no duplicates, no about: pages", not B.add("https://alpinelinux.org/") and not B.add("about:blank"))
+check("bookmarks: toggle removes", B.toggle("https://alpinelinux.org/") is False and not B.has("https://alpinelinux.org/"))
+B.add("https://kernel.org/", "The Linux Kernel Archives")
+check("bookmarks: search by title words, survive a restart", [b["url"] for b in bookmarks.Bookmarks(bp).search("linux kernel")] == ["https://kernel.org/"])
+
+sp = os.path.join(d, "session.json")
+session.save(["https://a.example/", "about:blank", "https://b.example/"], active=1, file=sp)
+check("session: tabs come back, about: pages left out", session.load(sp) == (["https://a.example/", "https://b.example/"], 1))
+with open(sp, "w") as f:
+    f.write("{broken")
+check("session: a damaged file is no tabs, not a crash", session.load(sp) == ([], 0))
+
+html = newtab.page("startpage", [{"url": "https://alpinelinux.org/", "title": "<script>x</script>"}], [])
+check("new tab: searches with the chosen engine", 'action="https://www.startpage.com/do/search"' in html and 'name="q"' in html)
+check("new tab: titles are escaped", "<script>x</script>" not in html and "&lt;script&gt;" in html)
+ht = history.History(os.path.join(d, "top.json"))
+for u, n in (("https://alpinelinux.org/", 3), ("https://alpinelinux.org/news", 5), ("https://kernel.org/", 2)):
+    for _ in range(n):
+        ht.add(u, "", now=1)
+check("history: most visited, one per site", [r["url"] for r in ht.top(5)] == ["https://alpinelinux.org/news", "https://kernel.org/"],
+      [r["url"] for r in ht.top(5)])
+
+# Blocking: the built-in list compiled by the real nexa-webfilter.
+P2 = prefs.Prefs(os.path.join(d, "p2.json"))
+try:
+    ident, rules, summary = blocker.compile_rules(P2)
+    import json as _json
+    parsed = _json.loads(rules)
+    check(f"blocker: built-in list compiled ({len(parsed)} rules)", len(parsed) >= 60 and summary and summary["skipped"] == 0, summary)
+    check("blocker: cached (same id, no recompiling)", blocker.compile_rules(P2)[0] == ident)
+    P2.set_blocking("https://shop.example/", False)
+    ident2, rules2, _ = blocker.compile_rules(P2)
+    check("blocker: a site switched off changes the rules", ident2 != ident and b'*shop.example' in rules2)
+except blocker.BlockerError as e:
+    check("blocker: nexa-webfilter runs (make native)", False, str(e))
+try:
+    blocker.download_list("http://easylist.to/easylist/easylist.txt")
+    check("blocker: lists over plain http refused", False)
+except blocker.BlockerError:
+    check("blocker: lists over plain http refused", True)
 
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)
