@@ -13,7 +13,11 @@ use std::collections::VecDeque;
 pub enum Kind {
     /// Must run (the person asked, or safety): ignores the budget.
     Essential,
+    // The budget already rules on these (tests cover it); no job of these
+    // kinds is submitted outside the tests yet.
+    #[allow(dead_code)]
     StorageScan,
+    #[allow(dead_code)]
     Index,
     Maintenance,
 }
