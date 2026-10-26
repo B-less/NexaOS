@@ -241,6 +241,10 @@ fn answers(t: &[String], out: &mut Vec<Hit>) {
         || any(t, &["offline"]) {
         out.push(hit("Why is there no internet?", "Adapter, address, route and DNS, checked now", json!({"type": "answer", "topic": "network"}), 0.9));
     }
+    // Rewind (Magic Layer): the settings timeline.
+    if any(t, &["rewind", "revert"]) || (any(t, &["undo"]) && any(t, &["settings", "setting", "change", "changes", "theme"])) {
+        out.push(hit("Rewind settings changes", "Go back to before a change \u{b7} Magic Layer", json!({"type": "settings", "page": "magic"}), 0.9));
+    }
     if any(t, &["stopped", "paused", "frozen"]) || (any(t, &["why"]) && any(t, &["stop", "waiting"])) {
         out.push(hit("Why did something stop?", "Paused programs, waiting jobs and what MicroBrain did", json!({"type": "answer", "topic": "stopped"}), 0.84));
     }
@@ -316,6 +320,7 @@ fn settings(t: &[String], out: &mut Vec<Hit>) {
         (&["power", "sleep", "screensaver"], "power", "Power"),
         (&["vpn", "wireguard"], "vpn", "VPN"),
         (&["startup", "services"], "startup", "Startup"),
+        (&["magic", "living", "background", "animation", "animated"], "magic", "Magic Layer"),
     ];
     let explicit = any(t, &["settings", "setting", "preferences", "options", "configure", "settings"]);
     for (words, page, label) in table {
@@ -399,6 +404,7 @@ mod tests {
         assert_eq!(top("why did files crash"), json!({"type": "answer", "topic": "crash"}));
         assert_eq!(top("why is there no internet"), json!({"type": "answer", "topic": "network"}));
         assert_eq!(top("wifi not working"), json!({"type": "answer", "topic": "network"}));
+        assert_eq!(top("undo my theme change"), json!({"type": "settings", "page": "magic"}));
         assert_eq!(top("how much memory is used"), json!({"type": "answer", "topic": "memory"}));
         assert_eq!(top("activate coding workspace"), json!({"type": "workspace", "name": "Coding"}));
         assert_eq!(top("pause background scans"), json!({"type": "mode", "mode": "low-resource"}));

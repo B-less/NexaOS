@@ -361,6 +361,10 @@ test-living: native
 test-why: native
 	@sh scripts/test-why.sh
 
+# Rewind (Magic Layer): real MicroBrain watching real settings files.
+test-rewind: native
+	@sh scripts/test-rewind.sh
+
 # Settings > Magic Layer driven like a person, with the real renderer.
 test-magic-page: native
 	@sh scripts/test-magic-page.sh

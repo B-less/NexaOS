@@ -122,6 +122,36 @@ the real engine), Files' window test (Trail, Show, search), `cargo test -p
 nexa-sys` (following, bound, privacy). Measured: a trail question takes
 about 2 ms (start nexa-fileops, read, follow).
 
+## Rewind
+
+A timeline of settings changes in Settings > Magic Layer, each with what
+changed in words ("Theme: theme: horizon → aurora", "Screen lock and
+screen off timing: lock_minutes: 5 → 30"), and **Go back to before this**:
+every file changed at or after that moment goes back to how it was just
+before it, and the running desktop follows (the theme is re-rendered, the
+bar or idle timer restarted, the keyboard layout set). Going back is itself
+a moment, so it can be undone. Nexus: "undo my theme change", "rewind".
+
+Tracked: theme, Magic Layer, top bar, screen lock / screen off timing,
+Settings layout, Interface DNA (global), keyboard layout. Never tracked:
+documents, and security choices (app permissions, sign-in and lock rules):
+going back must never quietly undo one. Changes within 3 s are one moment
+(a theme change writes several files).
+
+Built in Rust inside MicroBrain (`src/rewind.rs`): an inotify thread that
+sleeps until a settings folder is written (no polling), the previous
+content of each changed file (64 KB each at most), the last 100 moments
+(1 MB at most) in MicroBrain's own folder. MicroBrain's Landlock rules now
+allow writing in `~/.config/nexa` and `~/.config/sway/config.d` only (still
+read-only for the rest of home). The desktop side
+(`nexa_common.rewind`) only re-applies, from a fixed list.
+
+Switch: Settings > Magic Layer > Rewind (on by default). Tests: `make
+test-rewind` (11: real service, changes made the way Settings makes them,
+going back and undoing it, derived files re-rendered, never-tracked files),
+`cargo test -p nexa-microbrain` (grouping, summaries, bound, restart).
+Measured: MicroBrain stays about 1.3 MB RSS with Rewind watching.
+
 ### Files
 
 - `tools-c/nexa-living/`: the renderer (`nexa-living.c`), the styles

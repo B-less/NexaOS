@@ -14,7 +14,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import GdkPixbuf, GLib, Gtk
 
-from nexa_common import magic
+from nexa_common import brain, magic, rewind
 
 SLIDERS = (
     ("speed", "Speed", 0.25, 2.0, 0.05),
@@ -48,7 +48,7 @@ FEATURE_TEXT = {
     "surprise": "Surprise: an occasional useful tip (opt-in)",
     "gestures": "GestureKeys: mouse gestures while holding a key",
 }
-BUILT = {"why", "filetrail"}  # features with real behaviour behind them (grows as they land)
+BUILT = {"why", "filetrail", "rewind"}  # features with real behaviour behind them (grows as they land)
 
 
 def _preview_png(style, w=320, h=180):
@@ -148,12 +148,78 @@ class MagicPage:
             more.set_line_wrap(True)
             self.page.pack_start(more, False, False, 0)
 
+        # ---- Rewind: the settings timeline
+        self.page.pack_start(win._field_label("Rewind: recent settings changes"), False, False, 0)
+        note = win._field_label("Go back to just before any of these. Going back is a change too, so it can be undone "
+                                "the same way. Security choices (app permissions, sign-in) are never rewound.")
+        note.set_line_wrap(True)
+        self.page.pack_start(note, False, False, 0)
+        self.rewind_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.page.pack_start(self.rewind_box, False, False, 0)
+        self.rewind_status = win._field_label("")
+        self.page.pack_start(self.rewind_status, False, False, 0)
+        refresh = Gtk.Button(label="Refresh the timeline")
+        refresh.set_halign(Gtk.Align.START)
+        refresh.connect("clicked", lambda *_a: self.load_rewind())
+        self.page.pack_start(refresh, False, False, 0)
+        self.load_rewind()
+
         self.status = win._field_label("")
         self.page.pack_start(self.status, False, False, 0)
         self._loading = False
         self._show_preview(lv["desktop"])
         GLib.timeout_add_seconds(2, self._refresh_measured)
         self._refresh_measured()
+
+    # ---- Rewind
+    def load_rewind(self):
+        def work():
+            try:
+                items, error = rewind.moments(12), None
+            except brain.BrainError as e:
+                items, error = [], str(e)
+            GLib.idle_add(self._show_rewind, items, error)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_rewind(self, items, error):
+        for c in self.rewind_box.get_children():
+            c.destroy()
+        self.moments = items
+        if error:
+            self.rewind_status.set_text(error)
+            return False
+        self.rewind_status.set_text("" if items else "No settings changes yet.")
+        import time as _time
+        for m in items:
+            row = Gtk.Box(spacing=12)
+            col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            when = _time.strftime("%d %b %H:%M", _time.localtime(m["at"]))
+            head = ", ".join(c["label"] for c in m["changes"])
+            if m.get("rewind_of"):
+                head = "Went back: " + head
+            col.pack_start(self.win._field_label(f"{when} \u00b7 {head}"), False, False, 0)
+            for c in m["changes"]:
+                for line in c["summary"][:3]:
+                    lab = self.win._field_label(f"    {c['label']}: {line}")
+                    lab.set_line_wrap(True)
+                    lab.get_style_context().add_class("dim-label")
+                    col.pack_start(lab, False, False, 0)
+            row.pack_start(col, True, True, 0)
+            btn = Gtk.Button(label="Go back to before this")
+            btn.set_valign(Gtk.Align.CENTER)
+            btn.connect("clicked", lambda _b, i=m["id"]: self.go_back(i))
+            row.pack_end(btn, False, False, 0)
+            self.rewind_box.pack_start(row, False, False, 0)
+        self.rewind_box.show_all()
+        return False
+
+    def go_back(self, moment_id):
+        try:
+            done = rewind.go_back(moment_id)
+            self.rewind_status.set_text("Put back: " + ", ".join(done) + "." if done else "Nothing to put back.")
+        except brain.BrainError as e:
+            self.rewind_status.set_text(str(e))
+        GLib.timeout_add(900, lambda: self.load_rewind() and False)
 
     # ---- rows
     def _row(self, label, widget):

@@ -13,6 +13,7 @@
 //!   nexa-microbrain ask WORDS...        ZeroSearch: what those words would do
 //!   nexa-microbrain answer slow|battery
 //!   nexa-microbrain why slow|crash|memory|network|stopped   Why: the evidence
+//!   nexa-microbrain rewind [ID]        Rewind: settings changes; go back to before ID
 //!   nexa-microbrain workspaces | suggestions
 //!
 //! Talks to Settings over $XDG_RUNTIME_DIR/nexa-microbrain.sock (0600,
@@ -26,6 +27,7 @@ mod habit;
 mod magic;
 mod pulse;
 mod resources;
+mod rewind;
 mod scheduler;
 mod features;
 mod search;
@@ -46,6 +48,9 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use store::{Doc, Store};
+
+/// Rewind's history, shared by its watcher thread and the requests.
+pub static REWIND: std::sync::OnceLock<Arc<std::sync::Mutex<rewind::Rewind>>> = std::sync::OnceLock::new();
 
 pub fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
@@ -363,6 +368,13 @@ fn confine(store_dir: &std::path::Path) {
     rules.push((run_dir().to_string_lossy().into_owned(), READ_WRITE));
     if let Some(home) = std::env::var_os("HOME") {
         rules.push((home.to_string_lossy().into_owned(), READ));
+        // Rewind writes settings back: only the settings folders, never the rest of home.
+        for d in [".config/nexa", ".config/sway/config.d"] {
+            let p = std::path::Path::new(&home).join(d);
+            if p.is_dir() {
+                rules.push((p.to_string_lossy().into_owned(), READ_WRITE));
+            }
+        }
     }
     if let Err(e) = sandbox::restrict(&sandbox::Rules { fs: rules, connect_ports: vec![], any_network: false }) {
         eprintln!("nexa-microbrain: Landlock: {e} (running unconfined)");
@@ -399,6 +411,11 @@ fn serve() -> io::Result<()> {
                 return;
             }
         });
+    }
+    {
+        let r = Arc::new(std::sync::Mutex::new(rewind::Rewind::new(home(), &store.dir)));
+        let _ = REWIND.set(r.clone());
+        std::thread::spawn(move || rewind::watch(r));
     }
     confine(&store.dir);
     eprintln!("nexa-microbrain: profile {profile:?}, mode {:?}", cfg.mode);
@@ -444,6 +461,8 @@ fn main() {
         ["ask", words @ ..] if !words.is_empty() => request(json!({"cmd": "ask", "query": words.join(" ")})).and_then(print),
         ["answer", topic] => request(json!({"cmd": "answer", "topic": topic})).and_then(print),
         ["why", topic] => request(json!({"cmd": "why", "topic": topic})).and_then(print),
+        ["rewind"] => request(json!({"cmd": "rewind"})).and_then(print),
+        ["rewind", id] => request(json!({"cmd": "rewind-to", "id": id.parse::<u64>().unwrap_or(0)})).and_then(print),
         ["workspaces"] => request(json!({"cmd": "workspaces"})).and_then(print),
         ["suggestions"] => request(json!({"cmd": "suggestions"})).and_then(print),
         ["mode"] => request(json!({"cmd": "mode"})).and_then(print),
@@ -452,7 +471,7 @@ fn main() {
         ["config", feature, on @ ("on" | "off")] => request(json!({"cmd": "config", "feature": feature, "on": *on == "on"})).and_then(print),
         _ => {
             eprintln!("usage: nexa-microbrain serve | status | resources | mode [MODE] | agents | decisions | jobs [cancel ID] |\n       \
-                       config [FEATURE on|off] | ask WORDS... | answer slow|battery | why slow|crash|memory|network|stopped | workspaces | suggestions | forget-history");
+                       config [FEATURE on|off] | ask WORDS... | answer slow|battery | why slow|crash|memory|network|stopped | rewind [ID] | workspaces | suggestions | forget-history");
             std::process::exit(2);
         }
     };

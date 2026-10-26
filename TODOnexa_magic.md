@@ -59,7 +59,7 @@ third-party apps' insides; recording screen content; a resident AI model.
 ### Phase 4: core Magic Layer
 - [ ] Peek (preview without opening the app; no document code run)
 - [ ] Orbit (radial actions by context; keyboard equivalent)
-- [ ] Rewind (timeline of reversible settings changes)
+- [x] Rewind (timeline of reversible settings changes): rewind.rs in MicroBrain (inotify, previous contents, moments), Settings timeline with "Go back to before this", desktop re-applies; security files never tracked; `make test-rewind`.
 - [x] FileTrail (where did I move it): nexa_sys::filetrail journal written by nexa-fileops, followed through later moves; Files' Trail window (Show, Put it back, Forget), Nexus "where did I put …", Settings switch; test_filetrail.py, Files window test.
 - [x] Why (slow / crash / memory / network / stopped task, from real evidence, proven vs possible): why.rs in MicroBrain, exit records from the desktop, Pulse's Why tab, Nexus answers, Settings switch; `make test-why`.
 

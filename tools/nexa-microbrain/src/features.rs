@@ -4,6 +4,7 @@
 //!   {"cmd": "ask", "query": "open downloads"}            ZeroSearch results
 //!   {"cmd": "answer", "topic": "slow" | "battery" | ...}   a plain-language answer
 //!   {"cmd": "why", "topic": "slow" | "crash" | ...}        Why: proven / possible findings (why.rs)
+//!   {"cmd": "rewind"} / {"cmd": "rewind-to", "id"}          Rewind: settings timeline (rewind.rs)
 //!   {"cmd": "workspaces"}                                  the saved workspaces
 //!   {"cmd": "workspace-save", "name", "windows", "folder"} save what's on screen
 //!   {"cmd": "workspace-plan", "name"}                      what restoring does
@@ -134,6 +135,28 @@ pub fn handle(req: &Value, c: &mut Coordinator, cfg: &mut Config, store: &Store,
             }
         }
         "why" => json!({"ok": false, "error": "Why is switched off in Settings > Magic Layer."}),
+        // Rewind (Magic Layer): settings changes, and going back.
+        "rewind" | "rewind-to" if !crate::magic::enabled(&home, "rewind") =>
+            json!({"ok": false, "error": "Rewind is switched off in Settings > Magic Layer."}),
+        "rewind" => match crate::REWIND.get() {
+            Some(r) => {
+                let mut g = r.lock().unwrap_or_else(|e| e.into_inner());
+                g.scan(now()); // anything the watcher hasn't seen yet
+                json!({"ok": true, "moments": g.list(req["limit"].as_u64().unwrap_or(50) as usize)})
+            }
+            None => json!({"ok": false, "error": "Rewind isn't running."}),
+        },
+        "rewind-to" => match crate::REWIND.get() {
+            Some(r) => {
+                let mut g = r.lock().unwrap_or_else(|e| e.into_inner());
+                g.scan(now());
+                match g.rewind_to(req["id"].as_u64().unwrap_or(0), now()) {
+                    Ok(done) => json!({"ok": true, "restored": done.iter().map(|(l, a)| json!({"label": l, "apply": a})).collect::<Vec<_>>()}),
+                    Err(e) => json!({"ok": false, "error": e}),
+                }
+            }
+            None => json!({"ok": false, "error": "Rewind isn't running."}),
+        },
         "workspaces" => {
             let ws: Workspaces = store.load();
             json!({"ok": true, "workspaces": ws.0})
