@@ -21,7 +21,9 @@ signed HTTPS repositories.
    nothing to the stick and forgets everything at shutdown. On an installed
    disk it finds the root partition and mounts it. Then `switch_root`.
 4. **OpenRC.** The boot animation (`bootsplash`, a hexagon that builds itself
-   and writes NEXA) runs on the framebuffer while services start.
+   and writes NEXA) runs on the framebuffer while services start, and stays
+   up until the desktop's first startup command ends it
+   (`nexa-boot-finish --handover`); it clears the old boot text behind it.
    `wifi-probe` and `bt-probe` re-offer WiFi and USB Bluetooth adapters to
    their drivers now that `/lib/firmware` is mounted. Then the firewall
    (nftables: inbound dropped except replies), iwd, bluetoothd, PipeWire.

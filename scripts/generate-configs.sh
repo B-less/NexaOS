@@ -314,8 +314,8 @@ if command -v seatd >/dev/null 2>&1; then
 fi
 
 if command -v sway >/dev/null 2>&1; then
-    # The boot animation hands over to the first desktop only.
-    [ "$NEXA_SESSION_PRIMARY" = 1 ] && [ -x /usr/local/bin/nexa-boot-finish ] && /usr/local/bin/nexa-boot-finish
+    # The boot animation stays up until Sway itself ends it (its config's
+    # first exec, nexa-boot-finish --handover).
     SWAY_CMD="sway"
     if [ -f /etc/sway/config ]; then
         SWAY_CMD="sway -c /etc/sway/config"
@@ -1008,8 +1008,20 @@ PROGRESS_EOF
 
     cat > "$MNT_DIR/usr/local/bin/nexa-boot-finish" << 'FINISH_EOF'
 #!/bin/sh
-# Called right before sway takes the display: close the progress ring, fade
-# out, and wait until the animation has released the screen.
+# Ends the boot animation.
+#   --handover       the desktop's first startup command (Sway/Hyprland). The
+#                    compositor owns the screen by then, so the animation
+#                    stops at once and leaves the console to it: no gap of
+#                    old boot text or black between the two.
+#   --if-no-desktop  inittab, once OpenRC is done: ends it only when no
+#                    desktop is starting (the sway service runs Sway or
+#                    Hyprland); else the desktop hands over. If a desktop
+#                    never comes, the animation gives up by itself (120 s).
+#   (nothing)        close the ring, fade out, give the text console back.
+case "$1" in
+    --handover) exec bootsplash --handover ;;
+    --if-no-desktop) [ -e /run/openrc/started/sway ] && exit 0 ;;
+esac
 [ -f /run/bootsplash.pid ] && kill "$(cat /run/bootsplash.pid)" 2>/dev/null
 rm -f /run/bootsplash.pid
 bootsplash 100 "Welcome"
@@ -1050,7 +1062,7 @@ BOOTSPLASH_EOF
 ::sysinit:/sbin/openrc sysinit
 ::sysinit:/sbin/openrc boot
 ::wait:/sbin/openrc default
-::wait:/usr/local/bin/bootsplash --quit
+::wait:/usr/local/bin/nexa-boot-finish --if-no-desktop
 ::ctrlaltdel:/sbin/openrc reboot
 ::shutdown:/sbin/openrc shutdown
 tty2::respawn:/sbin/getty 38400 tty2
@@ -1116,8 +1128,11 @@ input type:touchpad {
 # Closing the lid locks the screen and suspends (see nexa-lid).
 bindswitch --reload --locked lid:on exec nexa-lid
 
-# Startup applications. The lock comes first so an installed system shows
-# the lock screen before anything else (see nexa-login-lock).
+# Startup applications. First the boot animation stops: Sway has the screen
+# now (it ran until here, so the boot shows no old text or black gap). Then
+# the lock, so an installed system shows the lock screen before anything
+# else (see nexa-login-lock).
+exec nexa-boot-finish --handover
 exec nexa-login-lock
 exec pipewire
 exec pipewire-pulse
@@ -1242,6 +1257,8 @@ source = ~/.config/hypr/nexa-theme.conf
 env = XCURSOR_THEME,Adwaita
 env = XCURSOR_SIZE,24
 
+# The boot animation ran until here; Hyprland has the screen now.
+exec-once = nexa-boot-finish --handover
 exec-once = nexa-login-lock
 exec-once = pipewire
 exec-once = pipewire-pulse

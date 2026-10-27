@@ -11,6 +11,11 @@
  *   bootsplash <percent> [status]    update progress and the status line
  *   bootsplash --quit                fade out, give the console back, and
  *                                    return once the screen is free
+ *   bootsplash --handover            stop at once and leave the console as
+ *                                    it is: the desktop (Sway/Hyprland, via
+ *                                    seatd) already owns the screen. Sent by
+ *                                    the desktop's first startup command, so
+ *                                    the animation covers the whole boot
  *   bootsplash --ping                exit 0 if a daemon is running
  *   bootsplash --text                put the console back in text mode
  *   bootsplash --preview W H T PCT FILE.ppm [status]
@@ -25,6 +30,7 @@
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <linux/kd.h>
+#include <linux/vt.h>
 #include <math.h>
 #include <poll.h>
 #include <signal.h>
@@ -57,7 +63,7 @@
 #define T_MOVE_0    4.35f
 #define T_MOVE_1    5.25f
 #define T_FADE_OUT  0.60f
-#define T_MAX_LIFE  180.0f  /* never hold the screen longer than this */
+#define T_MAX_LIFE  120.0f  /* never hold the screen longer than this (a desktop that never starts) */
 
 typedef struct { float r, g, b; } RGB;
 
@@ -549,10 +555,33 @@ static int canvas_init(Canvas *c, int w, int h) {
 /* ---- console --------------------------------------------------------- */
 
 static void console_mode(int mode) {
-    int fd = open("/dev/tty0", O_RDWR | O_CLOEXEC);
+    int fd = open("/dev/tty0", O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (fd < 0) return;
     ioctl(fd, KDSETMODE, mode);
     close(fd);
+}
+
+/* Wipe the text behind the animation (boot loader and kernel lines from
+ * before it started). Text mode would otherwise show them again the moment
+ * the animation ends. */
+static void console_clear(void) {
+    int fd = open("/dev/tty0", O_WRONLY | O_NOCTTY | O_CLOEXEC);
+    if (fd < 0) return;
+    static const char clear[] = "\033[H\033[2J\033[3J";
+    if (write(fd, clear, sizeof(clear) - 1) < 0) { /* nothing to do */ }
+    close(fd);
+}
+
+/* Does a desktop own the console? seatd switches it to process-controlled
+ * VT switching for the compositor; putting it back in text mode then would
+ * fight the compositor for the screen. */
+static int console_taken(void) {
+    int fd = open("/dev/tty0", O_RDONLY | O_NOCTTY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    struct vt_mode m;
+    int taken = ioctl(fd, VT_GETMODE, &m) == 0 && m.mode == VT_PROCESS;
+    close(fd);
+    return taken;
 }
 
 /* ---- socket ---------------------------------------------------------- */
@@ -614,8 +643,10 @@ static int run_daemon(void) {
     signal(SIGINT, on_signal);
     signal(SIGHUP, SIG_IGN);
     console_mode(KD_GRAPHICS);
+    console_clear();
 
     State st = {.progress = 0, .progress_shown = 0, .quit_at = -1};
+    int handover = 0;
     struct sockaddr_un waiters[8];
     socklen_t waiter_len[8];
     int nwait = 0;
@@ -636,7 +667,11 @@ static int run_daemon(void) {
             if (buf[0] == 'P') st.progress = clampf(atoi(buf + 1) / 100.0f, 0, 1);
             else if (buf[0] == 'S') set_status(&st, buf + 2 <= buf + n ? buf + 2 : "", (float)t);
             else if (buf[0] == '?') sendto(sock, "OK", 2, 0, (struct sockaddr *)&from, fl);
-            else if (buf[0] == 'Q') {
+            else if (buf[0] == 'H') {
+                /* The desktop has the screen: whatever we draw now is unseen. */
+                if (nwait < 8) { waiters[nwait] = from; waiter_len[nwait] = fl; nwait++; }
+                handover = 1;
+            } else if (buf[0] == 'Q') {
                 if (nwait < 8) { waiters[nwait] = from; waiter_len[nwait] = fl; nwait++; }
                 if (st.quit_at < 0) {
                     st.progress = 1;
@@ -647,6 +682,7 @@ static int run_daemon(void) {
             }
             fl = sizeof(from);
         }
+        if (handover) break;
 
         float dt = (float)(t - last);
         last = t;
@@ -677,7 +713,8 @@ static int run_daemon(void) {
         poll(&p, 1, wait > 0 ? wait : 0);
     }
 
-    console_mode(KD_TEXT);
+    console_clear();
+    if (!handover && !console_taken()) console_mode(KD_TEXT);
     fb_close(&fb);
     for (int i = 0; i < nwait; i++) sendto(sock, "OK", 2, 0, (struct sockaddr *)&waiters[i], waiter_len[i]);
     close(sock);
@@ -714,6 +751,10 @@ int main(int argc, char **argv) {
         client_send("Q", 1, 10000);
         return 0;
     }
+    if (argc > 1 && strcmp(argv[1], "--handover") == 0) {
+        client_send("H", 1, 2000);
+        return 0;
+    }
     if (argc > 1) {
         char msg[128];
         snprintf(msg, sizeof(msg), "P %d", atoi(argv[1]));
@@ -724,6 +765,6 @@ int main(int argc, char **argv) {
         }
         return 0;
     }
-    fprintf(stderr, "usage: bootsplash --daemon | <percent> [status] | --quit | --ping | --text | --preview ...\n");
+    fprintf(stderr, "usage: bootsplash --daemon | <percent> [status] | --quit | --handover | --ping | --text | --preview ...\n");
     return 2;
 }
