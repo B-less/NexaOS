@@ -269,8 +269,12 @@ test-files-app: native
 # Boot readahead: boot the fresh ISO once, record which parts of nexa.img the
 # boot reads (nexa-preload), and repack the ISO with that map so every later
 # boot reads them ahead in large in-order pieces. Run after `make iso`/`refresh`.
+# Those stop before packing the ISO when the old map is stale (build-iso.sh),
+# so an ISO older than nexa.img is packed again here first: the map must be
+# recorded on this nexa.img.
 preload-map:
 	@rm -f $(DIST_DIR)/nexa-preload.map
+	@[ $(ISO_OUTPUT) -nt $(DIST_DIR)/nexa.img ] || { $(DOCKER_RUN) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT)); }
 	@python3 scripts/test-live-boot.py --no-checks --shot $(DIST_DIR)/preload-boot.png --fetch /run/nexa-preload/boot.map $(DIST_DIR)/nexa-preload.map
 	@# Only a real map goes on the ISO.
 	@$(BUILD_DIR)/native/nexa-preload show $(DIST_DIR)/nexa-preload.map || { rm -f $(DIST_DIR)/nexa-preload.map; echo "$(COLOR_RED)✗ No usable boot map was recorded$(COLOR_RESET)"; exit 1; }

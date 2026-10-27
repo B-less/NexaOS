@@ -31,11 +31,20 @@ and graphics, is built in.
 ## Everyday rebuilds
 
 ```bash
-make preload-map  # after an ISO build: boot it once, record what the boot reads, repack the ISO with that readahead map
 make refresh  # ~7 min, ~3 MB download: re-provision packages/apps/configs into the existing rootfs,
               # then initramfs, disk image and ISO
+make preload-map  # after every refresh/iso: boot the ISO once, record what the boot reads,
+                  # repack the ISO with that readahead map
 make test     # host-side unit tests (no VM); about 15 suites
 ```
+
+The boot readahead map (`dist/nexa-preload.map`) only fits the `nexa.img` it
+was recorded on, and every `refresh` makes a new `nexa.img`. So after a
+`refresh` with an old map present, the ISO step stops with "was recorded for
+a different nexa.img": that is expected, not a failure of the refresh (the
+disk image is done). Run `make preload-map` next. It packs the ISO without
+the old map, boots it once to record a new one, then packs the final ISO.
+With no map at all the ISO builds with a warning and boots without readahead.
 
 ### Native tools (Rust)
 

@@ -26,6 +26,34 @@ set -eu
 DIST_DIR=$1
 ISO_OUTPUT=$2
 
+# Boot readahead map (make preload-map). It lists places inside nexa.img, so
+# it only fits the nexa.img it was recorded on: the boot skips any other, and
+# a map left over from an earlier build once shipped that way (3.2.0 booted
+# with no readahead). Checked first, before any slow work: a stale map stops
+# the build; a missing one only warns.
+MAP="$DIST_DIR/nexa-preload.map"
+if [ -f "$MAP" ]; then
+    PRELOAD=
+    for p in build/native/nexa-preload rootfs/usr/local/bin/nexa-preload; do
+        [ -x "$p" ] && { PRELOAD=$p; break; }
+    done
+    if [ -z "$PRELOAD" ]; then
+        echo "ERROR: can't check $MAP: nexa-preload isn't built (run 'make native')." >&2
+        exit 1
+    fi
+    if ! "$PRELOAD" matches "$DIST_DIR/nexa.img" "$MAP" 2>/dev/null; then
+        cat >&2 <<EOF
+ERROR: $MAP was recorded for a different nexa.img (an earlier build).
+  Every boot would skip it, so this ISO would have no boot readahead.
+  Run 'make preload-map': it packs the ISO without the old map, boots it
+  once to record a new one, and packs the ISO again with that.
+EOF
+        exit 1
+    fi
+else
+    echo "[!] No boot readahead map: this ISO boots without readahead. Run 'make preload-map' before giving it out."
+fi
+
 # Retried: a DNS hiccup in the container makes apk report the packages as
 # missing ("no such package"), which used to fail the whole build.
 # Already in the nexa-build image: only missing tools are downloaded.
@@ -48,9 +76,8 @@ cp "$DIST_DIR/bzImage" "$STAGE/boot/vmlinuz"
 for f in initramfs-core.cpio.gz initramfs-i915.cpio initramfs-amdgpu.cpio initramfs-iwlwifi.cpio; do
     cp "$DIST_DIR/$f" "$STAGE/boot/$f"
 done
-# Boot readahead map (make preload-map); ignored at boot if it was made for
-# another build of nexa.img.
-[ -f "$DIST_DIR/nexa-preload.map" ] && cp "$DIST_DIR/nexa-preload.map" "$STAGE/boot/nexa-preload.map"
+# Boot readahead map, checked against nexa.img at the top.
+[ -f "$MAP" ] && cp "$MAP" "$STAGE/boot/nexa-preload.map"
 cp "$DIST_DIR/nexa.img" "$STAGE/nexa.img"
 
 for f in isolinux.bin ldlinux.c32; do
