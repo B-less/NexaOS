@@ -10,6 +10,9 @@
 # on whatever medium this ended up on (see build-initramfs.sh), and
 # mac80211_hwsim.radios=0: the kernel has the virtual Wi-Fi simulator built
 # in for VM testing, and its fake wlan0 otherwise shadows the real card.
+# usb-storage.delay_use=200ms: the kernel waits 1 s before reading a new
+# USB stick by default (for old sticks that need settling); that second
+# was spent at every live boot waiting for the stick NexaOS runs from.
 #
 # It ships the exact same kernel, initramfs, and rootfs (nexa.img) as a
 # direct-disk boot, just with nexa.img embedded as a plain file on the ISO
@@ -100,12 +103,12 @@ PROMPT 1
 LABEL nexa
   MENU LABEL NexaOS (live)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio,/boot/initramfs-iwlwifi.cpio nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio,/boot/initramfs-iwlwifi.cpio nexa.live mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
 
 LABEL fresh
   MENU LABEL NexaOS (live, don't load saved changes)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio,/boot/initramfs-iwlwifi.cpio nexa.live nexa.nopersist mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio,/boot/initramfs-iwlwifi.cpio nexa.live nexa.nopersist mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
 CFG_EOF
 
 # UEFI. The volume label can't be used to find the boot files: Rufus's ISO
@@ -145,7 +148,7 @@ else
     if sleep --interruptible 1; then set nexa_menu=; else set nexa_menu=1; fi
 fi
 if [ -z "$nexa_menu" ]; then
-    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
     nexa_initrd
     boot
 fi
@@ -157,25 +160,25 @@ set menu_color_normal=white/blue
 set menu_color_highlight=black/light-gray
 
 menuentry "NexaOS (live)" {
-    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
     nexa_initrd
 }
 # Persistent live USB: start once without the files and settings kept on
 # the stick (e.g. if a saved change stops the desktop from starting).
 menuentry "NexaOS (live, don't load saved changes)" {
-    linux /boot/vmlinuz nexa.live nexa.nopersist mac80211_hwsim.radios=0 quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+    linux /boot/vmlinuz nexa.live nexa.nopersist mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
     nexa_initrd
 }
 # Skips the i915/amdgpu drivers and stays on the firmware framebuffer.
 menuentry "NexaOS (live, safe graphics)" {
-    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 nomodeset quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 usb-storage.delay_use=200ms nomodeset quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
     nexa_initrd
 }
 # Kernel messages on screen from the first instant (EFI framebuffer
 # earlycon), nothing filtered, and a panic stays on screen.
 menuentry "NexaOS (live, debug: show all boot messages)" {
     echo "Loading kernel..."
-    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 earlycon=efifb keep_bootcon ignore_loglevel panic=0 console=ttyS0 console=tty0
+    linux /boot/vmlinuz nexa.live mac80211_hwsim.radios=0 usb-storage.delay_use=200ms earlycon=efifb keep_bootcon ignore_loglevel panic=0 console=ttyS0 console=tty0
     echo "Loading initramfs..."
     nexa_initrd
     echo "Starting kernel..."

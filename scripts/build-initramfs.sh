@@ -256,7 +256,9 @@ fi
 mkdir -p /mnt/cdrom
 LIVE_DEV=
 LIVE_TRIES=0
-while [ -z "$LIVE_DEV" ] && [ "$LIVE_TRIES" -lt 30 ]; do
+# Looked for every 0.2 s (up to 30 s): the stick usually appears a moment
+# after the first look, and a whole second between looks was mostly waiting.
+while [ -z "$LIVE_DEV" ] && [ "$LIVE_TRIES" -lt 150 ]; do
     for SYSDEV in /sys/class/block/*; do
         [ -e "$SYSDEV" ] || continue
         DEV=$(basename "$SYSDEV")
@@ -279,7 +281,7 @@ while [ -z "$LIVE_DEV" ] && [ "$LIVE_TRIES" -lt 30 ]; do
     done
     [ -n "$LIVE_DEV" ] && break
     LIVE_TRIES=$((LIVE_TRIES + 1))
-    sleep 1
+    sleep 0.2
 done
 
 if [ -n "$LIVE_DEV" ] && [ -f /mnt/cdrom/nexa.img ]; then

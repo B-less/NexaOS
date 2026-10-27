@@ -27,7 +27,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later
 .SECONDARY:
 
 # ============================================================================
@@ -260,6 +260,11 @@ test-native:
 	@sh scripts/build-native.sh
 	@sh scripts/test-nexa-pack.sh
 	@sh scripts/test-nexa-mind.sh
+
+# nexa-later (tools-c/nexa-later): starts the session's background services
+# once the system has settled; built and checked in Alpine.
+test-nexa-later:
+	@sh scripts/test-nexa-later.sh
 
 # The Files window driven with mouse, keys, menus, clipboard, Trash and undo
 # in a headless Sway, against the real nexa-fileops engine.

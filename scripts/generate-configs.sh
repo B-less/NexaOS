@@ -1011,8 +1011,8 @@ PROGRESS_EOF
 # Ends the boot animation.
 #   --handover       the desktop's first startup command (Sway/Hyprland). The
 #                    compositor owns the screen by then, so the animation
-#                    stops at once and leaves the console to it: no gap of
-#                    old boot text or black between the two.
+#                    stops at once and leaves the console to it: no old
+#                    boot text shows in between.
 #   --if-no-desktop  inittab, once OpenRC is done: ends it only when no
 #                    desktop is starting (the sway service runs Sway or
 #                    Hyprland); else the desktop hands over. If a desktop
@@ -1129,35 +1129,36 @@ input type:touchpad {
 bindswitch --reload --locked lid:on exec nexa-lid
 
 # Startup applications. First the boot animation stops: Sway has the screen
-# now (it ran until here, so the boot shows no old text or black gap). Then
-# the lock, so an installed system shows the lock screen before anything
-# else (see nexa-login-lock).
+# now (it ran until here, so no old boot text shows). Then the lock, so an
+# installed system shows the lock screen before anything else (see
+# nexa-login-lock).
 exec nexa-boot-finish --handover
 exec nexa-login-lock
 exec pipewire
 exec pipewire-pulse
 exec wireplumber
-# Render the saved theme (bar, notifications, terminal, borders) before the
-# bar and notification daemon read their config.
-exec sh -c 'nexa-theme apply --saved --no-reload >/dev/null 2>&1; swaymsg reload >/dev/null 2>&1; nexa-bar & exec mako'
+# The saved theme (bar, notifications, terminal, borders) is rendered before
+# Sway starts (nexa-desktop), so these read it straight away. Applying it
+# again here with a `swaymsg reload` only restarted the wallpaper (decoded
+# twice; it flashed before the lock screen).
+exec nexa-bar
+exec mako
 # The Dock, the For you card, drives on the desktop and Nexa Link's pop-ups,
 # in one process (nexa_shell parts): about 65 MB less than four.
 exec nexa-parts
 # Living backgrounds (C): the wallpaper, and each Nexa app's style behind its glass.
 exec nexa-living
 exec nexa-idle
-exec nexa-battery-watch
-# Tell nexa-kerneld which app is in front (it gets a CPU floor).
-exec nexa-kerneld focus-watch
-# Nexa Patterns (off until switched on in Settings > Privacy) and its desktop card.
-exec nexa-patternd serve
-# Nexa MicroBrain: pressure forecasts, resource modes, background-work budget.
-exec nexa-microbrain serve
-# Nexa Link: paired devices find each other (silent until one is paired);
-# its pop-ups are part of nexa-parts.
-exec nexa-linkd serve
-# Nexa Doctor: restarts desktop parts that stop, fixes common problems.
-exec nexa-doctor watch
+# Background services, once the lock screen, bar and Dock have drawn:
+# nexa-later (C) waits until the kernel's pressure counters show the system
+# has settled (at most 20 s), then starts them. Started with everything
+# else they slowed down what's on screen. In order: battery warnings; which
+# app is in front (nexa-kerneld gives it a CPU floor); Nexa Patterns (off
+# until switched on in Settings > Privacy); MicroBrain (pressure forecasts,
+# resource modes, background-work budget); Nexa Link (silent until a device
+# is paired; its pop-ups are part of nexa-parts); Nexa Doctor (restarts
+# desktop parts that stop, fixes common problems).
+exec nexa-later 'nexa-battery-watch' 'nexa-kerneld focus-watch' 'nexa-patternd serve' 'nexa-microbrain serve' 'nexa-linkd serve' 'nexa-doctor watch'
 
 # Keybindings
 bindsym $mod+Return exec $term
@@ -1269,12 +1270,8 @@ exec-once = mako
 exec-once = nexa-parts
 exec-once = nexa-living
 exec-once = nexa-idle
-exec-once = nexa-battery-watch
-exec-once = nexa-kerneld focus-watch
-exec-once = nexa-patternd serve
-exec-once = nexa-microbrain serve
-exec-once = nexa-linkd serve
-exec-once = nexa-doctor watch
+# Background services once the screen has drawn (see the Sway config).
+exec-once = nexa-later 'nexa-battery-watch' 'nexa-kerneld focus-watch' 'nexa-patternd serve' 'nexa-microbrain serve' 'nexa-linkd serve' 'nexa-doctor watch'
 exec-once = nexa-keyboard-layout
 
 general {
