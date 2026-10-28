@@ -18,20 +18,32 @@ class EngineError(Exception):
     pass
 
 
-def binary():
-    for candidate in (os.environ.get("NEXA_FILEOPS"), "/usr/local/bin/nexa-fileops", REPO_BUILD):
+def _find(name, env):
+    built = os.path.join(os.path.dirname(REPO_BUILD), name)
+    for candidate in (os.environ.get(env), f"/usr/local/bin/{name}", built):
         if candidate and os.access(candidate, os.X_OK):
             return candidate
-    return shutil.which("nexa-fileops") or "nexa-fileops"
+    return shutil.which(name) or name
 
 
-def run(op, progress=None, started=None, **args):
+def binary():
+    return _find("nexa-fileops", "NEXA_FILEOPS")
+
+
+def archiver():
+    """nexa-archiver (Rust, tools/nexa-archiver): compress and extract."""
+    return _find("nexa-archiver", "NEXA_ARCHIVER")
+
+
+def run(op, progress=None, started=None, program=None, found=None, **args):
     """Run one operation. progress(dict) gets {"done", "total", "current"}
-    while bytes move; started(Popen) lets the caller cancel it."""
+    while bytes move; started(Popen) lets the caller cancel it. program:
+    another engine with the same protocol (nexa-archiver)."""
+    program = program or binary()
     try:
-        proc = subprocess.Popen([binary()], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        proc = subprocess.Popen([program], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     except OSError as e:
-        raise EngineError(f"the file engine (nexa-fileops) is missing: {e}")
+        raise EngineError(f"the file engine ({os.path.basename(program)}) is missing: {e}")
     if started:
         started(proc)
     proc.stdin.write(json.dumps(dict(op=op, **args)))
@@ -45,6 +57,9 @@ def run(op, progress=None, started=None, **args):
         if "progress" in msg:
             if progress:
                 progress(msg["progress"])
+        elif "found" in msg:
+            if found:
+                found(msg["found"])
         else:
             reply = msg
     proc.wait()
@@ -115,3 +130,39 @@ def trail(query="", limit=200):
 
 def trail_forget():
     return run("trail_forget")
+
+
+# ---- Archives (nexa-archiver) ----
+
+ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tbz",
+                    ".tar.zst", ".tzst", ".gz", ".xz", ".bz2", ".zst")
+
+
+def is_archive(name):
+    return name.lower().endswith(ARCHIVE_SUFFIXES)
+
+
+def extract(archive, dest_dir, **kw):
+    """Unpack next to it: one item comes out as itself, several in a new
+    folder named after the archive. Never replaces anything."""
+    return run("extract", archive=archive, dest_dir=dest_dir, program=archiver(), **kw)
+
+
+def compress(paths, fmt="zip", name=None, dest_dir=None, **kw):
+    """Pack paths into a new .zip or .tar.gz (a free name, never replacing)."""
+    args = dict(paths=list(paths), format=fmt)
+    if name:
+        args["name"] = name
+    if dest_dir:
+        args["dest_dir"] = dest_dir
+    return run("compress", program=archiver(), **args, **kw)
+
+
+def list_archive(archive):
+    return run("list", archive=archive, program=archiver())
+
+
+def search(directory, query, found, hidden=False, limit=2000, started=None):
+    """Names under directory containing every word of query; found(list)
+    gets the matches in batches while the engine looks."""
+    return run("search", dir=directory, query=query, hidden=hidden, limit=limit, found=found, started=started)

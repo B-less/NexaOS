@@ -48,6 +48,12 @@ iconview:selected { background-image: none; background-color: @nexa_selected; co
 iconview .rubberband, iconview.rubberband { background-color: alpha(@nexa_accent, 0.18); border: 1px solid @nexa_accent; }
 #statusbar { background-image: none; background-color: @nexa_surface; color: @nexa_muted; font-size: 9pt; }
 #statusrow { background-image: none; background-color: @nexa_surface; }
+#sidebar, #sidebar row { background-image: none; background-color: @nexa_surface; color: @nexa_text; }
+#sidebar row { border-radius: 6px; margin: 1px 6px; padding: 5px 8px; }
+#sidebar row:selected { background-color: @nexa_selected; color: @nexa_selected_text; }
+#sidebar row:hover:not(:selected) { background-color: @nexa_hover; }
+#sidehead { color: @nexa_muted; font-size: 8pt; font-weight: bold; margin: 10px 14px 2px 14px; }
+#ejectbtn { background-image: none; background-color: transparent; border: none; padding: 0 4px; color: @nexa_muted; }
 progressbar trough { min-height: 6px; border-radius: 3px; background-color: @nexa_hover; }
 progressbar progress { min-height: 6px; border-radius: 3px; background-color: @nexa_accent; }
 """
@@ -86,6 +92,9 @@ class FileManagerWindow(Gtk.Window):
         self.icon_size_index = prefs["icon_size_index"]
         self.grid_size_index = prefs["grid_size_index"]
         self.view_mode = prefs["view"]
+        self.pins = prefs["pins"]
+        self.sidebar_on = prefs["sidebar"]
+        self._volumes = []
         self.thumbnailer = thumbs.Thumbnailer()
         self._thumb_cache = {}  # (path, mtime, size) -> pixbuf
         self.busy = False
@@ -94,6 +103,10 @@ class FileManagerWindow(Gtk.Window):
         self._dragging = False
         self._drop_action = Gdk.DragAction.MOVE
         self._monitor = None
+        self.search_query = None   # set while showing search results
+        self.search_results = []
+        self._search_proc = None
+        self._search_gen = 0
         self._refresh_soon_id = 0
         self._summary = ""
 
@@ -108,7 +121,8 @@ class FileManagerWindow(Gtk.Window):
     # ---- Settings ----
 
     def _load_prefs(self):
-        prefs = {"icon_size_index": DEFAULT_ICON_SIZE_INDEX, "grid_size_index": DEFAULT_GRID_SIZE_INDEX, "view": "grid"}
+        prefs = {"icon_size_index": DEFAULT_ICON_SIZE_INDEX, "grid_size_index": DEFAULT_GRID_SIZE_INDEX, "view": "grid",
+                 "pins": [], "sidebar": True}
         try:
             with open(CONFIG_PATH) as f:
                 saved = json.load(f)
@@ -120,6 +134,10 @@ class FileManagerWindow(Gtk.Window):
                     prefs[key] = saved[key]
             if saved.get("view") in ("grid", "list"):
                 prefs["view"] = saved["view"]
+            if isinstance(saved.get("pins"), list):
+                prefs["pins"] = [p for p in saved["pins"] if isinstance(p, str) and os.path.isabs(p)][:50]
+            if isinstance(saved.get("sidebar"), bool):
+                prefs["sidebar"] = saved["sidebar"]
         return prefs
 
     def _save_prefs(self):
@@ -127,7 +145,7 @@ class FileManagerWindow(Gtk.Window):
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
             with open(CONFIG_PATH, "w") as f:
                 json.dump({"icon_size_index": self.icon_size_index, "grid_size_index": self.grid_size_index,
-                           "view": self.view_mode}, f)
+                           "view": self.view_mode, "pins": self.pins, "sidebar": self.sidebar_on}, f)
         except OSError:
             pass
 
@@ -242,12 +260,23 @@ class FileManagerWindow(Gtk.Window):
             toolbar.pack_start(b, False, False, 0)
         self.trail_btn.set_no_show_all(True)
         self.trail_btn.set_visible(magic.feature("filetrail").get("enabled", True))
+        # Home, Trash and Devices are in the sidebar; the buttons are for when it's hidden.
+        for b in (self.home_btn, self.trash_btn, self.devices_btn):
+            b.set_no_show_all(True)
+            b.set_visible(not self.sidebar_on)
 
         self.path_entry = Gtk.Entry()
         self.path_entry.set_name("pathentry")
         self.path_entry.set_width_chars(8)  # shrinks first when the window is narrow
         self.path_entry.connect("activate", self._on_path_entered)
         toolbar.pack_start(self.path_entry, True, True, 0)
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_name("pathentry")
+        self.search_entry.set_placeholder_text("Search (Ctrl+F)")
+        self.search_entry.set_width_chars(14)
+        self.search_entry.connect("search-changed", self._on_search_changed)
+        self.search_entry.connect("stop-search", lambda _e: self._end_search(clear=True))
+        toolbar.pack_start(self.search_entry, False, False, 0)
 
         # Hidden files, icon size, refresh: a View menu keeps the bar short.
         self.view_btn = Gtk.MenuButton(label="View ▾")
@@ -283,7 +312,10 @@ class FileManagerWindow(Gtk.Window):
         normal.connect("activate", lambda _i: self._set_zoom(DEFAULT_GRID_SIZE_INDEX if self.is_grid else DEFAULT_ICON_SIZE_INDEX))
         refresh = Gtk.MenuItem(label="Refresh  (F5)")
         refresh.connect("activate", lambda _i: self._refresh())
-        for item in (self.grid_item, self.list_item, sort_item, Gtk.SeparatorMenuItem(), self.hidden_item,
+        self.sidebar_item = Gtk.CheckMenuItem(label="Sidebar  (F9)")
+        self.sidebar_item.set_active(self.sidebar_on)
+        self.sidebar_item.connect("toggled", lambda i: i.get_active() != self.sidebar_on and self._toggle_sidebar())
+        for item in (self.grid_item, self.list_item, sort_item, Gtk.SeparatorMenuItem(), self.sidebar_item, self.hidden_item,
                      Gtk.SeparatorMenuItem(), self.zoom_in_item, self.zoom_out_item, normal,
                      Gtk.SeparatorMenuItem(), refresh):
             view_menu.append(item)
@@ -411,7 +443,10 @@ class FileManagerWindow(Gtk.Window):
         self.views = Gtk.Stack()
         self.views.add_named(grid_scroller, "grid")
         self.views.add_named(list_scroller, "list")
-        root.pack_start(self.views, True, True, 0)
+        body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        body.pack_start(self._build_sidebar(), False, False, 0)
+        body.pack_start(self.views, True, True, 0)
+        root.pack_start(body, True, True, 0)
 
         status_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         status_row.set_name("statusrow")
@@ -455,6 +490,7 @@ class FileManagerWindow(Gtk.Window):
         FileManagerWindow.open_windows -= 1
         if self._proc:
             self._proc.terminate()
+        self._cancel_search()
         if FileManagerWindow.open_windows <= 0 and Gtk.main_level() > 0:
             Gtk.main_quit()
 
@@ -488,6 +524,15 @@ class FileManagerWindow(Gtk.Window):
         self.path_entry.set_text("Trash" if self.in_trash else self.path)
         cut = set(self.clipboard["paths"]) if self.clipboard and self.clipboard["cut"] else set()
         self.store.clear()
+        if self.search_query:
+            self.search_results = [r for r in self.search_results if os.path.lexists(r["path"])]
+            for r in self.search_results:
+                self._append_result(r, cut)
+            self._select_paths(select)
+            self._update_action_sensitivity()
+            self._show_selection_summary()
+            self._load_thumbnails()
+            return
         if self.in_trash:
             try:
                 entries = engine.trash_list()
@@ -586,6 +631,8 @@ class FileManagerWindow(Gtk.Window):
             self._error(f"Not a folder: {path}")
             return
         new = path if path == TRASH else os.path.abspath(path)
+        if self.search_query is not None or self.search_entry.get_text():
+            self._end_search(clear=True, refresh=False)
         if remember and new != self.path:
             self.back_stack.append(self.path)
             self.forward_stack.clear()
@@ -596,6 +643,7 @@ class FileManagerWindow(Gtk.Window):
         (ctx.add_class if self.in_trash else ctx.remove_class)("nx-active")
         self._watch()
         self._refresh(select=[])
+        self._mark_sidebar()
 
     def _watch(self):
         """Refresh by itself when files change (another app, a download)."""
@@ -827,6 +875,13 @@ class FileManagerWindow(Gtk.Window):
         k = Gdk.keyval_to_lower(event.keyval)
         ctrl, shift, alt = _mods(event.state)
         if isinstance(focus, Gtk.Entry):
+            if focus is self.search_entry and k == Gdk.KEY_Escape:
+                self._end_search(clear=True)
+                self.view.grab_focus()
+                return True
+            if focus is self.search_entry and k == Gdk.KEY_Down and len(self.store):
+                self.view.grab_focus()
+                return True
             if focus is self.path_entry and k == Gdk.KEY_Escape:
                 self.path_entry.set_text("Trash" if self.in_trash else self.path)
                 self.view.grab_focus()
@@ -840,6 +895,7 @@ class FileManagerWindow(Gtk.Window):
             (True, False, False, Gdk.KEY_z): self._on_undo,
             (True, False, False, Gdk.KEY_h): self._on_toggle_hidden,
             (True, False, False, Gdk.KEY_l): lambda _b: self._focus_path(),
+            (True, False, False, Gdk.KEY_f): lambda _b: self.search_entry.grab_focus(),
             (True, False, False, Gdk.KEY_r): lambda _b: self._refresh(),
             (True, False, False, Gdk.KEY_plus): self._on_zoom_in,
             (True, False, False, Gdk.KEY_equal): self._on_zoom_in,
@@ -848,6 +904,7 @@ class FileManagerWindow(Gtk.Window):
             (True, True, False, Gdk.KEY_n): self._on_new_folder,
             (False, False, False, Gdk.KEY_F2): self._on_rename,
             (False, False, False, Gdk.KEY_F5): lambda _b: self._refresh(),
+            (False, False, False, Gdk.KEY_F9): lambda _b: self._toggle_sidebar(),
             (False, False, False, Gdk.KEY_Delete): self._on_delete_forever if self.in_trash else self._on_trash,
             (False, True, False, Gdk.KEY_Delete): self._on_delete_forever,
             (False, False, False, Gdk.KEY_BackSpace): self._on_up,
@@ -910,11 +967,15 @@ class FileManagerWindow(Gtk.Window):
             ("Open", self._on_open_selected),
             ("Open in New Window", lambda _b: [self._open_window(i["path"]) for i in sel if i["is_dir"]], any(i["is_dir"] for i in sel)),
             ("Open With…", self._on_open_with, bool(single and not single["is_dir"])),
+            ("Pin to Sidebar", lambda _b: self._pin(single["path"]), bool(folder and single["path"] not in self.pins)),
             None,
             ("Cut", self._on_cut), ("Copy", self._on_copy),
             ("Paste Into Folder", lambda _b: self._paste_into(single["path"]), bool(folder and self.clipboard)),
             ("Duplicate", self._on_duplicate),
             ("Rename…", self._on_rename, n == 1),
+            None,
+            ("Extract Here", self._on_extract, bool(sel) and all(not i["is_dir"] and engine.is_archive(i["name"]) for i in sel)),
+            ("Compress…", self._on_compress, bool(sel)),
             None,
             ("Copy Location", self._on_copy_location),
             ("Send to a Device…", self._on_send_to_device, bool(sel) and not any(i["is_dir"] for i in sel)),
@@ -1105,6 +1166,7 @@ class FileManagerWindow(Gtk.Window):
                 self._refresh()
             else:
                 self._navigate(result["mountpoint"])
+            self._refresh_drives()
             return False
 
         self._in_thread(lambda: removable.mount(vol["name"]), done)
@@ -1120,9 +1182,250 @@ class FileManagerWindow(Gtk.Window):
                 if self.path.startswith(vol["mountpoint"]):
                     self._navigate(os.environ.get("HOME", "/root"))
                 self.status.set_text(f"{name} can be safely removed.")
+            self._refresh_drives()
             return False
 
         self._in_thread(lambda: removable.eject(vol["name"]), done)
+
+    # ---- Search (nexa-fileops "search") ----
+
+    def _append_result(self, r, cut=()):
+        icon = fileops.guess_icon(r["name"], r["is_dir"], r.get("is_exec", False))
+        where = os.path.dirname(r["path"])
+        home = os.environ.get("HOME", "")
+        shown = "~" + where[len(home):] if home and (where == home or where.startswith(home + "/")) else where
+        self.store.append([self._icon_pixbuf(icon), r["name"], fileops.human_size(r["size"], r["is_dir"]),
+                           fileops.human_time(r["mtime"]), r["path"], r["is_dir"], r["size"], r["mtime"],
+                           r["path"] not in cut, GLib.markup_escape_text(f"In {shown}")])
+
+    def _on_search_changed(self, entry):
+        query = entry.get_text().strip()
+        if not query:
+            self._end_search()
+            return
+        if self.in_trash:
+            self.status.set_text("Search works in folders, not in the Trash.")
+            return
+        self._start_search(query)
+
+    def _start_search(self, query):
+        self._cancel_search()
+        self._search_gen += 1
+        gen = self._search_gen
+        self.search_query = query
+        self.search_results = []
+        self.store.clear()
+        folder = self.path
+        name = os.path.basename(folder) or folder
+        hidden = self.show_hidden
+        self.status.set_text(f"Searching {name} for “{query}”…")
+
+        def started(proc):
+            self._search_proc = proc
+
+        def found(batch):
+            GLib.idle_add(self._search_found, gen, batch)
+
+        def run():
+            try:
+                result, error = engine.search(folder, query, found, hidden=hidden, started=started), None
+            except engine.EngineError as e:
+                result, error = None, str(e)
+            GLib.idle_add(self._search_done, gen, result, error, name)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _search_found(self, gen, batch):
+        if gen != self._search_gen or self.search_query is None:
+            return False
+        self.search_results += batch
+        for r in batch:
+            self._append_result(r)
+        self.status.set_text(f"{len(self.search_results)} found so far…")
+        return False
+
+    def _search_done(self, gen, result, error, name):
+        if gen != self._search_gen or self.search_query is None:
+            return False
+        self._search_proc = None
+        if error:
+            if error != "Cancelled.":
+                self.status.set_text(f"Search stopped: {error}")
+            return False
+        more = " (the first ones only; type more to narrow it)" if result.get("truncated") else ""
+        self._summary = f"{result['done']} in {name}{more}"
+        self.status.set_text(self._summary)
+        self._load_thumbnails()
+        return False
+
+    def _cancel_search(self):
+        proc, self._search_proc = self._search_proc, None
+        if proc and proc.poll() is None:
+            proc.terminate()
+
+    def _end_search(self, clear=False, refresh=True):
+        was = self.search_query is not None
+        self._cancel_search()
+        self._search_gen += 1
+        self.search_query = None
+        self.search_results = []
+        if clear and self.search_entry.get_text():
+            self.search_entry.handler_block_by_func(self._on_search_changed)
+            self.search_entry.set_text("")
+            self.search_entry.handler_unblock_by_func(self._on_search_changed)
+        if was and refresh:
+            self._refresh(select=[])
+
+    # ---- Sidebar: places, the Trash, pinned folders, drives ----
+
+    def _places(self):
+        """(icon, label, path) for Home and the standard folders that exist."""
+        home = os.environ.get("HOME", "/root")
+        out = [("user-home", "Home", home)]
+        for which, icon, name in ((GLib.UserDirectory.DIRECTORY_DESKTOP, "user-desktop", "Desktop"),
+                                  (GLib.UserDirectory.DIRECTORY_DOCUMENTS, "folder-documents", "Documents"),
+                                  (GLib.UserDirectory.DIRECTORY_DOWNLOAD, "folder-download", "Downloads"),
+                                  (GLib.UserDirectory.DIRECTORY_MUSIC, "folder-music", "Music"),
+                                  (GLib.UserDirectory.DIRECTORY_PICTURES, "folder-pictures", "Pictures"),
+                                  (GLib.UserDirectory.DIRECTORY_VIDEOS, "folder-videos", "Videos")):
+            path = GLib.get_user_special_dir(which)
+            if not path or os.path.abspath(path) == os.path.abspath(home):
+                path = os.path.join(home, name)
+            if os.path.isdir(path):
+                out.append((icon, name, path))
+        return out
+
+    def _build_sidebar(self):
+        self.side = Gtk.ListBox()
+        self.side.set_name("sidebar")
+        self.side.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.side.connect("row-activated", self._on_side_row)
+        self.side.connect("button-press-event", self._on_side_button)
+        self.side_scroll = Gtk.ScrolledWindow()
+        self.side_scroll.set_name("sidebar")
+        self.side_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.side_scroll.set_size_request(176, -1)
+        self.side_scroll.add(self.side)
+        self.side_scroll.set_no_show_all(True)
+        self.side_scroll.set_visible(self.sidebar_on)
+        self._fill_sidebar()
+        # Drives come and go: look again when the window gets focus.
+        self.connect("focus-in-event", lambda *_a: self._refresh_drives() or False)
+        GLib.idle_add(self._refresh_drives)
+        return self.side_scroll
+
+    def _side_row(self, icon, label, target, kind, vol=None):
+        row = Gtk.ListBoxRow()
+        row.target, row.kind, row.vol = target, kind, vol
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.MENU), False, False, 0)
+        name = Gtk.Label(label=label, xalign=0)
+        name.set_ellipsize(3)  # Pango.EllipsizeMode.END
+        box.pack_start(name, True, True, 0)
+        if kind == "drive" and vol and vol.get("mountpoint"):
+            eject = Gtk.Button(label="⏏")
+            eject.set_name("ejectbtn")
+            eject.set_tooltip_text(f"Eject {label}")
+            eject.connect("clicked", lambda _b, v=vol: self._eject_device(v))
+            box.pack_end(eject, False, False, 0)
+        row.add(box)
+        row.set_tooltip_text(target if kind != "drive" or not vol else removable.display_name(vol))
+        return row
+
+    def _side_head(self, text):
+        row = Gtk.ListBoxRow()
+        row.set_selectable(False)
+        row.set_activatable(False)
+        row.target, row.kind, row.vol = None, "head", None
+        label = Gtk.Label(label=text.upper(), xalign=0)
+        label.set_name("sidehead")
+        row.add(label)
+        return row
+
+    def _fill_sidebar(self):
+        for child in self.side.get_children():
+            self.side.remove(child)
+        self.side.add(self._side_head("Places"))
+        for icon, label, path in self._places():
+            self.side.add(self._side_row(icon, label, path, "place"))
+        self.side.add(self._side_row("user-trash", "Trash", TRASH, "trash"))
+        pins = [p for p in self.pins if os.path.isdir(p)]
+        if pins:
+            self.side.add(self._side_head("Pinned"))
+            for p in pins:
+                self.side.add(self._side_row("folder", os.path.basename(p) or p, p, "pin"))
+        if self._volumes:
+            self.side.add(self._side_head("Drives"))
+            for vol in self._volumes:
+                self.side.add(self._side_row("drive-removable-media", removable.display_name(vol),
+                                             vol.get("mountpoint") or "", "drive", vol))
+        self.side.show_all()
+        self._mark_sidebar()
+
+    def _mark_sidebar(self):
+        if not hasattr(self, "side"):
+            return
+        for row in self.side.get_children():
+            if row.kind != "head" and row.target and row.target == self.path:
+                self.side.select_row(row)
+                return
+        self.side.unselect_all()
+
+    def _refresh_drives(self):
+        def done(volumes, error):
+            vols = [] if error else (volumes or [])
+            key = [(v.get("name"), v.get("mountpoint")) for v in vols]
+            if key != [(v.get("name"), v.get("mountpoint")) for v in self._volumes]:
+                self._volumes = vols
+                self._fill_sidebar()
+            return False
+        def work():
+            try:
+                return removable.list_volumes()
+            except Exception as e:  # no broker (tests, rescue shells): no drives
+                raise removable.RemovableError(str(e))
+        self._in_thread(work, done)
+        return False
+
+    def _on_side_row(self, _box, row):
+        if row.kind == "drive":
+            self._open_device(row.vol)
+        elif row.target:
+            self._navigate(row.target)
+
+    def _on_side_button(self, box, event):
+        if event.button != 3:
+            return False
+        row = box.get_row_at_y(int(event.y))
+        if row is None or row.kind not in ("pin", "place"):
+            return False
+        entries = [("Open in New Window", lambda _b: self._open_window(row.target))]
+        if row.kind == "pin":
+            entries.append(("Remove from Sidebar", lambda _b: self._unpin(row.target)))
+        self._popup(entries, event)
+        return True
+
+    def _pin(self, path):
+        if path not in self.pins:
+            self.pins.append(path)
+            self._save_prefs()
+            self._fill_sidebar()
+            self.status.set_text(f"{os.path.basename(path)} is pinned to the sidebar")
+
+    def _unpin(self, path):
+        if path in self.pins:
+            self.pins.remove(path)
+            self._save_prefs()
+            self._fill_sidebar()
+
+    def _toggle_sidebar(self):
+        self.sidebar_on = not self.sidebar_on
+        self.side_scroll.set_visible(self.sidebar_on)
+        for b in (self.home_btn, self.trash_btn, self.devices_btn):
+            b.set_visible(not self.sidebar_on)
+        if self.sidebar_item.get_active() != self.sidebar_on:
+            self.sidebar_item.set_active(self.sidebar_on)
+        self._save_prefs()
 
     # ---- Navigation ----
 
@@ -1328,6 +1631,76 @@ class FileManagerWindow(Gtk.Window):
             self._job(f"Duplicating {_items(len(sel))}",
                       lambda progress, started: engine.duplicate([i["path"] for i in sel], progress=progress, started=started),
                       lambda r, e: self._changed(r, e, "created"))
+
+    # ---- Archives (nexa-archiver) ----
+
+    def _on_extract(self, _btn):
+        archives = [i["path"] for i in self._selected() if not i["is_dir"] and engine.is_archive(i["name"])]
+        if not archives or self.in_trash:
+            return
+        folder = self.path
+
+        def work(progress, started):
+            made, steps, left_out = [], [], []
+            for a in archives:
+                r = engine.extract(a, folder, progress=progress, started=started)
+                made.append(r["path"])
+                steps += r.get("undo") or []
+                for s in r.get("skipped") or []:
+                    name, _, why = s.partition(": ")
+                    left_out.append({"path": f"{os.path.basename(a)}: {name}", "error": f"left out: {why}"})
+            text = f"Extracted {os.path.basename(made[0])}" if len(made) == 1 else f"Extracted {len(made)} archives"
+            return {"done": text, "created": made, "undo": steps, "failed": left_out}
+
+        what = os.path.basename(archives[0]) if len(archives) == 1 else f"{len(archives)} archives"
+        self._job(f"Extracting {what}", work, lambda r, e: self._changed(r, e, "created"))
+
+    def _on_compress(self, _btn):
+        sel = self._selected()
+        if not sel or self.in_trash:
+            return
+        first = sel[0]
+        if len(sel) > 1:
+            default = "Archive"
+        elif first["is_dir"]:
+            default = first["name"]
+        else:
+            default = os.path.splitext(first["name"])[0] or first["name"]
+        d = Gtk.Dialog(title="Compress", transient_for=self, modal=True)
+        d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Compress", Gtk.ResponseType.OK)
+        d.set_default_response(Gtk.ResponseType.OK)
+        box = d.get_content_area()
+        box.set_spacing(8)
+        box.set_border_width(14)
+        box.add(Gtk.Label(label=f"Pack {_items(len(sel))} into one file:", xalign=0))
+        row = Gtk.Box(spacing=6)
+        entry = Gtk.Entry(text=default, activates_default=True, hexpand=True)
+        fmt = Gtk.ComboBoxText()
+        fmt.append("zip", ".zip")
+        fmt.append("tar.gz", ".tar.gz")
+        fmt.set_active_id(getattr(self, "_compress_fmt", "zip"))
+        row.pack_start(entry, True, True, 0)
+        row.pack_start(fmt, False, False, 0)
+        box.add(row)
+        hint = Gtk.Label(xalign=0, wrap=True, max_width_chars=48)
+        hint.set_markup("<small>.zip opens on any computer. .tar.gz keeps Linux permissions and links.</small>")
+        box.add(hint)
+        d.show_all()
+        response = d.run()
+        name = entry.get_text().strip()
+        chosen = fmt.get_active_id() or "zip"
+        d.destroy()
+        if response != Gtk.ResponseType.OK or not name:
+            return
+        if "/" in name or name in (".", ".."):
+            self._error("That name can't be used", "A file name can't contain \"/\".")
+            return
+        self._compress_fmt = chosen
+        paths = [i["path"] for i in sel]
+        folder = self.path
+        self._job(f"Compressing {_items(len(sel))}",
+                  lambda progress, started: engine.compress(paths, chosen, name, folder, progress=progress, started=started),
+                  lambda r, e: self._changed(r, e, "path"))
 
     def _on_trash(self, _btn):
         sel = self._selected()

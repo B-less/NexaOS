@@ -11,7 +11,9 @@
 //! Ops: copy, move (sources, dest_dir); duplicate, trash, delete, size
 //! (paths); rename (path, name); new_folder, new_file (dir, name); restore
 //! (items: paths inside a Trash); trash_list; empty_trash; undo (steps);
-//! trail (query, limit): FileTrail, where things went; trail_forget.
+//! trail (query, limit): FileTrail, where things went; trail_forget;
+//! search (dir, query, hidden, limit): names containing every word, sent
+//! as {"found": [...]} lines while it looks (search.rs).
 //!
 //! Every change is written to FileTrail's journal (nexa_sys::filetrail)
 //! unless it is switched off in Settings > Magic Layer.
@@ -21,6 +23,7 @@
 //! read-only where it only reads.
 
 mod ops;
+mod search;
 mod trash;
 
 use nexa_sys::sandbox;
@@ -48,6 +51,7 @@ enum Job {
     EmptyTrash(Vec<PathBuf>),
     Undo(Vec<Step>),
     Trail { query: String, limit: usize },
+    Search { dir: PathBuf, query: String, hidden: bool, limit: usize },
     TrailForget,
 }
 
@@ -217,6 +221,16 @@ fn plan(req: &Value, home: &Path) -> Result<(Job, Access), String> {
             }
             let query: String = req.get("query").and_then(Value::as_str).unwrap_or("").chars().take(200).collect();
             Job::Trail { query, limit: req.get("limit").and_then(Value::as_u64).unwrap_or(200).min(2000) as usize }
+        }
+        "search" => {
+            let dir = folder(&path(req, "dir")?)?;
+            let query: String = text(req, "query")?.chars().take(200).collect();
+            if search::words(&query).is_empty() {
+                return Err("Type something to search for".into());
+            }
+            a.read.push(dir.clone());
+            let limit = req.get("limit").and_then(Value::as_u64).unwrap_or(2000).clamp(1, search::MAX_RESULTS as u64) as usize;
+            Job::Search { dir, query, hidden: req.get("hidden").and_then(Value::as_bool).unwrap_or(false), limit }
         }
         "trail_forget" => {
             let d = nexa_sys::filetrail::dir(home);
@@ -403,6 +417,7 @@ fn run(job: Job, home: &Path) -> Result<Value, String> {
             outcome(format!("Undid {}", if n == 1 { "1 change".into() } else { format!("{n} changes") }), n, &failed, json!({"did": did}))
         }
         Job::Trail { query, limit } => Ok(json!({"items": nexa_sys::filetrail::trail(home, &query, limit)})),
+        Job::Search { dir, query, hidden, limit } => Ok(search::search(&dir, &query, hidden, limit, &mut std::io::stdout().lock())),
         Job::TrailForget => Ok(json!({"done": "FileTrail forgot every change", "forgot": nexa_sys::filetrail::forget(home)})),
     }
 }

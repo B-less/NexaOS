@@ -408,6 +408,95 @@ tw.search.set_text("zzz-no-such-name")
 pump(0.6, until=lambda: not tw.items)
 check("searching by name narrows it", tw.items == [] and "Nothing by that name" in tw.status.get_text())
 tw.destroy()
+
+# ---- The sidebar: places, the Trash, pinned folders ----
+win._navigate(HOME)
+pump(0.3)
+
+
+def side_rows():
+    return [r for r in win.side.get_children() if r.kind != "head"]
+
+
+labels = [r.get_child().get_children()[1].get_text() for r in side_rows()]
+check("the sidebar lists Home, the standard folders and the Trash",
+      {"Home", "Documents", "Music", "Pictures", "Trash"} <= set(labels), str(labels))
+check("...with Home marked while it is open", win.side.get_selected_row() is next(r for r in side_rows() if r.target == HOME))
+docs = next(r for r in side_rows() if r.target == h("Documents"))
+win._on_side_row(win.side, docs)
+pump(0.3)
+check("clicking Documents opens it and marks it", win.path == h("Documents") and win.side.get_selected_row() is docs, win.path)
+trash_row = next(r for r in side_rows() if r.kind == "trash")
+win._on_side_row(win.side, trash_row)
+pump(0.3)
+check("clicking Trash opens the Trash", win.in_trash)
+win._navigate(HOME)
+pump(0.3)
+win._pin(h("Pictures"))
+pump(0.2)
+check("Pin to Sidebar adds the folder under Pinned", any(r.kind == "pin" and r.target == h("Pictures") for r in side_rows()))
+check("...and remembers it", h("Pictures") in W.FileManagerWindow._load_prefs(win)["pins"])
+win._unpin(h("Pictures"))
+pump(0.2)
+check("Remove from Sidebar takes it away", not any(r.kind == "pin" for r in side_rows()))
+key(Gdk.KEY_F9)
+check("F9 hides the sidebar", not win.side_scroll.get_visible())
+key(Gdk.KEY_F9)
+check("...and F9 again shows it", win.side_scroll.get_visible())
+
+# ---- Search (the engine's "search") ----
+os.makedirs(h("Documents", "Taxes", "2025"))
+open(h("Documents", "Taxes", "2025", "Tax-Return.pdf"), "w").write("x")
+open(h("Documents", "returned-mail.txt"), "w").write("x")
+win.search_entry.set_text("return TAX")
+pump(0.4, until=lambda: win.search_query and win._search_proc is None and len(win.store) > 0)
+check("search finds a file two folders down, words in any order and case", names() == ["Tax-Return.pdf"], str(names()))
+check("...and says which folder it is in", "Documents/Taxes/2025" in (win.store[0][W.COL_TIP] or ""), win.store[0][W.COL_TIP])
+check("...and the status line says how many", "1 found" in win.status.get_text(), win.status.get_text())
+win.search_entry.set_text("return")
+pump(0.4, until=lambda: win._search_proc is None and len(win.store) >= 2)
+check("typing more or less searches again", sorted(names()) == ["Tax-Return.pdf", "returned-mail.txt"], str(names()))
+win.search_entry.grab_focus()
+pump(0.1)
+ev = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+ev.keyval = Gdk.KEY_Escape
+win._on_key(win, ev)
+pump(0.3)
+check("Escape leaves the search and shows the folder again", win.search_query is None and "Documents" in names(), str(names()))
+win.search_entry.set_text("zzz-nothing")
+pump(0.4, until=lambda: win._search_proc is None and "Nothing found" in win.status.get_text())
+check("no match says so", "Nothing found" in win.status.get_text(), win.status.get_text())
+win._navigate(h("Documents"))
+pump(0.3)
+check("opening another folder ends the search", win.search_query is None and win.search_entry.get_text() == "")
+
+# ---- Compress and Extract (nexa-archiver) ----
+os.makedirs(h("Documents", "Project", "src"))
+open(h("Documents", "Project", "src", "main.c"), "w").write("int main(void) { return 0; }\n")
+open(h("Documents", "Project", "README"), "w").write("hello\n")
+win._refresh(select=[h("Documents", "Project")])
+pump(0.2)
+labels = [e[0] for e in win._item_menu() if e]
+check("the item menu offers Compress… (and no Extract for a folder)", "Compress…" in labels
+      and not dict((e[0], e[2] if len(e) > 2 else True) for e in win._item_menu() if e)["Extract Here"], str(labels))
+win._compress_fmt = "zip"
+real_dialog_run = Gtk.Dialog.run
+Gtk.Dialog.run = lambda self: Gtk.ResponseType.OK  # accept the suggested name
+win._on_compress(None)
+Gtk.Dialog.run = real_dialog_run
+wait()
+check("Compress makes Project.zip next to it and selects it", os.path.isfile(h("Documents", "Project.zip"))
+      and selected() == ["Project.zip"], f"{names()} {selected()} {errors}")
+menu = dict((e[0], e[2] if len(e) > 2 else True) for e in win._item_menu() if e)
+check("an archive gets Extract Here", menu.get("Extract Here") is True)
+win._on_extract(None)
+wait()
+check("Extract Here never replaces: it makes Project (2) with everything inside",
+      open(h("Documents", "Project (2)", "src", "main.c")).read().startswith("int main") and selected() == ["Project (2)"],
+      f"{names()} {selected()} {errors}")
+key(Gdk.KEY_z, ctrl=True)
+wait()
+check("Ctrl+Z takes the extracted folder away again (to the Trash)", not os.path.exists(h("Documents", "Project (2)")))
 check("no error dialogs along the way", not errors, str(errors))
 shutil.rmtree(HOME, ignore_errors=True)
 print(f"\n{len(failures)} failure(s)")
