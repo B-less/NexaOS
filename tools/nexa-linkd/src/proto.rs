@@ -104,18 +104,23 @@ pub fn unhex(s: &str) -> Option<Vec<u8>> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
 }
 
-/// What a QR code (or the typed code) carries: where to connect, and a
+/// At most this many addresses in a pairing code.
+pub const MAX_PAIR_ADDRS: usize = 4;
+
+/// What a QR code (or the typed code) carries: where to connect (every
+/// local address the device has: a PC on Wi-Fi and a cable, or with a VPN,
+/// has several, and only one may be on the other device's network), and a
 /// one-time secret that keys the handshake, so only the device that saw
 /// the code can pair.
 #[derive(Debug, PartialEq)]
 pub struct PairCode {
-    pub addr: String,
+    pub addrs: Vec<String>,
     pub secret: [u8; 16],
 }
 
 impl PairCode {
     pub fn encode(&self) -> String {
-        format!("NEXA-LINK:1:{}:{}", self.addr, hex(&self.secret))
+        format!("NEXA-LINK:1:{}:{}", self.addrs.join(","), hex(&self.secret))
     }
 
     pub fn parse(s: &str) -> Option<PairCode> {
@@ -123,10 +128,12 @@ impl PairCode {
         if it.next()? != "NEXA-LINK" || it.next()? != "1" {
             return None;
         }
-        let addr = it.next()?.to_string();
-        addr.parse::<std::net::Ipv4Addr>().ok()?;
-        let secret: [u8; 16] = unhex(it.next()?)?.try_into().ok()?;
-        Some(PairCode { addr, secret })
+        let addrs: Vec<String> = it.next()?.split(',').map(|a| a.trim().to_string()).collect();
+        if addrs.is_empty() || addrs.len() > MAX_PAIR_ADDRS || addrs.iter().any(|a| a.parse::<std::net::Ipv4Addr>().is_err()) {
+            return None;
+        }
+        let secret: [u8; 16] = unhex(it.next()?.trim())?.try_into().ok()?;
+        Some(PairCode { addrs, secret })
     }
 
     pub fn psk(&self) -> [u8; 32] {
@@ -215,10 +222,16 @@ mod tests {
 
     #[test]
     fn pairing_codes_round_trip_and_reject_junk() {
-        let c = PairCode { addr: "192.168.1.20".into(), secret: [0xab; 16] };
+        let c = PairCode { addrs: vec!["192.168.1.20".into()], secret: [0xab; 16] };
         assert_eq!(PairCode::parse(&c.encode()), Some(c));
+        // Several addresses (Wi-Fi and a cable, a VPN...).
+        let many = PairCode { addrs: vec!["10.0.2.15".into(), "192.168.77.1".into()], secret: [0xcd; 16] };
+        assert_eq!(many.encode(), format!("NEXA-LINK:1:10.0.2.15,192.168.77.1:{}", "cd".repeat(16)));
+        assert_eq!(PairCode::parse(&many.encode()), Some(many));
+        let five = format!("NEXA-LINK:1:1.1.1.1,2.2.2.2,3.3.3.3,4.4.4.4,5.5.5.5:{}", "ab".repeat(16));
         for bad in ["", "NEXA-LINK:2:1.2.3.4:00", "NEXA-LINK:1:not-an-ip:abababababababababababababababab",
-                    "NEXA-LINK:1:1.2.3.4:abab", "http://evil/"] {
+                    "NEXA-LINK:1:1.2.3.4:abab", "http://evil/", "NEXA-LINK:1:1.2.3.4,evil:abababababababababababababababab",
+                    five.as_str()] {
             assert_eq!(PairCode::parse(bad), None, "{bad}");
         }
     }

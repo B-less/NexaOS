@@ -58,7 +58,9 @@ a bug we haven't found (hence Rust, fuzzing, and features off by default).
 ## 2b. Nexa-only signals, and Nexa Drop
 
 Nexa Link talks only to Nexa. On the local network each device sends a
-short signal every 3 s: 32 bytes, 16 random and a 16-byte tag made with a
+short signal every 3 s (to each network's broadcast address, worked out
+from the address and netmask, and straight to where each paired device was
+last heard, since many Wi-Fi routers hold back broadcasts between devices): 32 bytes, 16 random and a 16-byte tag made with a
 key the two devices agreed on when they paired (HMAC-SHA256 over a
 5-minute window, the sender's public key and the random part). A paired
 device recognises it as "my PC is here". To any other phone, laptop or
@@ -76,6 +78,17 @@ Kofi's phone: Save / Decline"); an unpaired device can never send without
 that question. Honest limit: anyone running NexaOS's (open) code can tell
 that *a* device is taking drops while it is on; with it off, only paired
 devices know you're there.
+
+**The pairing code** is `NEXA-LINK:1:<addresses>:<secret>`: every local
+IPv4 address of the device showing it (up to 4; a PC on Wi-Fi and a cable,
+or with a VPN, has several and only one may be on the other device's
+network), then 16 random bytes. The device that types or scans it tries the
+addresses on its own networks first. Until 2026-10-29 the code carried only
+the address of the default route, and two PCs with a second network never
+paired; nor did they find each other where the broadcast address wasn't
+set. Checked since by `scripts/test-nexa-link-vms.py`: two NexaOS VMs, a
+private network plus an internet one each, pair, find each other and send
+a file through the real firewall, sandbox and session.
 
 ## 3. How it is built
 

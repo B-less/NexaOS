@@ -83,13 +83,33 @@ fn clean_name(v: &Value) -> String {
     if s.trim().is_empty() { "Nexa device".into() } else { s.trim().to_string() }
 }
 
-/// This machine's IPv4 addresses and their broadcast addresses.
+/// This machine's IPv4 addresses and their broadcast addresses. The
+/// broadcast address is worked out from the address and netmask: an
+/// address set without one (`ip addr add` without `brd`, some network
+/// managers) reports 0.0.0.0, and the signals went nowhere.
 fn interfaces() -> (Vec<Ipv4Addr>, Vec<Ipv4Addr>) {
-    let (mut own, mut bcast) = (Vec::new(), Vec::new());
+    let nets = local_nets();
+    let own: Vec<Ipv4Addr> = nets.iter().map(|(a, _)| *a).collect();
+    let mut bcast: Vec<Ipv4Addr> = nets
+        .iter()
+        .filter(|(_, m)| u32::from(*m) < 0xffff_fffe)
+        .map(|(a, m)| Ipv4Addr::from(u32::from(*a) | !u32::from(*m)))
+        .collect();
+    bcast.sort();
+    bcast.dedup();
+    if bcast.is_empty() {
+        bcast.push(Ipv4Addr::BROADCAST);
+    }
+    (own, bcast)
+}
+
+/// This machine's IPv4 networks: (address, netmask), up and not loopback.
+fn local_nets() -> Vec<(Ipv4Addr, Ipv4Addr)> {
+    let mut out = Vec::new();
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
     // SAFETY: getifaddrs fills a list we free below; we only read it.
     if unsafe { libc::getifaddrs(&mut ifap) } != 0 {
-        return (own, vec![Ipv4Addr::BROADCAST]);
+        return out;
     }
     let mut p = ifap;
     while !p.is_null() {
@@ -103,22 +123,41 @@ fn interfaces() -> (Vec<Ipv4Addr>, Vec<Ipv4Addr>) {
             let sin = unsafe { &*(sa as *const libc::sockaddr_in) };
             Some(Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr)))
         };
-        if let Some(a) = v4(ifa.ifa_addr) {
-            own.push(a);
-            if ifa.ifa_flags & libc::IFF_BROADCAST as u32 != 0 && ifa.ifa_flags & libc::IFF_LOOPBACK as u32 == 0 {
-                if let Some(b) = v4(ifa.ifa_ifu) {
-                    bcast.push(b);
-                }
-            }
+        let up = ifa.ifa_flags & libc::IFF_UP as u32 != 0 && ifa.ifa_flags & libc::IFF_LOOPBACK as u32 == 0;
+        if let (true, Some(a), Some(m)) = (up, v4(ifa.ifa_addr), v4(ifa.ifa_netmask)) {
+            out.push((a, m));
         }
         p = ifa.ifa_next;
     }
     // SAFETY: freeing the list getifaddrs gave us.
     unsafe { libc::freeifaddrs(ifap) };
-    if bcast.is_empty() {
-        bcast.push(Ipv4Addr::BROADCAST);
+    out
+}
+
+/// The addresses to put in a pairing code: home and office networks
+/// first (10/8, 172.16/12, 192.168/16), then link-local, then the rest;
+/// the one the default route uses first among equals.
+fn pair_addrs() -> Vec<Ipv4Addr> {
+    let primary = primary_ip();
+    let rank = |a: &Ipv4Addr| (if a.is_private() { 0 } else if a.is_link_local() { 1 } else { 2 }, *a != primary);
+    let mut addrs: Vec<Ipv4Addr> = local_nets().into_iter().map(|(a, _)| a).collect();
+    addrs.sort_by_key(rank);
+    addrs.dedup();
+    addrs.truncate(proto::MAX_PAIR_ADDRS);
+    if addrs.is_empty() {
+        addrs.push(primary);
     }
-    (own, bcast)
+    addrs
+}
+
+/// Try the addresses on one of our own networks first: that's where the
+/// other device most likely is.
+fn by_reachability(addrs: &[String]) -> Vec<Ipv4Addr> {
+    let nets = local_nets();
+    let mut v: Vec<Ipv4Addr> = addrs.iter().filter_map(|a| a.parse().ok()).collect();
+    let same = |a: &Ipv4Addr| nets.iter().any(|(n, m)| u32::from(*a) & u32::from(*m) == u32::from(*n) & u32::from(*m));
+    v.sort_by_key(|a| !same(a));
+    v
 }
 
 /// The address other devices on the network reach this one at.
@@ -178,20 +217,27 @@ fn reload_peers(state: &Shared, store: &Store) {
 fn beacon_loop(state: Shared, store: Store, sock: UdpSocket) {
     loop {
         reload_peers(&state, &store);
-        let (packets, _) = {
+        let packets = {
             let st = state.lock().unwrap();
             let me = st.me.public();
-            let mut pk: Vec<[u8; proto::BEACON_LEN]> =
-                st.peers.iter().map(|p| proto::beacon(&p.beacon_key(), &me, now_secs(), &random16())).collect();
+            let mut pk: Vec<([u8; proto::BEACON_LEN], Option<Ipv4Addr>)> = st
+                .peers
+                .iter()
+                .map(|p| (proto::beacon(&p.beacon_key(), &me, now_secs(), &random16()), p.addr.parse().ok()))
+                .collect();
             if st.drop_open() {
-                pk.push(proto::beacon(proto::drop_key(), proto::NO_SENDER, now_secs(), &random16()));
+                pk.push((proto::beacon(proto::drop_key(), proto::NO_SENDER, now_secs(), &random16()), None));
             }
-            (pk, ())
+            pk
         };
-        let (_, targets) = interfaces();
-        for pkt in &packets {
+        let (own, targets) = interfaces();
+        for (pkt, last) in &packets {
             for t in &targets {
                 sock.send_to(pkt, SocketAddr::new(IpAddr::V4(*t), port())).ok();
+            }
+            // Directly too: many Wi-Fi routers hold back broadcasts between devices.
+            if let Some(a) = last.filter(|a| !own.contains(a) && !targets.contains(a)) {
+                sock.send_to(pkt, SocketAddr::new(IpAddr::V4(a), port())).ok();
             }
         }
         {
@@ -205,7 +251,7 @@ fn beacon_loop(state: Shared, store: Store, sock: UdpSocket) {
     }
 }
 
-fn listen_loop(state: Shared, sock: UdpSocket) {
+fn listen_loop(state: Shared, store: Store, sock: UdpSocket) {
     let mut buf = [0u8; 64];
     loop {
         let Ok((n, from)) = sock.recv_from(&mut buf) else { continue };
@@ -219,7 +265,16 @@ fn listen_loop(state: Shared, sock: UdpSocket) {
         let now = now_secs();
         let found = st.peers.iter().find(|p| proto::beacon_from(&p.beacon_key(), &p.public(), pkt, now)).map(|p| p.id.clone());
         if let Some(id) = found {
-            st.nearby.insert(id, Nearby { addr: from.ip(), seen: Instant::now() });
+            st.nearby.insert(id.clone(), Nearby { addr: from.ip(), seen: Instant::now() });
+            let ip = from.ip().to_string();
+            if st.peers.iter().any(|p| p.id == id && p.addr != ip) {
+                for p in st.peers.iter_mut().filter(|p| p.id == id) {
+                    p.addr = ip.clone();
+                }
+                drop(st);
+                store.set_addr(&id, &ip).ok();
+                continue;
+            }
         } else if !mine && proto::beacon_from(proto::drop_key(), proto::NO_SENDER, pkt, now) {
             st.nearby.insert(format!("drop:{}", from.ip()), Nearby { addr: from.ip(), seen: Instant::now() });
         }
@@ -481,8 +536,8 @@ fn serve(store: Store) -> io::Result<()> {
         std::thread::spawn(move || beacon_loop(st, s, u));
     }
     {
-        let st = state.clone();
-        std::thread::spawn(move || listen_loop(st, udp));
+        let (st, s) = (state.clone(), Store { dir: store.dir.clone() });
+        std::thread::spawn(move || listen_loop(st, s, udp));
     }
     {
         let st = state.clone();
@@ -536,7 +591,7 @@ fn confirm(yes: bool) -> bool {
     matches!(line.trim().to_lowercase().as_str(), "y" | "yes")
 }
 
-fn finish_pairing(mut ch: channel::Channel, store: &Store, me: &Identity, yes: bool, out: &Out) -> io::Result<()> {
+fn finish_pairing(mut ch: channel::Channel, store: &Store, me: &Identity, yes: bool, out: &Out, addr: IpAddr) -> io::Result<()> {
     ch.set_timeout(150);
     ch.send_json(&json!({"t": "hello", "name": me.name}))?;
     let hello = ch.recv_json()?;
@@ -555,6 +610,7 @@ fn finish_pairing(mut ch: channel::Channel, store: &Store, me: &Identity, yes: b
     store.add_peer(Peer {
         id: id.clone(), name: name.clone(), public: proto::hex(&ch.remote_public),
         beacon_key: proto::hex(&proto::beacon_key(&ch.handshake_hash)), files: "ask".into(), paired_at: now_secs(),
+        addr: if addr.is_ipv4() { addr.to_string() } else { String::new() },
     })?;
     out.say("paired", json!({"id": id, "name": name}), format!("Paired with \"{name}\" ({id})."));
     Ok(())
@@ -562,19 +618,25 @@ fn finish_pairing(mut ch: channel::Channel, store: &Store, me: &Identity, yes: b
 
 fn pair_offer(store: &Store, yes: bool, out: &Out) -> io::Result<()> {
     let me = store.identity()?;
-    let code = proto::PairCode { addr: primary_ip().to_string(), secret: random16() };
-    let listener = TcpListener::bind(("0.0.0.0", pair_port()))?;
+    let code = proto::PairCode { addrs: pair_addrs().iter().map(|a| a.to_string()).collect(), secret: random16() };
+    let listener = TcpListener::bind(("0.0.0.0", pair_port())).map_err(|e| {
+        if e.kind() == io::ErrorKind::AddrInUse {
+            io::Error::new(e.kind(), "Another pairing is already waiting on this device. Close it first, or wait 2 minutes.")
+        } else {
+            e
+        }
+    })?;
     listener.set_nonblocking(true)?;
     out.say("code", json!({"code": code.encode()}), format!("Pairing code (scan or type it on the other device):\n{}", code.encode()));
     let deadline = Instant::now() + Duration::from_secs(120);
     let psk = code.psk();
     while Instant::now() < deadline {
         match listener.accept() {
-            Ok((s, _)) => {
+            Ok((s, from)) => {
                 s.set_nonblocking(false)?;
                 // A wrong guess just fails; keep waiting for the right device.
                 if let Ok(ch) = channel::accept(s, &me.secret(), Some(&psk), |_| true) {
-                    return finish_pairing(ch, store, &me, yes, out);
+                    return finish_pairing(ch, store, &me, yes, out, from.ip());
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(100)),
@@ -588,9 +650,19 @@ fn pair_offer(store: &Store, yes: bool, out: &Out) -> io::Result<()> {
 fn pair_accept(store: &Store, code: &str, yes: bool, out: &Out) -> io::Result<()> {
     let me = store.identity()?;
     let code = proto::PairCode::parse(code).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "That isn't a Nexa Link pairing code."))?;
-    let addr = SocketAddr::new(code.addr.parse::<IpAddr>().map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?, pair_port());
-    let ch = channel::connect(addr, &me.secret(), Some(&code.psk()), |_| true)?;
-    finish_pairing(ch, store, &me, yes, out)
+    let mut last = None;
+    for a in by_reachability(&code.addrs) {
+        match channel::connect(SocketAddr::new(IpAddr::V4(a), pair_port()), &me.secret(), Some(&code.psk()), |_| true) {
+            Ok(ch) => return finish_pairing(ch, store, &me, yes, out, IpAddr::V4(a)),
+            Err(e) => last = Some(e),
+        }
+    }
+    let tried = code.addrs.join(", ");
+    Err(io::Error::new(
+        last.map(|e| e.kind()).unwrap_or(io::ErrorKind::NotFound),
+        format!("Couldn't reach the other device (tried {tried}). Both need to be on the same network, \
+                 with its pairing code still showing."),
+    ))
 }
 
 /// Connect to a paired device (by id, found through the service) or, for

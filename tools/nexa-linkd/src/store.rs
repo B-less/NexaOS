@@ -40,6 +40,10 @@ pub struct Peer {
     pub files: String,
     #[serde(default)]
     pub paired_at: u64,
+    /// Where it was last heard (IPv4), "" if never: signals also go there
+    /// directly, for Wi-Fi networks that hold back broadcasts.
+    #[serde(default)]
+    pub addr: String,
 }
 
 fn ask() -> String {
@@ -74,6 +78,27 @@ fn hostname() -> String {
     fs::read_to_string("/etc/hostname").map(|s| s.trim().to_string()).ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "NexaOS".into())
 }
 
+/// Every NexaOS computer is called "nexa" until someone renames it, so a
+/// device's name comes from, in order: a hostname someone chose, the
+/// computer's model ("HP EliteBook 840 G6"), or "NexaOS PC" with the start
+/// of its id, so two machines never show up with the same name.
+pub fn default_name(public_hex: &str) -> String {
+    let host = hostname();
+    if host != "nexa" && host != "NexaOS" {
+        return host;
+    }
+    let dmi = |f: &str| fs::read_to_string(format!("/sys/class/dmi/id/{f}")).map(|s| s.trim().to_string()).unwrap_or_default();
+    let model = dmi("product_name");
+    // Virtual machines and unbranded boards name nothing useful.
+    let vendor = dmi("sys_vendor");
+    let virtual_machine = ["QEMU", "innotek", "VMware", "Xen", "Microsoft Corporation", "Red Hat"].iter().any(|v| vendor.starts_with(v))
+        || model.contains("i440FX") || model.contains("Q35");
+    let generic = virtual_machine || model.is_empty() || model.len() > 40
+        || ["Standard PC", "To Be Filled", "System Product Name", "Default string", "Not Specified"].iter().any(|g| model.starts_with(g));
+    let short = proto::unhex(public_hex).map(|k| proto::device_id(&k)[..4].to_string()).unwrap_or_default();
+    if generic { format!("NexaOS PC ({short})") } else { model }
+}
+
 fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
     let tmp = path.with_extension("tmp");
     let mut f = fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
@@ -93,14 +118,20 @@ impl Store {
     pub fn identity(&self) -> io::Result<Identity> {
         let path = self.dir.join("identity.json");
         if let Ok(text) = fs::read_to_string(&path) {
-            if let Ok(id) = serde_json::from_str::<Identity>(&text) {
+            if let Ok(mut id) = serde_json::from_str::<Identity>(&text) {
+                // Made before default_name: still the stock "nexa".
+                if id.name == "nexa" || id.name == "NexaOS" {
+                    id.name = default_name(&id.public);
+                    write_private(&path, serde_json::to_string_pretty(&id)?.as_bytes())?;
+                }
                 return Ok(id);
             }
         }
         let kp = snow::Builder::new(proto::NOISE.parse().expect("valid pattern"))
             .generate_keypair()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-        let id = Identity { name: hostname(), secret: proto::hex(&kp.private), public: proto::hex(&kp.public) };
+        let public = proto::hex(&kp.public);
+        let id = Identity { name: default_name(&public), secret: proto::hex(&kp.private), public };
         write_private(&path, serde_json::to_string_pretty(&id)?.as_bytes())?;
         Ok(id)
     }
@@ -124,6 +155,18 @@ impl Store {
         let mut peers: Vec<Peer> = self.peers().into_iter().filter(|p| p.id != peer.id).collect();
         peers.push(peer);
         self.save_peers(&peers)
+    }
+
+    /// Remember where a paired device was last heard. True if it changed.
+    pub fn set_addr(&self, id: &str, addr: &str) -> io::Result<bool> {
+        let mut peers = self.peers();
+        let Some(p) = peers.iter_mut().find(|p| p.id == id) else { return Ok(false) };
+        if p.addr == addr {
+            return Ok(false);
+        }
+        p.addr = addr.to_string();
+        self.save_peers(&peers)?;
+        Ok(true)
     }
 
     /// "Forget this device": its key is no longer accepted, at once.
@@ -168,7 +211,8 @@ mod tests {
         assert_eq!(a.secret().len(), 32);
         let mode = fs::metadata(dir.join("identity.json")).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
-        let peer = Peer { id: "abcd".into(), name: "Phone".into(), public: "00".into(), beacon_key: "11".into(), files: ask(), paired_at: 1 };
+        let peer = Peer { id: "abcd".into(), name: "Phone".into(), public: "00".into(), beacon_key: "11".into(), files: ask(), paired_at: 1,
+                          addr: String::new() };
         s.add_peer(peer.clone()).unwrap();
         s.add_peer(Peer { name: "Phone 2".into(), ..peer.clone() }).unwrap();
         assert_eq!(s.peers().len(), 1, "pairing again replaces");
@@ -178,5 +222,21 @@ mod tests {
         assert!(s.forget("abcd").unwrap());
         assert!(s.peers().is_empty());
         fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn remembers_where_a_device_was_heard() {
+        let dir = std::env::temp_dir().join(format!("nexa-link-addr-{}", std::process::id()));
+        let s = Store::open(dir.clone()).unwrap();
+        s.add_peer(Peer { id: "p1".into(), name: "Laptop".into(), public: "00".into(), beacon_key: "11".into(), files: ask(),
+                          paired_at: 1, addr: "192.168.1.7".into() }).unwrap();
+        assert!(!s.set_addr("p1", "192.168.1.7").unwrap(), "same address: nothing written");
+        assert!(s.set_addr("p1", "192.168.1.9").unwrap());
+        assert_eq!(s.peers()[0].addr, "192.168.1.9");
+        assert!(!s.set_addr("nobody", "1.2.3.4").unwrap());
+        // Files from before this field still load.
+        fs::write(dir.join("paired.json"), r#"[{"id":"old","name":"Old","public":"00","beacon_key":"11"}]"#).unwrap();
+        assert_eq!(s.peers()[0].addr, "");
+        fs::remove_dir_all(&dir).ok();
     }
 }
