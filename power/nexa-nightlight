@@ -1,0 +1,17 @@
+#!/bin/sh
+# Night light: warmer colours in the evening, through wlsunset. Settings >
+# Display writes ~/.config/nexa/nightlight.conf (enabled=1, temp=4000,
+# from=20:00, to=07:00) and runs this again after each change; it replaces
+# a running wlsunset of this user, or just stops it when switched off.
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/nexa/nightlight.conf"
+pkill -u "$(id -u)" -x wlsunset 2>/dev/null
+
+val() { sed -n "s/^$1=\($2\)\$/\1/p" "$CONF" 2>/dev/null | head -n 1; }
+[ "$(val enabled '[01]')" = 1 ] || exit 0
+temp=$(val temp '[0-9]\{4\}')
+from=$(val from '[0-2][0-9]:[0-5][0-9]')
+to=$(val to '[0-2][0-9]:[0-5][0-9]')
+[ -n "$temp" ] && [ "$temp" -ge 2500 ] && [ "$temp" -le 6000 ] || temp=4000
+command -v wlsunset >/dev/null 2>&1 || exit 0
+# wlsunset: -s when evening starts, -S when morning starts, 30 min to change.
+exec wlsunset -t "$temp" -T 6500 -s "${from:-20:00}" -S "${to:-07:00}" -d 1800

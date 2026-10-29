@@ -34,7 +34,9 @@ OBJECTS = [
     ("storage", "Storage", "system", "drive-harddisk", "app:nexa-files", ("performance",), "disk space files trash free"),
     ("power", "Power", "system", "nexa-power", "Power", ("performance",), "battery sleep lock screen charge"),
     ("updates", "Updates", "system", "system-software-update", "Updates", ("security",), "update upgrade alpine version"),
-    ("network", "Network", "connect", "nexa-network", "app:nexa-network", ("nexa", "security"), "wifi wi-fi internet wired"),
+    ("display", "Display", "system", "video-display", "Display", ("power",), "screen monitor resolution scale night light rotate"),
+    ("sound", "Sound", "system", "audio-speakers", "Sound", ("bluetooth",), "volume speakers headphones microphone audio"),
+    ("network", "Network", "connect", "nexa-network", "Wi-Fi", ("nexa", "security"), "wifi wi-fi internet wired"),
     ("bluetooth", "Bluetooth", "connect", "bluetooth", "Bluetooth", (), "headphones speaker mouse pair"),
     ("nexa", "Nexa Link", "connect", "nexa-network", "Nexa Link", ("network",), "phone pair drop share devices"),
     ("appearance", "Appearance", "you", "nexa-settings", "Personalization", (), "theme colour color wallpaper glass dark icons"),
@@ -131,6 +133,28 @@ def gather():
             version = "?"
         return (f"Built on Alpine {version}", "unknown", {})
 
+    def display():
+        from nexa_common import displays
+        on = [s for s in displays.screens() if s["enabled"]]
+        if not on:
+            return ("No screen", "unknown", {})
+        m = on[0].get("mode") or {}
+        size = f"{m.get('width')} × {m.get('height')}" if m else on[0]["name"]
+        text = size + (f" · {round(on[0]['scale'] * 100)} %" if on[0]["scale"] != 1 else "")
+        if len(on) > 1:
+            text = f"{len(on)} screens · " + text
+        night = displays.load_night()["enabled"]
+        return (text + (" · night light" if night else ""), "ok", {"screens": on})
+
+    def sound_state():
+        from nexa_common import sound
+        outs = sound.outputs()
+        d = next((o for o in outs if o["default"]), None)
+        if not d:
+            return ("No speakers", "off", {})
+        return (f"{d['description'][:28]} · {'muted' if d['mute'] else str(d['volume']) + ' %'}",
+                "off" if d["mute"] else "ok", d)
+
     def network():
         from nexa_common import wifi
         try:
@@ -226,6 +250,7 @@ def gather():
         return (f"Secure Boot: {sb.split('(')[0].strip()}", state, {"secure_boot": sb, "tpm": tpm})
 
     for key, fn in (("performance", performance), ("storage", storage), ("power", power), ("updates", updates),
+                    ("display", display), ("sound", sound_state),
                     ("network", network), ("bluetooth", bluetooth), ("nexa", nexa), ("appearance", appearance),
                     ("privacy", privacy), ("accounts", accounts), ("time", clock), ("workspaces", workspaces),
                     ("apps", apps), ("intelligence", intelligence), ("security", security)):

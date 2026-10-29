@@ -55,17 +55,29 @@ Has: Overview (Living Field), Personalization, Magic Layer, Bluetooth,
 Nexa Link, VPN, System, Users, Updates, Startup, Time & Keyboard, Power,
 Privacy, Assistant, About.
 
-- [ ] Display: resolution, refresh rate, scale, rotation, arrangement of
-      several screens, night light (native tool over
-      wlr-output-management; Sway and Hyprland).
-- [ ] Sound: output and input device, volumes, per-app volume (PipeWire).
-- [ ] Mouse & Touchpad: speed, natural scrolling, tap to click, left-handed.
-- [ ] Wi-Fi page in Settings (today in the Control Centre and the Network app).
-- [ ] Notifications: do not disturb, per-app on/off (mako).
-- [ ] Default apps: browser, mail, files, music, video, images, PDF.
-- [ ] Accessibility: text size, high contrast, larger pointer, reduce
-      motion, screen keyboard.
-- [ ] Date & time: automatic time on/off, set by hand, 24-hour clock.
+- [x] Display (2026-10-29): resolution, refresh rate, scale, rotation,
+      position next to another screen; a new C tool, nexa-display, over the
+      compositor's wlr-output-management (Sway and Hyprland): tests each
+      change first, "Keep these settings?" puts it back after 15 s, kept
+      settings come back at every sign-in and after a compositor reload.
+      Night light (wlsunset, added to the image): on/off, warmth, hours.
+- [x] Sound (2026-10-29): output and input device, volume, mute, and each
+      app's volume, through PipeWire (pactl's JSON).
+- [x] Mouse & Touchpad (2026-10-29): speed, natural scrolling,
+      left-handed, tap to click, ignore while typing; Sway and Hyprland,
+      applied at once.
+- [x] Wi-Fi page in Settings (2026-10-29): networks, connect (asks the
+      password), disconnect, forget; through iwd (nexa_common.wifi).
+- [x] Notifications (2026-10-29): do not disturb, how long pop-ups stay,
+      where they appear, apps whose pop-ups are hidden (mako).
+- [x] Default apps (2026-10-29): browser, email, files, music, video,
+      pictures, PDF, text (GIO's mimeapps.list, what Files opens with).
+- [x] Accessibility (2026-10-29): text size, pointer size, high contrast
+      (a new High Contrast theme), reduce motion (GTK, Hyprland, living
+      backgrounds). Screen keyboard: not yet (no package chosen).
+- [x] Date & time (2026-10-29): set the time automatically (ntpd through
+      the broker), or by hand (new broker action set_time, Rust, needs the
+      password), 24- or 12-hour clock in the top bar.
 
 ## Browser
 

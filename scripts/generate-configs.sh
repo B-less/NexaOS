@@ -1133,6 +1133,9 @@ bindswitch --reload --locked lid:on exec nexa-lid
 # installed system shows the lock screen before anything else (see
 # nexa-login-lock).
 exec nexa-boot-finish --handover
+# The screens as set in Settings > Display, and the night light.
+exec nexa-display apply-saved
+exec nexa-nightlight
 exec nexa-login-lock
 exec pipewire
 exec pipewire-pulse
@@ -1260,6 +1263,9 @@ env = XCURSOR_SIZE,24
 
 # The boot animation ran until here; Hyprland has the screen now.
 exec-once = nexa-boot-finish --handover
+# The screens as set in Settings > Display, and the night light.
+exec-once = nexa-display apply-saved
+exec-once = nexa-nightlight
 exec-once = nexa-login-lock
 exec-once = pipewire
 exec-once = pipewire-pulse
@@ -1411,6 +1417,9 @@ bindl = , switch:on:Lid Switch, exec, nexa-lid
 
 # Glass (clear or tinted) and the edge-lit borders, from nexa-theme: last, so
 # it has the final word over the blur settings above.
+# Settings > Mouse & Touchpad and > Accessibility (nexa-desktop makes sure they exist).
+source = ~/.config/hypr/nexa-input.conf
+source = ~/.config/hypr/nexa-access.conf
 source = ~/.config/hypr/nexa-glass.conf
 HYPR_EOF
 
@@ -1445,6 +1454,12 @@ start_sway() {
 }
 
 nexa-theme apply --saved --no-reload >/dev/null 2>&1
+# Hyprland refuses to start with a missing sourced file: Settings writes
+# these when something is changed; until then they are empty.
+mkdir -p "$HOME/.config/hypr"
+for f in nexa-input.conf nexa-access.conf; do
+    [ -f "$HOME/.config/hypr/$f" ] || : > "$HOME/.config/hypr/$f"
+done
 case "$choice" in
     sway) start_sway ;;
     hyprland) ;;
@@ -1561,12 +1576,20 @@ else
     base=/etc/xdg/waybar/config
 fi
 pkill -u "$(id -u)" -x nexa-barhide 2>/dev/null
-if [ "$mode" = autohide ] && command -v nexa-barhide >/dev/null 2>&1; then
+# Settings > Date & Time: a 12-hour clock ("2:05 PM") instead of 14:05.
+clock=$(cat "${XDG_CONFIG_HOME:-$HOME/.config}/nexa/clock" 2>/dev/null)
+autohide=
+[ "$mode" = autohide ] && command -v nexa-barhide >/dev/null 2>&1 && autohide=1
+if [ -n "$autohide" ] || [ "$clock" = 12h ]; then
     dir=${XDG_RUNTIME_DIR:-/tmp}/nexa-bar
     mkdir -p "$dir"
-    sed 's/"layer": "top",/"layer": "top", "exclusive": false, "start_hidden": true,/' "$base" > "$dir/config"
-    height=$(sed -n 's/.*"height": *\([0-9]*\).*/\1/p' "$base" | head -n 1)
-    nexa-barhide "${height:-38}" &
+    cp "$base" "$dir/config"
+    [ "$clock" = 12h ] && sed -i 's/%H:%M/%-I:%M %p/g' "$dir/config"
+    if [ -n "$autohide" ]; then
+        sed -i 's/"layer": "top",/"layer": "top", "exclusive": false, "start_hidden": true,/' "$dir/config"
+        height=$(sed -n 's/.*"height": *\([0-9]*\).*/\1/p' "$base" | head -n 1)
+        nexa-barhide "${height:-38}" &
+    fi
     exec waybar -c "$dir/config"
 fi
 exec waybar -c "$base"

@@ -246,10 +246,15 @@ def set_keyboard_layout(code):
 def reload():
     wm = which()
     if wm == "hyprland":
-        return _call(["hyprctl", "reload"]) is not None
-    if wm == "sway":
-        return _sway("reload")
-    return False
+        ok = _call(["hyprctl", "reload"]) is not None
+    elif wm == "sway":
+        ok = _sway("reload")
+    else:
+        return False
+    # A reload resets the screens to the compositor's config: put back what
+    # Settings > Display chose (nexa-display; nothing saved, nothing done).
+    _call(["nexa-display", "apply-saved"], timeout=10)
+    return ok
 
 
 LOGGED_OUT = "nexa-logged-out"

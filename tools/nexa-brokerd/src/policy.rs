@@ -30,6 +30,8 @@ pub enum Action {
     SetGovernor(String),
     SetBrightness(u32),
     SetTimezone(String),
+    /// The clock, as seconds since 1970 (UTC), when it isn't set automatically.
+    SetTime(i64),
     SetHostname(String),
     BluetoothUnblock,
     /// Wi-Fi radio on and the adapter's driver re-attached (Nexa Doctor's fix).
@@ -100,6 +102,22 @@ pub const RESERVED_USERS: &[&str] = &[
     "shadow",
 ];
 pub const MIN_PASSWORD: usize = 4;
+
+/// "2026-10-29 14:05" for seconds since 1970 (UTC), without a date library.
+pub fn utc_text(t: i64) -> String {
+    let (days, secs) = (t.div_euclid(86_400), t.rem_euclid(86_400));
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}", secs / 3600, secs % 3600 / 60)
+}
 
 fn str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args.get(key).and_then(Value::as_str).ok_or_else(|| format!("missing '{key}'"))
@@ -228,6 +246,14 @@ pub fn parse(action: &str, args: &Value, root: &Path) -> Result<Action, String> 
             }
             Action::SetBrightness(p.round() as u32)
         }
+        "set_time" => {
+            let t = args.get("unix").and_then(Value::as_i64).ok_or("missing 'unix'")?;
+            // 2020-01-01 .. 2100-01-01: anything else is a typo, not a date.
+            if !(1_577_836_800..4_102_444_800).contains(&t) {
+                return Err("that date is out of range (2020 to 2099)".into());
+            }
+            Action::SetTime(t)
+        }
         "set_timezone" => {
             let z = str_arg(args, "zone")?;
             if !valid_zone(z, &root.join("usr/share/zoneinfo")) {
@@ -334,7 +360,7 @@ impl Action {
     pub fn level(&self) -> Level {
         use Action::*;
         match self {
-            SetHostname(_) | InstallPackages(_) | RemovePackages(_) | SystemUpdate | InstallApp { .. } | UninstallApp(_)
+            SetHostname(_) | SetTime(_) | InstallPackages(_) | RemovePackages(_) | SystemUpdate | InstallApp { .. } | UninstallApp(_)
             | ServiceAtBoot { .. } | ChangePassword { .. } | AddUser { .. } | RemoveUser(_) => Level::Password,
             Service { name, verb } if name == "sshd" || verb == "stop" => Level::Password,
             _ => Level::Allow,
@@ -353,6 +379,8 @@ impl Action {
             RepairWifi => a(true, vec!["/sys/devices", "/sys/class/rfkill", "/sys/bus/pci", "/sys/bus/sdio", "/sys/bus/usb"], false, vec![], 30),
             HardwareLog => a(true, vec![], false, vec![], 10),
             SetTimezone(_) => a(true, vec!["/etc"], false, vec![], 10),
+            // clock_settime needs no files; hwclock writes the RTC.
+            SetTime(_) => a(true, vec!["/dev/rtc0", "/dev/rtc"], true, vec![], 10),
             SetHostname(_) => a(true, vec!["/etc", "/proc/sys/kernel"], true, vec![], 10),
             WriteAiConfig(_) => a(true, vec!["/etc/nexa-ai"], false, vec![], 10),
             // Unconfined: started services would inherit the domain for life.
@@ -382,6 +410,7 @@ impl Action {
             SetGovernor(g) => format!("Set the CPU to {g} mode"),
             SetBrightness(p) => format!("Set the screen brightness to {p}%"),
             SetTimezone(z) => format!("Set the time zone to {z}"),
+            SetTime(t) => format!("Set the clock to {} (UTC)", utc_text(*t)),
             SetHostname(n) => format!("Rename this computer to {n}"),
             BluetoothUnblock => "Turn the Bluetooth radio on".into(),
             RepairWifi => "Repair the Wi-Fi adapter".into(),
@@ -452,6 +481,18 @@ mod tests {
         for n in ["-x", "a b", "a.b", "x;reboot", &"a".repeat(64)] {
             assert!(parse("set_hostname", &json!({"name": n}), &r).is_err(), "{n}");
         }
+    }
+
+    #[test]
+    fn set_time_is_checked_and_needs_the_password() {
+        let r = root();
+        let a = parse("set_time", &json!({"unix": 1_793_000_000}), &r).unwrap();
+        assert_eq!(a, Action::SetTime(1_793_000_000));
+        assert_eq!(a.level(), Level::Password);
+        assert!(parse("set_time", &json!({"unix": 0}), &r).is_err());
+        assert!(parse("set_time", &json!({"unix": "soon"}), &r).is_err());
+        assert_eq!(utc_text(1_761_696_300), "2025-10-29 00:05");
+        assert_eq!(utc_text(951_782_400), "2000-02-29 00:00");
     }
 
     #[test]

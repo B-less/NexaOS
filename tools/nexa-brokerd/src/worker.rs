@@ -146,6 +146,21 @@ pub fn perform(a: &Action, root: &Path, caller: &Caller) -> Result<Value, String
             fs::write(etc.join("timezone"), format!("{z}\n")).map_err(|e| e.to_string())?;
             Ok(json!({"done": a.describe(), "previous": before, "undo": undo("set_timezone", json!({"zone": before}))}))
         }
+        Action::SetTime(t) => {
+            let before = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+            if root == Path::new("/") {
+                let ts = libc::timespec { tv_sec: *t as _, tv_nsec: 0 };
+                // SAFETY: ts is a valid timespec; clock_settime only reads it.
+                if unsafe { libc::clock_settime(libc::CLOCK_REALTIME, &ts) } != 0 {
+                    return Err(format!("couldn't set the clock: {}", std::io::Error::last_os_error()));
+                }
+                // The battery-backed clock keeps it over a restart (it runs on UTC
+                // unless /etc/conf.d/hwclock says "local").
+                let local = read(&root.join("etc/conf.d/hwclock")).is_some_and(|c| c.contains("clock=\"local\""));
+                let _ = Command::new("hwclock").args(["-w", if local { "-l" } else { "-u" }]).status();
+            }
+            Ok(json!({"done": a.describe(), "previous": before}))
+        }
         Action::SetHostname(n) => {
             let etc = root.join("etc");
             let before = read(&etc.join("hostname")).unwrap_or_default();

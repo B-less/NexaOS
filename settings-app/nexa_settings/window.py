@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 import gi
 gi.require_version("Gtk", "3.0")
@@ -15,7 +16,9 @@ from .field import CSS as FIELD_CSS, LivingField
 from .link_page import LinkPage
 from .magic_page import MagicPage
 from .privacy_page import PrivacyPage
-from .system_pages import StartupPage, UpdatesPage, UsersPage
+from .system_pages import StartupPage, UpdatesPage, UsersPage, ask_broker
+from .device_pages import (AccessibilityPage, DefaultAppsPage, DisplayPage, InputPage, NotificationsPage, SoundPage,
+                           WifiPage)
 from nexa_common import actionui, compositor, mind, persist, sysconf, themes
 from nexa_common.titlebar import attach_titlebar
 
@@ -51,8 +54,19 @@ WALLPAPER_PATH = "/usr/share/backgrounds/nexaos/wallpaper.png"
 WALLPAPER_GALLERY = "/usr/share/backgrounds/nexaos/gallery"
 LOGIN_REQUIRED = "/etc/nexa/login-required"  # written by the OS installer
 SKIP_LOGIN_LOCK = os.path.expanduser("~/.config/nexa/skip-login-lock")
+CLOCK_CONF = os.path.expanduser("~/.config/nexa/clock")  # "12h" or "24h", read by nexa-bar
+
+
+def _clock_format():
+    try:
+        with open(CLOCK_CONF) as f:
+            return f.read().strip()
+    except OSError:
+        return "24h"
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
-PAGES = ("Overview", "Personalization", "Magic Layer", "Bluetooth", "Nexa Link", "VPN", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power", "Privacy", "Assistant", "About")
+PAGES = ("Overview", "Personalization", "Display", "Sound", "Mouse & Touchpad", "Wi-Fi", "Bluetooth", "Nexa Link", "VPN",
+         "Notifications", "Default Apps", "Magic Layer", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power",
+         "Privacy", "Accessibility", "Assistant", "About")
 
 
 TOPBAR_FILE = os.path.expanduser("~/.config/nexa/topbar")
@@ -123,6 +137,11 @@ class SettingsWindow(Gtk.Window):
         self.field = LivingField(self)
         self.stack.add_named(self.field, "Overview")
         self.stack.add_named(self._scrolled(self._build_appearance_page()), "Personalization")
+        self.device_pages = {}
+        for cls in (DisplayPage, SoundPage, InputPage, WifiPage, NotificationsPage, DefaultAppsPage, AccessibilityPage):
+            page = cls(self)
+            self.device_pages[cls.title] = page
+            self.stack.add_named(self._scrolled(page.page), cls.title)
         self.magic_page = MagicPage(self)
         self.stack.add_named(self._scrolled(self.magic_page.page), "Magic Layer")
         self.bluetooth_page = BluetoothPage(self)
@@ -159,6 +178,8 @@ class SettingsWindow(Gtk.Window):
             self.users_page.reload()
         elif name == "Startup":
             self.startup_page.reload()
+        elif name in ("Display", "Sound", "Wi-Fi"):
+            self.device_pages[name].reload()
         self.stack.set_visible_child_name(name)
         for n, b in self.nav_buttons.items():
             ctx = b.get_style_context()
@@ -531,11 +552,88 @@ class SettingsWindow(Gtk.Window):
         layout_row.pack_start(apply_layout, False, False, 0)
         page.pack_start(layout_row, False, False, 0)
 
+        page.pack_start(Gtk.Box(), False, False, 6)
+        page.pack_start(self._field_label("Date and time"), False, False, 0)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        row.pack_start(Gtk.Label(label="Set the time automatically (from the internet)", xalign=0), True, True, 0)
+        self.ntp_switch = Gtk.Switch()
+        self.ntp_switch.set_active(os.path.exists("/run/openrc/started/ntpd"))
+        self.ntp_switch.connect("notify::active", self._on_ntp_toggled)
+        row.pack_start(self.ntp_switch, False, False, 0)
+        page.pack_start(row, False, False, 0)
+        manual = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.date_entry = Gtk.Entry(text=time.strftime("%Y-%m-%d"), width_chars=11)
+        self.clock_entry = Gtk.Entry(text=time.strftime("%H:%M"), width_chars=6)
+        self.set_time_btn = Gtk.Button(label="Set")
+        self.set_time_btn.set_name("actionbtn")
+        self.set_time_btn.connect("clicked", self._on_set_time)
+        for w in (self.date_entry, self.clock_entry, self.set_time_btn):
+            manual.pack_start(w, False, False, 0)
+        page.pack_start(manual, False, False, 0)
+        self._manual_time_sensitive()
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        row.pack_start(Gtk.Label(label="24-hour clock", xalign=0), True, True, 0)
+        self.clock24_switch = Gtk.Switch()
+        self.clock24_switch.set_active(_clock_format() != "12h")
+        self.clock24_switch.connect("notify::active", self._on_clock_format)
+        row.pack_start(self.clock24_switch, False, False, 0)
+        page.pack_start(row, False, False, 0)
+
         self.time_status = Gtk.Label(label="")
         self.time_status.set_xalign(0)
         self.time_status.set_line_wrap(True)
         page.pack_start(self.time_status, False, False, 0)
         return page
+
+    def _manual_time_sensitive(self):
+        manual = not self.ntp_switch.get_active()
+        for w in (self.date_entry, self.clock_entry, self.set_time_btn):
+            w.set_sensitive(manual)
+
+    def _on_ntp_toggled(self, switch, _pspec):
+        on = switch.get_active()
+        self._manual_time_sensitive()
+        steps = [("enable_service", "start_service")] if on else [("stop_service", "disable_service")]
+        first, second = steps[0]
+
+        def after_first(_r, error):
+            if error:
+                self._set_label(self.time_status, error or "Not changed.", error=True)
+                switch.handler_block_by_func(self._on_ntp_toggled)
+                switch.set_active(not on)
+                switch.handler_unblock_by_func(self._on_ntp_toggled)
+                self._manual_time_sensitive()
+                return
+            ask_broker(self, second, {"name": "ntpd"}, after_second)
+
+        def after_second(_r, error):
+            self._set_label(self.time_status, error or ("The clock now sets itself from the internet." if on
+                                                        else "Automatic time is off: set the time below."), error=bool(error))
+        ask_broker(self, first, {"name": "ntpd"}, after_first)
+
+    def _on_set_time(self, _btn):
+        text = f"{self.date_entry.get_text().strip()} {self.clock_entry.get_text().strip()}"
+        try:
+            when = int(time.mktime(time.strptime(text, "%Y-%m-%d %H:%M")))
+        except (ValueError, OverflowError):
+            self._set_label(self.time_status, "Write the date like 2026-10-29 and the time like 14:05.", error=True)
+            return
+
+        def done(_r, error):
+            self._set_label(self.time_status, error or f"The clock says {text} now.", error=bool(error))
+        ask_broker(self, "set_time", {"unix": when}, done, why="Changing the clock needs your password.")
+
+    def _on_clock_format(self, switch, _pspec):
+        fmt = "24h" if switch.get_active() else "12h"
+        try:
+            os.makedirs(os.path.dirname(CLOCK_CONF), exist_ok=True)
+            with open(CLOCK_CONF, "w") as f:
+                f.write(fmt + "\n")
+        except OSError as e:
+            self._set_label(self.time_status, f"Couldn't save: {e}", error=True)
+            return
+        self._restart_background("waybar", ["nexa-bar"])
+        self._set_label(self.time_status, "The top bar shows " + ("14:05." if fmt == "24h" else "2:05 PM."), error=False)
 
     def _select_zone(self, zone):
         region, _, city = zone.partition("/")

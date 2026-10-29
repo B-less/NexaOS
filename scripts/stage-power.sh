@@ -22,7 +22,7 @@ chmod +x "$rootfs/usr/local/bin/nexa-power"
 # Sleep, restart and shut down go through nexa-brokerd (no root helper).
 rm -f "$rootfs/usr/local/bin/nexa-power-helper"
 
-for script in nexa-idle nexa-lid nexa-battery-watch nexa-login-lock; do
+for script in nexa-idle nexa-lid nexa-battery-watch nexa-login-lock nexa-nightlight; do
     cp "$base/power/$script" "$rootfs/usr/local/bin/$script"
     chmod +x "$rootfs/usr/local/bin/$script"
 done
