@@ -29,6 +29,11 @@ DEFAULT_GRID_SIZE_INDEX = 2  # 128px
 DEFAULT_ICON_SIZE_INDEX = 2  # 24px, matches the size the old fixed icon-name rendering used
 CONFIG_PATH = os.path.expanduser("~/.config/nexa-files/config.json")
 TRASH = "trash:///"
+# Lists made of files from anywhere, shown like a folder.
+RECENT = "recent:///"
+STARRED = "starred:///"
+VIRTUAL = (RECENT, STARRED)
+MAX_RECENT = 200
 TERMINALS = ("foot", "alacritty", "kitty", "xterm")
 
 CSS = b"""
@@ -53,6 +58,10 @@ iconview .rubberband, iconview.rubberband { background-color: alpha(@nexa_accent
 #sidebar row:selected { background-color: @nexa_selected; color: @nexa_selected_text; }
 #sidebar row:hover:not(:selected) { background-color: @nexa_hover; }
 #sidehead { color: @nexa_muted; font-size: 8pt; font-weight: bold; margin: 10px 14px 2px 14px; }
+#tabs header { background-image: none; background-color: @nexa_surface; border: none; }
+#tabs tab { padding: 2px 6px; color: @nexa_muted; }
+#tabs tab:checked { color: @nexa_text_strong; border-bottom: 2px solid @nexa_accent; }
+#tabclose { background-image: none; background-color: transparent; border: none; padding: 0 2px; min-height: 0; }
 #ejectbtn { background-image: none; background-color: transparent; border: none; padding: 0 4px; color: @nexa_muted; }
 progressbar trough { min-height: 6px; border-radius: 3px; background-color: @nexa_hover; }
 progressbar progress { min-height: 6px; border-radius: 3px; background-color: @nexa_accent; }
@@ -75,6 +84,36 @@ def _items(n):
     return "1 item" if n == 1 else f"{n} items"
 
 
+def plan_renames(names, mode, find="", replace="", base="", start=1, is_dir=None):
+    """New names for many items: "replace" swaps text (every match, case as
+    typed), "number" gives "base 01.ext", "base 02.ext"... (extensions kept,
+    numbers as wide as the largest)."""
+    out = []
+    width = len(str(start + len(names) - 1))
+    for i, n in enumerate(names):
+        if mode == "replace":
+            out.append(n.replace(find, replace) if find else n)
+        else:
+            stem, ext = (n, "") if is_dir and is_dir[i] else os.path.splitext(n)
+            out.append(f"{base or stem} {str(start + i).zfill(width)}{ext}")
+    return out
+
+
+def rename_problem(old_names, new_names, others):
+    """Why this set of new names can't be used, or None. others: names in
+    the folder that aren't being renamed."""
+    seen = set()
+    for old, new in zip(old_names, new_names):
+        if not new.strip() or new in (".", "..") or "/" in new:
+            return f"“{new}” can't be a name"
+        if new in seen:
+            return f"Two items would both be called “{new}”"
+        if new in others and new != old:
+            return f"“{new}” is already taken in this folder"
+        seen.add(new)
+    return None
+
+
 class FileManagerWindow(Gtk.Window):
     open_windows = 0
 
@@ -93,6 +132,7 @@ class FileManagerWindow(Gtk.Window):
         self.grid_size_index = prefs["grid_size_index"]
         self.view_mode = prefs["view"]
         self.pins = prefs["pins"]
+        self.starred = prefs["starred"]
         self.sidebar_on = prefs["sidebar"]
         self._volumes = []
         self.thumbnailer = thumbs.Thumbnailer()
@@ -103,6 +143,9 @@ class FileManagerWindow(Gtk.Window):
         self._dragging = False
         self._drop_action = Gdk.DragAction.MOVE
         self._monitor = None
+        self.tabs = []             # [{"path", "back", "forward", "select"}] (one per tab)
+        self.tab_index = 0
+        self._switching_tab = False
         self.search_query = None   # set while showing search results
         self.search_results = []
         self._search_proc = None
@@ -116,13 +159,14 @@ class FileManagerWindow(Gtk.Window):
         for child in self.views.get_children():
             child.show_all()
         self._set_view(self.view_mode)
+        self._add_tab(self.path, switch=False)
         self._navigate(self.path, remember=False)
 
     # ---- Settings ----
 
     def _load_prefs(self):
         prefs = {"icon_size_index": DEFAULT_ICON_SIZE_INDEX, "grid_size_index": DEFAULT_GRID_SIZE_INDEX, "view": "grid",
-                 "pins": [], "sidebar": True}
+                 "pins": [], "sidebar": True, "starred": []}
         try:
             with open(CONFIG_PATH) as f:
                 saved = json.load(f)
@@ -136,6 +180,8 @@ class FileManagerWindow(Gtk.Window):
                 prefs["view"] = saved["view"]
             if isinstance(saved.get("pins"), list):
                 prefs["pins"] = [p for p in saved["pins"] if isinstance(p, str) and os.path.isabs(p)][:50]
+            if isinstance(saved.get("starred"), list):
+                prefs["starred"] = [p for p in saved["starred"] if isinstance(p, str) and os.path.isabs(p)][:1000]
             if isinstance(saved.get("sidebar"), bool):
                 prefs["sidebar"] = saved["sidebar"]
         return prefs
@@ -145,7 +191,8 @@ class FileManagerWindow(Gtk.Window):
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
             with open(CONFIG_PATH, "w") as f:
                 json.dump({"icon_size_index": self.icon_size_index, "grid_size_index": self.grid_size_index,
-                           "view": self.view_mode, "pins": self.pins, "sidebar": self.sidebar_on}, f)
+                           "view": self.view_mode, "pins": self.pins, "sidebar": self.sidebar_on,
+                           "starred": self.starred}, f)
         except OSError:
             pass
 
@@ -445,7 +492,16 @@ class FileManagerWindow(Gtk.Window):
         self.views.add_named(list_scroller, "list")
         body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         body.pack_start(self._build_sidebar(), False, False, 0)
-        body.pack_start(self.views, True, True, 0)
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.tabbar = Gtk.Notebook()
+        self.tabbar.set_name("tabs")
+        self.tabbar.set_show_border(False)
+        self.tabbar.set_scrollable(True)
+        self.tabbar.set_no_show_all(True)
+        self.tabbar.connect("switch-page", self._on_switch_tab)
+        right.pack_start(self.tabbar, False, False, 0)
+        right.pack_start(self.views, True, True, 0)
+        body.pack_start(right, True, True, 0)
         root.pack_start(body, True, True, 0)
 
         status_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -500,6 +556,15 @@ class FileManagerWindow(Gtk.Window):
     def in_trash(self):
         return self.path == TRASH
 
+    @property
+    def in_virtual(self):
+        """Recent or Starred: files from many folders, no folder of its own."""
+        return self.path in VIRTUAL
+
+    @property
+    def in_folder(self):
+        return not self.in_trash and not self.in_virtual
+
     def _sort(self, model, a, b, col):
         da, db = model.get_value(a, COL_IS_DIR), model.get_value(b, COL_IS_DIR)
         if da != db:  # folders first, whichever way the column is sorted
@@ -521,9 +586,22 @@ class FileManagerWindow(Gtk.Window):
         if select is None:
             select = [i["path"] for i in self._selected()]
         self._refresh_soon_id = 0
-        self.path_entry.set_text("Trash" if self.in_trash else self.path)
+        self.path_entry.set_text({TRASH: "Trash", RECENT: "Recent", STARRED: "Starred"}.get(self.path, self.path))
         cut = set(self.clipboard["paths"]) if self.clipboard and self.clipboard["cut"] else set()
         self.store.clear()
+        if self.in_virtual and not self.search_query:
+            entries = self._recent_entries() if self.path == RECENT else self._starred_entries()
+            for e in entries:
+                self._append_result(e, cut)
+            what = "Recent" if self.path == RECENT else "Starred"
+            empty = ("Files you open show up here" if self.path == RECENT
+                     else "Nothing starred yet: right-click a file or folder and choose Star")
+            self._summary = f"{_items(len(entries))} in {what}" if entries else empty
+            self._select_paths(select)
+            self._update_action_sensitivity()
+            self._show_selection_summary()
+            self._load_thumbnails()
+            return
         if self.search_query:
             self.search_results = [r for r in self.search_results if os.path.lexists(r["path"])]
             for r in self.search_results:
@@ -627,10 +705,10 @@ class FileManagerWindow(Gtk.Window):
         self.thumbnailer.request(files, folders, want, accent, ready)
 
     def _navigate(self, path, remember=True):
-        if path != TRASH and not os.path.isdir(path):
+        if path != TRASH and path not in VIRTUAL and not os.path.isdir(path):
             self._error(f"Not a folder: {path}")
             return
-        new = path if path == TRASH else os.path.abspath(path)
+        new = path if path == TRASH or path in VIRTUAL else os.path.abspath(path)
         if self.search_query is not None or self.search_entry.get_text():
             self._end_search(clear=True, refresh=False)
         if remember and new != self.path:
@@ -644,12 +722,15 @@ class FileManagerWindow(Gtk.Window):
         self._watch()
         self._refresh(select=[])
         self._mark_sidebar()
+        self._label_tab()
 
     def _watch(self):
         """Refresh by itself when files change (another app, a download)."""
         if self._monitor:
             self._monitor.cancel()
             self._monitor = None
+        if self.in_virtual:
+            return
         target = os.path.join(engine_trash_dir(), "files") if self.in_trash else self.path
         try:
             self._monitor = Gio.File.new_for_path(target).monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None)
@@ -682,13 +763,15 @@ class FileManagerWindow(Gtk.Window):
         n = len(self._selected())
         for b in (self.cut_btn, self.copy_btn, self.delete_btn, self.open_btn, self.restore_btn, self.purge_btn):
             b.set_sensitive(n > 0)
-        self.rename_btn.set_sensitive(n == 1)
-        self.paste_btn.set_sensitive(self.clipboard is not None and not self.in_trash)
+        self.rename_btn.set_sensitive(n >= 1 and not self.in_trash)
+        self.paste_btn.set_sensitive(self.clipboard is not None and self.in_folder)
         self.undo_btn.set_sensitive(bool(self.undo_stack) and not self.busy)
         self.empty_btn.set_sensitive(len(self.store) > 0)
         self.back_btn.set_sensitive(bool(self.back_stack))
         self.forward_btn.set_sensitive(bool(self.forward_stack))
         self.up_btn.set_sensitive(self.path != "/")
+        if hasattr(self, "new_folder_btn"):
+            self.new_folder_btn.set_sensitive(self.in_folder)
         index, sizes = (self.grid_size_index, GRID_SIZES) if self.is_grid else (self.icon_size_index, ICON_SIZES)
         self.zoom_out_item.set_sensitive(index > 0)
         self.zoom_in_item.set_sensitive(index < len(sizes) - 1)
@@ -737,7 +820,7 @@ class FileManagerWindow(Gtk.Window):
             return True
         if event.button == 2:
             if hit is not None and self.store[hit][COL_IS_DIR] and not self.in_trash:
-                self._open_window(self.store[hit][COL_PATH])
+                self.new_tab(self.store[hit][COL_PATH])
             return True
         if event.button == 1:
             if hit is None:
@@ -832,7 +915,7 @@ class FileManagerWindow(Gtk.Window):
             row = self.store[dest]
             if row[COL_IS_DIR]:
                 return dest, row[COL_PATH]
-        return None, self.path
+        return None if self.in_virtual else (None, self.path)
 
     def _on_drag_motion(self, view, ctx, x, y, t):
         target = self._drop_folder(x, y)
@@ -896,6 +979,13 @@ class FileManagerWindow(Gtk.Window):
             (True, False, False, Gdk.KEY_h): self._on_toggle_hidden,
             (True, False, False, Gdk.KEY_l): lambda _b: self._focus_path(),
             (True, False, False, Gdk.KEY_f): lambda _b: self.search_entry.grab_focus(),
+            (True, False, False, Gdk.KEY_t): lambda _b: self.new_tab(),
+            (True, False, False, Gdk.KEY_w): lambda _b: self.close_tab(),
+            (True, False, False, Gdk.KEY_Tab): lambda _b: self._step_tab(1),
+            (True, True, False, Gdk.KEY_ISO_Left_Tab): lambda _b: self._step_tab(-1),
+            (True, True, False, Gdk.KEY_Tab): lambda _b: self._step_tab(-1),
+            (True, False, False, Gdk.KEY_Page_Down): lambda _b: self._step_tab(1),
+            (True, False, False, Gdk.KEY_Page_Up): lambda _b: self._step_tab(-1),
             (True, False, False, Gdk.KEY_r): lambda _b: self._refresh(),
             (True, False, False, Gdk.KEY_plus): self._on_zoom_in,
             (True, False, False, Gdk.KEY_equal): self._on_zoom_in,
@@ -965,14 +1055,16 @@ class FileManagerWindow(Gtk.Window):
         folder = single and single["is_dir"]
         return [
             ("Open", self._on_open_selected),
+            ("Open in New Tab", lambda _b: [self.new_tab(i["path"]) for i in sel if i["is_dir"]], any(i["is_dir"] for i in sel)),
             ("Open in New Window", lambda _b: [self._open_window(i["path"]) for i in sel if i["is_dir"]], any(i["is_dir"] for i in sel)),
             ("Open With…", self._on_open_with, bool(single and not single["is_dir"])),
             ("Pin to Sidebar", lambda _b: self._pin(single["path"]), bool(folder and single["path"] not in self.pins)),
+            (("Unstar" if all(i["path"] in self.starred for i in sel) else "Star"), lambda _b: self._toggle_star(sel)),
             None,
             ("Cut", self._on_cut), ("Copy", self._on_copy),
             ("Paste Into Folder", lambda _b: self._paste_into(single["path"]), bool(folder and self.clipboard)),
             ("Duplicate", self._on_duplicate),
-            ("Rename…", self._on_rename, n == 1),
+            ("Rename…", self._on_rename, n >= 1),
             None,
             ("Extract Here", self._on_extract, bool(sel) and all(not i["is_dir"] and engine.is_archive(i["name"]) for i in sel)),
             ("Compress…", self._on_compress, bool(sel)),
@@ -994,6 +1086,8 @@ class FileManagerWindow(Gtk.Window):
             linkui.send_files(chosen[0], chosen[1], files, lambda text, error=False: self.status.set_text(text))
 
     def _background_menu(self):
+        if self.in_virtual:
+            return [("Select All", lambda _b: self.select_all()), ("Refresh", lambda _b: self._refresh())]
         if self.in_trash:
             return [("Empty Trash", self._on_empty_trash, len(self.store) > 0), ("Select All", lambda _b: self.select_all()),
                     ("Refresh", lambda _b: self._refresh())]
@@ -1036,6 +1130,7 @@ class FileManagerWindow(Gtk.Window):
             return
         try:
             app_info.launch([gfile], None)
+            Gtk.RecentManager.get_default().add_item(gfile.get_uri())
         except GLib.Error as e:
             self._error(f"Couldn't launch {app_info.get_display_name()}: {e.message}")
 
@@ -1115,7 +1210,7 @@ class FileManagerWindow(Gtk.Window):
 
     def _on_terminal(self, _btn):
         term = self._terminal()
-        if term and not self.in_trash:
+        if term and self.in_folder:
             subprocess.Popen([term], cwd=self.path, start_new_session=True,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -1187,6 +1282,142 @@ class FileManagerWindow(Gtk.Window):
 
         self._in_thread(lambda: removable.eject(vol["name"]), done)
 
+    # ---- Recent and Starred ----
+
+    @staticmethod
+    def _entry(path):
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        is_dir = statmod.S_ISDIR(st.st_mode)
+        return {"path": path, "name": os.path.basename(path) or path, "is_dir": is_dir, "size": st.st_size,
+                "mtime": st.st_mtime, "is_exec": not is_dir and bool(st.st_mode & 0o111)}
+
+    def _recent_entries(self):
+        """Files opened lately (GTK's shared list: Files and the other apps),
+        newest first, only ones still there."""
+        items = []
+        for info in Gtk.RecentManager.get_default().get_items():
+            if not info.is_local():
+                continue
+            path = Gio.File.new_for_uri(info.get_uri()).get_path()
+            e = self._entry(path) if path else None
+            if e and not e["is_dir"]:
+                items.append((info.get_modified(), e))
+        items.sort(key=lambda t: t[0], reverse=True)
+        return [e for _t, e in items[:MAX_RECENT]]
+
+    def _starred_entries(self):
+        return [e for e in (self._entry(p) for p in self.starred) if e]
+
+    def _toggle_star(self, items):
+        paths = [i["path"] for i in items]
+        if all(p in self.starred for p in paths):
+            self.starred = [p for p in self.starred if p not in paths]
+            text = f"Unstarred {_items(len(paths))}"
+        else:
+            self.starred += [p for p in paths if p not in self.starred]
+            text = f"Starred {_items(len(paths))} - find them under Starred in the sidebar"
+        self._save_prefs()
+        if self.path == STARRED:
+            self._refresh(select=[])
+        self.status.set_text(text)
+
+    # ---- Tabs: each keeps its own folder, history and selection ----
+
+    def _tab_title(self, path):
+        if path in (TRASH, RECENT, STARRED):
+            return {TRASH: "Trash", RECENT: "Recent", STARRED: "Starred"}[path]
+        return "Home" if path == os.environ.get("HOME") else (os.path.basename(path) or "/")
+
+    def _tab_label(self, path):
+        box = Gtk.Box(spacing=4)
+        label = Gtk.Label(label=self._tab_title(path))
+        label.set_max_width_chars(18)
+        label.set_ellipsize(3)
+        close = Gtk.Button(label="×")
+        close.set_name("tabclose")
+        close.set_tooltip_text("Close this tab (Ctrl+W)")
+        box.pack_start(label, True, True, 0)
+        box.pack_start(close, False, False, 0)
+        box.label = label
+        box.show_all()
+        page = Gtk.Box()
+        close.connect("clicked", lambda _b: self.close_tab(self.tabbar.page_num(page)))
+        return page, box
+
+    def _add_tab(self, path, switch=True):
+        page, label = self._tab_label(path)
+        self.tabs.append({"path": path, "back": [], "forward": [], "select": []})
+        self._switching_tab = True
+        self.tabbar.append_page(page, label)
+        self.tabbar.set_tab_reorderable(page, False)
+        page.show()
+        self._switching_tab = False
+        self._show_tabbar()
+        if switch:
+            self.tabbar.set_current_page(len(self.tabs) - 1)
+
+    def _save_tab(self):
+        if 0 <= self.tab_index < len(self.tabs):
+            self.tabs[self.tab_index] = {"path": self.path, "back": list(self.back_stack),
+                                         "forward": list(self.forward_stack), "select": [i["path"] for i in self._selected()]}
+
+    def _show_tabbar(self):
+        self.tabbar.set_visible(len(self.tabs) > 1)
+
+    def _label_tab(self):
+        if not hasattr(self, "tabbar") or not self.tabs:
+            return
+        page = self.tabbar.get_nth_page(self.tab_index)
+        label = self.tabbar.get_tab_label(page) if page else None
+        if label is not None:
+            label.label.set_text(self._tab_title(self.path))
+            label.set_tooltip_text("Trash" if self.in_trash else self.path)
+
+    def _on_switch_tab(self, _nb, _page, index):
+        if self._switching_tab or index == self.tab_index or index >= len(self.tabs):
+            return
+        self._save_tab()
+        self.tab_index = index
+        tab = self.tabs[index]
+        self.back_stack, self.forward_stack = list(tab["back"]), list(tab["forward"])
+        self._navigate(tab["path"], remember=False)
+        self._select_paths(tab["select"])
+
+    def new_tab(self, path=None):
+        """Open path (or this folder) in a new tab and go to it."""
+        self._save_tab()
+        self._add_tab(path or self.path)
+
+    def close_tab(self, index=None):
+        index = self.tab_index if index is None else index
+        if len(self.tabs) <= 1:
+            self.close()
+            return
+        self._save_tab()
+        current = index == self.tab_index
+        self._switching_tab = True
+        self.tabbar.remove_page(index)
+        self._switching_tab = False
+        del self.tabs[index]
+        if index < self.tab_index or (current and self.tab_index >= len(self.tabs)):
+            self.tab_index -= 1
+        if current:
+            tab = self.tabs[self.tab_index]
+            self.back_stack, self.forward_stack = list(tab["back"]), list(tab["forward"])
+            self._switching_tab = True
+            self.tabbar.set_current_page(self.tab_index)
+            self._switching_tab = False
+            self._navigate(tab["path"], remember=False)
+            self._select_paths(tab["select"])
+        self._show_tabbar()
+
+    def _step_tab(self, d):
+        if len(self.tabs) > 1:
+            self.tabbar.set_current_page((self.tab_index + d) % len(self.tabs))
+
     # ---- Search (nexa-fileops "search") ----
 
     def _append_result(self, r, cut=()):
@@ -1203,8 +1434,8 @@ class FileManagerWindow(Gtk.Window):
         if not query:
             self._end_search()
             return
-        if self.in_trash:
-            self.status.set_text("Search works in folders, not in the Trash.")
+        if not self.in_folder:
+            self.status.set_text("Search works in folders, not in the Trash, Recent or Starred.")
             return
         self._start_search(query)
 
@@ -1348,6 +1579,8 @@ class FileManagerWindow(Gtk.Window):
         self.side.add(self._side_head("Places"))
         for icon, label, path in self._places():
             self.side.add(self._side_row(icon, label, path, "place"))
+        self.side.add(self._side_row("document-open-recent", "Recent", RECENT, "place"))
+        self.side.add(self._side_row("starred", "Starred", STARRED, "place"))
         self.side.add(self._side_row("user-trash", "Trash", TRASH, "trash"))
         pins = [p for p in self.pins if os.path.isdir(p)]
         if pins:
@@ -1397,7 +1630,7 @@ class FileManagerWindow(Gtk.Window):
         if event.button != 3:
             return False
         row = box.get_row_at_y(int(event.y))
-        if row is None or row.kind not in ("pin", "place"):
+        if row is None or row.kind not in ("pin", "place") or row.target in VIRTUAL:
             return False
         entries = [("Open in New Window", lambda _b: self._open_window(row.target))]
         if row.kind == "pin":
@@ -1441,7 +1674,7 @@ class FileManagerWindow(Gtk.Window):
 
     def _on_up(self, _btn):
         came_from = self.path
-        if self.in_trash:
+        if not self.in_folder:
             self._navigate(os.environ.get("HOME", "/root"))
             return
         self._navigate(os.path.dirname(self.path.rstrip("/")) or "/")
@@ -1473,6 +1706,10 @@ class FileManagerWindow(Gtk.Window):
         text = entry.get_text().strip()
         if text.lower() in ("trash", TRASH, "trash:"):
             self._navigate(TRASH)
+        elif text.lower() in ("recent", RECENT):
+            self._navigate(RECENT)
+        elif text.lower() in ("starred", STARRED):
+            self._navigate(STARRED)
         else:
             self._navigate(os.path.expanduser(text) or "/")
         self.view.grab_focus()
@@ -1606,7 +1843,7 @@ class FileManagerWindow(Gtk.Window):
         return [p for p in paths if p], False
 
     def _on_paste(self, _btn):
-        if not self.in_trash:
+        if self.in_folder:
             self._paste_into(self.path)
 
     def _paste_into(self, folder):
@@ -1638,7 +1875,7 @@ class FileManagerWindow(Gtk.Window):
         archives = [i["path"] for i in self._selected() if not i["is_dir"] and engine.is_archive(i["name"])]
         if not archives or self.in_trash:
             return
-        folder = self.path
+        folder = self.path if self.in_folder else os.path.dirname(archives[0])
 
         def work(progress, started):
             made, steps, left_out = [], [], []
@@ -1697,7 +1934,7 @@ class FileManagerWindow(Gtk.Window):
             return
         self._compress_fmt = chosen
         paths = [i["path"] for i in sel]
-        folder = self.path
+        folder = self.path if self.in_folder else os.path.dirname(paths[0])
         self._job(f"Compressing {_items(len(sel))}",
                   lambda progress, started: engine.compress(paths, chosen, name, folder, progress=progress, started=started),
                   lambda r, e: self._changed(r, e, "path"))
@@ -1763,8 +2000,14 @@ class FileManagerWindow(Gtk.Window):
         self._job("Undoing", lambda progress, started: engine.undo(steps), done)
 
     def _on_rename(self, _btn):
+        if self.in_trash:
+            return
+        many = self._selected()
+        if len(many) > 1:
+            self._rename_many_dialog(many)
+            return
         sel = self._selected_entry()
-        if not sel or self.in_trash:
+        if not sel:
             return
         new_name = self._prompt("Rename", "New name:", sel["name"], select_stem=not sel["is_dir"])
         if not new_name or new_name == sel["name"]:
@@ -1775,6 +2018,143 @@ class FileManagerWindow(Gtk.Window):
             self._error(str(e))
             return
         self._changed(result, None, "path")
+
+    def apply_renames(self, pairs):
+        """pairs: [(path, new name)] through the engine, then show and select them."""
+        pairs = [(p, n) for p, n in pairs if os.path.basename(p) != n]
+        if not pairs:
+            return
+        try:
+            result = engine.rename_many(pairs)
+        except engine.EngineError as e:
+            self._error(str(e))
+            return
+        self._changed(result, None, "renamed")
+
+    def _rename_many_dialog(self, items):
+        names = [i["name"] for i in items]
+        dirs = [i["is_dir"] for i in items]
+        folder_names = set()
+        for i in items:
+            try:
+                folder_names |= set(os.listdir(os.path.dirname(i["path"])))
+            except OSError:
+                pass
+        others = folder_names - set(names)
+        d = Gtk.Dialog(title=f"Rename {_items(len(items))}", transient_for=self, modal=True)
+        d.set_default_size(520, 420)
+        d.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        ok = d.add_button("Rename", Gtk.ResponseType.OK)
+        box = d.get_content_area()
+        box.set_spacing(8)
+        box.set_border_width(14)
+        replace_rb = Gtk.RadioButton.new_with_label(None, "Replace text")
+        number_rb = Gtk.RadioButton.new_with_label_from_widget(replace_rb, "New name with numbers")
+        modes = Gtk.Box(spacing=12)
+        modes.pack_start(replace_rb, False, False, 0)
+        modes.pack_start(number_rb, False, False, 0)
+        box.add(modes)
+        fields = Gtk.Grid(column_spacing=8, row_spacing=6)
+        find = Gtk.Entry(hexpand=True)
+        repl = Gtk.Entry(hexpand=True)
+        base = Gtk.Entry(hexpand=True)
+        base.set_placeholder_text("Keep each name")
+        start = Gtk.SpinButton.new_with_range(0, 99999, 1)
+        start.set_value(1)
+        rows = (("Find", find), ("Replace with", repl), ("Name", base), ("Start at", start))
+        for r, (label, w) in enumerate(rows):
+            fields.attach(Gtk.Label(label=label, xalign=1), 0, r, 1, 1)
+            fields.attach(w, 1, r, 1, 1)
+        box.add(fields)
+        store = Gtk.ListStore(str, str)
+        view = Gtk.TreeView(model=store)
+        for c, title in enumerate(("Now", "Will be")):
+            view.append_column(Gtk.TreeViewColumn(title, Gtk.CellRendererText(ellipsize=3), text=c))
+        scroll = Gtk.ScrolledWindow(vexpand=True)
+        scroll.add(view)
+        box.pack_start(scroll, True, True, 0)
+        problem = Gtk.Label(xalign=0)
+        problem.get_style_context().add_class("dim-label")
+        box.add(problem)
+        state = {"new": names}
+
+        def update(*_a):
+            replacing = replace_rb.get_active()
+            for r, (_label, w) in enumerate(rows):
+                show = (r < 2) == replacing
+                w.set_visible(show)
+                fields.get_child_at(0, r).set_visible(show)
+            new = plan_renames(names, "replace" if replacing else "number", find.get_text(), repl.get_text(),
+                               base.get_text().strip(), start.get_value_as_int(), dirs)
+            state["new"] = new
+            store.clear()
+            for old, n in zip(names, new):
+                store.append([old, n])
+            why = rename_problem(names, new, others)
+            changes = sum(o != n for o, n in zip(names, new))
+            problem.set_text(why or (f"{_items(changes)} will be renamed" if changes else "Nothing changes yet"))
+            ok.set_sensitive(why is None and changes > 0)
+
+        for w in (replace_rb, number_rb):
+            w.connect("toggled", update)
+        for w in (find, repl, base):
+            w.connect("changed", update)
+        start.connect("value-changed", update)
+        d.show_all()
+        update()
+        response = d.run()
+        new = state["new"]
+        d.destroy()
+        if response == Gtk.ResponseType.OK:
+            self.apply_renames([(i["path"], n) for i, n in zip(items, new)])
+
+    def _permissions_box(self, path, st, owner):
+        """Read / Change / Run for you, the group and everyone else; each
+        change goes through the engine (Ctrl+Z puts it back)."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        mine = st.st_uid == os.getuid()
+        is_dir = statmod.S_ISDIR(st.st_mode)
+        cols = [("Read", 4), ("Change", 2)] + ([] if is_dir else [("Run", 1)])
+        g = Gtk.Grid(column_spacing=14, row_spacing=2)
+        for c, (label, _bit) in enumerate(cols):
+            head = Gtk.Label(label=label)
+            head.get_style_context().add_class("dim-label")
+            g.attach(head, c + 1, 0, 1, 1)
+        checks = {}
+        for r, (who, shift) in enumerate(((f"You ({owner})" if mine else owner, 6), ("Group", 3), ("Everyone else", 0)), start=1):
+            g.attach(Gtk.Label(label=who, xalign=0), 0, r, 1, 1)
+            for c, (_label, bit) in enumerate(cols):
+                cb = Gtk.CheckButton()
+                cb.set_halign(Gtk.Align.CENTER)
+                cb.set_active(bool(st.st_mode & (bit << shift)))
+                cb.set_sensitive(mine)
+                g.attach(cb, c + 1, r, 1, 1)
+                checks[(shift, bit)] = cb
+        box.add(g)
+        note = Gtk.Label(xalign=0)
+        note.set_line_wrap(True)
+        note.set_max_width_chars(48)
+        note.get_style_context().add_class("dim-label")
+        if not mine:
+            note.set_text(f"Only {owner} can change these.")
+        elif is_dir:
+            note.set_text("Whoever can read a folder can also open it.")
+        box.add(note)
+
+        def changed(_cb):
+            mode = sum(bit << shift for (shift, bit), cb in checks.items() if cb.get_active())
+            try:
+                result = engine.chmod([path], mode)
+            except engine.EngineError as e:
+                note.set_text(str(e))
+                return
+            self._changed(result, None)
+
+        for cb in checks.values():
+            cb.connect("toggled", changed)
+        box.checks = checks  # for tests
+        self._perm_box = box
+        return box
 
     def _create(self, folder):
         kind = "Folder" if folder else "File"
@@ -1790,11 +2170,11 @@ class FileManagerWindow(Gtk.Window):
         self._changed(result, None, "path")
 
     def _on_new_folder(self, _btn):
-        if not self.in_trash:
+        if self.in_folder:
             self._create(folder=True)
 
     def _on_new_file(self, _btn):
-        if not self.in_trash:
+        if self.in_folder:
             self._create(folder=False)
 
     def _on_copy_location(self, _btn):
@@ -1852,7 +2232,15 @@ class FileManagerWindow(Gtk.Window):
                     owner = pwd.getpwuid(st.st_uid).pw_name
                 except KeyError:
                     owner = str(st.st_uid)
-                add("Permissions", f"{statmod.filemode(st.st_mode)}  (owner: {owner})")
+                if statmod.S_ISLNK(st.st_mode):
+                    add("Permissions", "a link has none of its own")
+                else:
+                    key = Gtk.Label(label="Permissions", xalign=1, yalign=0)
+                    key.get_style_context().add_class("dim-label")
+                    grid.attach(key, 0, len(rows), 1, 1)
+                    perms = self._permissions_box(p, st, owner)
+                    grid.attach(perms, 1, len(rows), 1, 1)
+                    rows.append(perms)
                 if not statmod.S_ISDIR(st.st_mode):
                     size_label = None
         else:

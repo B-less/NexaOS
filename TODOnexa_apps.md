@@ -22,7 +22,7 @@ Open With, terminal here, drives (mount/eject), drag and drop, thumbnails
       in a hidden folder so Stop or an error leaves nothing; Landlock to the
       archive and the folder. Undo takes the result to the Trash. Tests:
       cargo test (8), real xz/bz2/zst/gz/zip archives, test_window.py.
-  - [ ] The Archive app on the same engine (it still runs `unzip -o` / `tar -xf`).
+  - [x] The Archive app on the same engine (2026-10-29; it ran `unzip -o` / `tar -xf`, which replaced files).
 - [x] Sidebar (2026-10-28): places (Home, Desktop, Documents, Downloads,
       Music, Pictures, Videos that exist), the Trash, pinned folders (Pin to
       Sidebar / Remove from Sidebar, remembered), drives with Eject; marks
@@ -33,10 +33,21 @@ Open With, terminal here, drives (mount/eject), drag and drop, thumbnails
       into the list while it looks, capped at 2000, no links followed, other
       drives not entered; Escape or opening a folder ends it. Results say
       which folder each is in.
-- [ ] Permissions in Properties: change who can read/write/run (engine op).
-- [ ] Rename many files at once (find/replace, numbering), with undo.
-- [ ] Tabs (Ctrl+T), each with its own folder and history.
-- [ ] Recent files and Starred.
+- [x] Permissions in Properties (2026-10-29): Read / Change / Run for you,
+      the group and everyone else, applied at once through nexa-fileops op
+      "chmod" (no set-id bits; a readable folder stays openable); Ctrl+Z
+      restores them; someone else's file shows them read-only.
+- [x] Rename many (2026-10-29): F2 with several selected; replace text, or
+      a name with numbers (extensions kept); live preview; taken or doubled
+      names refused before anything happens; nexa-fileops op "rename_many"
+      goes through temporary names (swaps work); one Ctrl+Z puts all back.
+- [x] Tabs (2026-10-29): Ctrl+T, Ctrl+W, Ctrl+Tab / Ctrl+PgUp/PgDn,
+      middle-click or "Open in New Tab" on a folder; each tab keeps its
+      folder, Back/Forward and selection; the tab bar shows only with two or more.
+- [x] Recent and Starred (2026-10-29) in the sidebar: Recent is GTK's shared
+      list (Files adds what it opens), Starred is Star / Unstar on anything;
+      both show each item's folder and have no folder of their own (no
+      Paste, New Folder or search there).
 
 ## Settings
 

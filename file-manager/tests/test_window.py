@@ -294,9 +294,15 @@ Gtk.Dialog.run = real_run
 check("Alt+Enter shows Properties with the folder's measured size",
       "Folder" in shown.get("text", []) and any("1 file" in t for t in shown.get("text", [])), str(shown))
 
-# Opening a folder in a new window (middle click).
+# Middle click: a folder in a new tab; Ctrl+W comes back.
 click("Pictures", button=2)
-check("middle-click opens a folder in a new window", W.FileManagerWindow.open_windows == 2)
+check("middle-click opens a folder in a new tab", len(win.tabs) == 2 and win.path == h("Pictures"), win.path)
+key(Gdk.KEY_w, ctrl=True)
+pump(0.3)
+check("Ctrl+W closes it and this tab is as it was", len(win.tabs) == 1 and win.path == HOME, win.path)
+win._open_window(h("Pictures"))
+pump(0.3)
+check("Open in New Window still opens a window", W.FileManagerWindow.open_windows == 2)
 for other in [w for w in Gtk.Window.list_toplevels() if isinstance(w, W.FileManagerWindow) and w is not win]:
     other.destroy()
 check("closing it leaves this one open", W.FileManagerWindow.open_windows == 1)
@@ -497,6 +503,103 @@ check("Extract Here never replaces: it makes Project (2) with everything inside"
 key(Gdk.KEY_z, ctrl=True)
 wait()
 check("Ctrl+Z takes the extracted folder away again (to the Trash)", not os.path.exists(h("Documents", "Project (2)")))
+
+# ---- Permissions in Properties ----
+script = h("Documents", "run-me.sh")
+open(script, "w").write("echo hi\n")
+os.chmod(script, 0o644)
+win._refresh(select=[script])
+pump(0.2)
+real_run = Gtk.Dialog.run
+seen = {}
+
+
+def poke_permissions(dialog):
+    box = win._perm_box
+    seen["checks"] = {k: cb.get_active() for k, cb in box.checks.items()}
+    box.checks[(6, 1)].set_active(True)  # you: Run
+    pump(0.2)
+    return Gtk.ResponseType.CLOSE
+
+
+Gtk.Dialog.run = poke_permissions
+win._properties()
+Gtk.Dialog.run = real_run
+check("Properties shows read/change/run as they are", seen.get("checks", {}).get((6, 4)) and seen["checks"].get((6, 2))
+      and not seen["checks"].get((6, 1)) and seen["checks"].get((0, 4)) and not seen["checks"].get((0, 2)), str(seen))
+check("ticking Run for you makes it runnable", os.stat(script).st_mode & 0o777 == 0o744, oct(os.stat(script).st_mode))
+key(Gdk.KEY_z, ctrl=True)
+wait()
+check("Ctrl+Z puts the permissions back", os.stat(script).st_mode & 0o777 == 0o644, oct(os.stat(script).st_mode))
+
+# ---- Rename many ----
+for n in ("IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"):
+    open(h("Documents", n), "w").write(n)
+check("plan: replace text", W.plan_renames(["IMG_001.jpg", "IMG_002.jpg"], "replace", "IMG_", "Beach ")
+      == ["Beach 001.jpg", "Beach 002.jpg"])
+check("plan: name and number keep extensions, numbers as wide as needed",
+      W.plan_renames(["a.jpg", "b.png"] * 5, "number", base="Trip", start=1)[9] == "Trip 10.png")
+check("a name that's taken is refused before anything happens",
+      W.rename_problem(["a"], ["b"], {"b"}) and W.rename_problem(["a", "b"], ["c", "c"], set()))
+items_ = [i for i in ({"path": h("Documents", n), "name": n} for n in ("IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"))]
+win.apply_renames([(i["path"], n) for i, n in zip(items_, W.plan_renames([i["name"] for i in items_], "replace", "IMG_", "Beach "))])
+check("Rename many renames them all and selects them",
+      sorted(selected()) == ["Beach 001.jpg", "Beach 002.jpg", "Beach 003.jpg"], f"{selected()} {errors}")
+key(Gdk.KEY_z, ctrl=True)
+wait()
+check("...and Ctrl+Z puts every name back", all(os.path.exists(h("Documents", n)) for n in ("IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg")))
+
+# ---- Tabs ----
+win._navigate(h("Documents"))
+pump(0.3)
+key(Gdk.KEY_t, ctrl=True)
+pump(0.3)
+check("Ctrl+T opens a second tab on the same folder, and shows the tab bar",
+      len(win.tabs) == 2 and win.tab_index == 1 and win.path == h("Documents") and win.tabbar.get_visible())
+win._navigate(h("Music"))
+pump(0.3)
+key(Gdk.KEY_Page_Up, ctrl=True)
+pump(0.3)
+check("each tab keeps its own folder (back to Documents)", win.tab_index == 0 and win.path == h("Documents"), win.path)
+key(Gdk.KEY_Tab, ctrl=True)
+pump(0.3)
+check("Ctrl+Tab goes to the next one (Music)", win.tab_index == 1 and win.path == h("Music"), win.path)
+win._on_back(None)
+pump(0.3)
+check("...with its own history (Back goes to Documents)", win.path == h("Documents"), win.path)
+win.new_tab(h("Pictures"))
+pump(0.3)
+check("Open in New Tab goes straight to that folder", len(win.tabs) == 3 and win.path == h("Pictures"))
+key(Gdk.KEY_w, ctrl=True)
+pump(0.3)
+check("Ctrl+W closes the tab and shows the one before", len(win.tabs) == 2 and win.path == h("Documents"), win.path)
+win.close_tab(0)
+pump(0.3)
+check("closing down to one tab hides the tab bar", len(win.tabs) == 1 and not win.tabbar.get_visible())
+
+# ---- Recent and Starred ----
+win._navigate(h("Documents"))
+pump(0.3)
+win._refresh(select=[script])
+win._toggle_star(win._selected())
+win._navigate(W.STARRED)
+pump(0.3)
+check("Star puts it under Starred (shown with its folder)", names() == ["run-me.sh"]
+      and "Documents" in (win.store[0][W.COL_TIP] or ""), str(names()))
+check("Starred has no folder of its own: no New Folder, no Paste", not win.new_folder_btn.get_sensitive()
+      and [e[0] for e in win._background_menu() if e] == ["Select All", "Refresh"])
+win._refresh(select=[script])
+win._toggle_star(win._selected())
+pump(0.2)
+check("Unstar takes it off the list", names() == [])
+Gtk.RecentManager.get_default().add_item("file://" + h("notes.txt"))
+pump(0.5)
+win._navigate(W.RECENT)
+pump(0.3)
+check("Recent lists files opened lately", "notes.txt" in names(), str(names()))
+win._on_up(None)
+pump(0.3)
+check("Up from Recent goes Home", win.path == HOME)
 check("no error dialogs along the way", not errors, str(errors))
 shutil.rmtree(HOME, ignore_errors=True)
 print(f"\n{len(failures)} failure(s)")

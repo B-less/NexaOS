@@ -29,6 +29,8 @@ pub enum Step {
     Moved { from: PathBuf, to: PathBuf },
     /// Moved to the Trash (undo: restore it).
     Trashed { path: PathBuf, trashed: PathBuf, info: PathBuf },
+    /// Permissions changed (undo: back to `mode`).
+    Mode { path: PathBuf, mode: u32 },
 }
 
 /// Progress lines on stdout ({"progress": {...}}), at most ~7 a second.

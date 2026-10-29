@@ -118,6 +118,16 @@ def undo(steps):
     return run("undo", steps=steps)
 
 
+def chmod(paths, mode):
+    """Set read/write/run bits (0o000-0o777); undo puts the old ones back."""
+    return run("chmod", paths=list(paths), mode=int(mode))
+
+
+def rename_many(items):
+    """items: [(path, new name)]; all at once, so names can be swapped."""
+    return run("rename_many", items=[{"path": p, "name": n} for p, n in items])
+
+
 def size(paths):
     return run("size", paths=list(paths))
 

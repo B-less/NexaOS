@@ -12,6 +12,9 @@
 //! (paths); rename (path, name); new_folder, new_file (dir, name); restore
 //! (items: paths inside a Trash); trash_list; empty_trash; undo (steps);
 //! trail (query, limit): FileTrail, where things went; trail_forget;
+//! chmod (paths, mode: permission bits, never set-id): undo restores them;
+//! rename_many (items: [{path, name}]): all through temporary names first,
+//! so names can be swapped; each one that can't is left as it was;
 //! search (dir, query, hidden, limit): names containing every word, sent
 //! as {"found": [...]} lines while it looks (search.rs).
 //!
@@ -31,7 +34,7 @@ use ops::{place, Failures, Progress, Step};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 
 const MAX_REQUEST: u64 = 8 << 20;
@@ -52,6 +55,8 @@ enum Job {
     Undo(Vec<Step>),
     Trail { query: String, limit: usize },
     Search { dir: PathBuf, query: String, hidden: bool, limit: usize },
+    Chmod { paths: Vec<PathBuf>, mode: u32 },
+    RenameMany(Vec<(PathBuf, String)>),
     TrailForget,
 }
 
@@ -210,6 +215,7 @@ fn plan(req: &Value, home: &Path) -> Result<(Job, Access), String> {
                         a.write.push(parent(trashed));
                         a.write.push(parent(info));
                     }
+                    Step::Mode { path, .. } => a.read.push(parent(path)),
                 }
             }
             Job::Undo(steps)
@@ -221,6 +227,35 @@ fn plan(req: &Value, home: &Path) -> Result<(Job, Access), String> {
             }
             let query: String = req.get("query").and_then(Value::as_str).unwrap_or("").chars().take(200).collect();
             Job::Trail { query, limit: req.get("limit").and_then(Value::as_u64).unwrap_or(200).min(2000) as usize }
+        }
+        "chmod" => {
+            let ps = paths(req, "paths")?;
+            let mode = req.get("mode").and_then(Value::as_u64).ok_or("missing 'mode'")?;
+            if mode > 0o777 {
+                return Err("Only read, write and run permissions can be changed here.".into());
+            }
+            for p in &ps {
+                a.read.push(parent(p));
+            }
+            Job::Chmod { paths: ps, mode: mode as u32 }
+        }
+        "rename_many" => {
+            let arr = req.get("items").and_then(Value::as_array).ok_or("missing 'items'")?;
+            if arr.is_empty() || arr.len() > MAX_PATHS {
+                return Err(format!("between 1 and {MAX_PATHS} items, please"));
+            }
+            let mut items = Vec::new();
+            let mut targets = std::collections::HashSet::new();
+            for it in arr {
+                let (p, name) = (path(it, "path")?, text(it, "name")?);
+                ops::check_name(&name)?;
+                if !targets.insert(parent(&p).join(&name)) {
+                    return Err(format!("Two items would both be called \"{name}\"."));
+                }
+                a.write.push(parent(&p));
+                items.push((p, name));
+            }
+            Job::RenameMany(items)
         }
         "search" => {
             let dir = folder(&path(req, "dir")?)?;
@@ -408,15 +443,73 @@ fn run(job: Job, home: &Path) -> Result<Value, String> {
                             .map(|t| did.push(json!({"op": "moved", "from": to, "to": t})))
                     }),
                     Step::Trashed { trashed, .. } => trash::restore(trashed).map(|p| did.push(json!({"op": "restored", "to": p}))),
+                    Step::Mode { path, mode } => fs::set_permissions(path, fs::Permissions::from_mode(*mode)),
                 };
                 match r {
                     Ok(()) => n += 1,
-                    Err(e) => failed.push((match s { Step::Created { path } => path, Step::Moved { to, .. } => to, Step::Trashed { path, .. } => path }, ops::say(&e))),
+                    Err(e) => failed.push((match s { Step::Created { path } | Step::Trashed { path, .. } | Step::Mode { path, .. } => path, Step::Moved { to, .. } => to }, ops::say(&e))),
                 }
             }
             outcome(format!("Undid {}", if n == 1 { "1 change".into() } else { format!("{n} changes") }), n, &failed, json!({"did": did}))
         }
         Job::Trail { query, limit } => Ok(json!({"items": nexa_sys::filetrail::trail(home, &query, limit)})),
+        Job::Chmod { paths, mode } => {
+            let (mut undo, mut failed, mut ok) = (Vec::new(), Failures::new(), 0usize);
+            for p in paths {
+                let r = fs::symlink_metadata(&p).and_then(|md| {
+                    if md.file_type().is_symlink() {
+                        return Err(std::io::Error::other("links have no permissions of their own"));
+                    }
+                    let old = md.mode() & 0o7777;
+                    // A folder keeps "open" (x) wherever it can be read.
+                    let new = if md.is_dir() { mode | ((mode & 0o444) >> 2) } else { mode };
+                    if old != new {
+                        fs::set_permissions(&p, fs::Permissions::from_mode(new))?;
+                        undo.push(Step::Mode { path: p.clone(), mode: old });
+                    }
+                    Ok(())
+                });
+                if r.is_ok() {
+                    ok += 1;
+                }
+                if let Err(e) = r {
+                    failed.push((p, if e.raw_os_error() == Some(libc::EPERM) { "only its owner can change that".into() } else { ops::say(&e) }));
+                }
+            }
+            let n = undo.len();
+            outcome(if n == 0 { "Permissions unchanged".into() } else { format!("Permissions changed for {}", items(n)) },
+                    ok, &failed, json!({"undo": undo}))
+        }
+        Job::RenameMany(list) => {
+            let (mut temps, mut failed, mut undo, mut renamed) = (Vec::new(), Failures::new(), Vec::new(), Vec::new());
+            for (p, name) in list {
+                if parent(&p).join(&name) == p {
+                    continue;
+                }
+                match place(&parent(&p), std::ffi::OsStr::new(".nexa-rename"), false, false, |t| ops::rename_noreplace(&p, t)) {
+                    Ok(t) => temps.push((p, t, name)),
+                    Err(e) => failed.push((p, ops::say(&e))),
+                }
+            }
+            for (orig, tmp, name) in temps {
+                let target = parent(&orig).join(&name);
+                match ops::rename_noreplace(&tmp, &target) {
+                    Ok(()) => {
+                        undo.push(Step::Moved { from: orig, to: target.clone() });
+                        renamed.push(target);
+                    }
+                    Err(e) => {
+                        let _ = ops::rename_noreplace(&tmp, &orig);
+                        failed.push((orig, if e.kind() == std::io::ErrorKind::AlreadyExists { format!("\"{name}\" is taken") } else { ops::say(&e) }));
+                    }
+                }
+            }
+            let n = renamed.len();
+            if n == 0 && failed.is_empty() {
+                return Ok(json!({"done": "Nothing to change", "renamed": [], "undo": [], "failed": []}));
+            }
+            outcome(format!("Renamed {}", items(n)), n, &failed, json!({"renamed": renamed, "undo": undo}))
+        }
         Job::Search { dir, query, hidden, limit } => Ok(search::search(&dir, &query, hidden, limit, &mut std::io::stdout().lock())),
         Job::TrailForget => Ok(json!({"done": "FileTrail forgot every change", "forgot": nexa_sys::filetrail::forget(home)})),
     }
@@ -472,7 +565,7 @@ fn handle(input: &[u8]) -> Result<Value, String> {
     let home = home.canonicalize().unwrap_or(home);
     let (job, access) = plan(&req, &home)?;
     let op = req.get("op").and_then(Value::as_str).unwrap_or("").to_string();
-    let changes = !matches!(op.as_str(), "size" | "trash_list" | "trail" | "trail_forget");
+    let changes = !matches!(op.as_str(), "size" | "trash_list" | "trail" | "trail_forget" | "search");
     // FileTrail's journal: opened before confining, so the sandbox stays as tight.
     let mut journal = if changes { nexa_sys::filetrail::open(&home) } else { None };
     confine(&access)?;
@@ -503,4 +596,65 @@ fn main() {
     let _ = writeln!(out, "{reply}");
     let _ = out.flush();
     std::process::exit(if reply["ok"] == true { 0 } else { 1 });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("fileops-main-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn mode(p: &Path) -> u32 {
+        fs::metadata(p).unwrap().mode() & 0o7777
+    }
+
+    fn undo(result: &Value, home: &Path) {
+        let steps: Vec<Step> = serde_json::from_value(result["undo"].clone()).unwrap();
+        run(Job::Undo(steps), home).unwrap();
+    }
+
+    #[test]
+    fn chmod_and_undo() {
+        let d = tmp("chmod");
+        let (f, dir) = (d.join("script.sh"), d.join("shared"));
+        fs::write(&f, "echo hi").unwrap();
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+        let r = run(Job::Chmod { paths: vec![f.clone(), dir.clone()], mode: 0o744 }, &d).unwrap();
+        assert_eq!(mode(&f), 0o744);
+        // A folder others may read can also be opened by them.
+        assert_eq!(mode(&dir), 0o755, "{r}");
+        undo(&r, &d);
+        assert_eq!((mode(&f), mode(&dir)), (0o644, 0o700));
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn rename_many_swaps_skips_taken_names_and_undoes() {
+        let d = tmp("rename");
+        for (n, c) in [("a.txt", "A"), ("b.txt", "B"), ("c.txt", "C"), ("taken.txt", "T")] {
+            fs::write(d.join(n), c).unwrap();
+        }
+        let r = run(Job::RenameMany(vec![
+            (d.join("a.txt"), "b.txt".into()),
+            (d.join("b.txt"), "a.txt".into()),
+            (d.join("c.txt"), "taken.txt".into()),
+        ]), &d).unwrap();
+        assert_eq!(fs::read_to_string(d.join("a.txt")).unwrap(), "B", "swapped: {r}");
+        assert_eq!(fs::read_to_string(d.join("b.txt")).unwrap(), "A");
+        assert_eq!(fs::read_to_string(d.join("c.txt")).unwrap(), "C", "a taken name leaves it as it was");
+        assert_eq!(fs::read_to_string(d.join("taken.txt")).unwrap(), "T");
+        assert_eq!(r["failed"].as_array().unwrap().len(), 1);
+        assert!(fs::read_dir(&d).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().starts_with(".nexa-rename")));
+        let r = run(Job::RenameMany(vec![(d.join("c.txt"), "c-renamed.txt".into())]), &d).unwrap();
+        undo(&r, &d);
+        assert!(d.join("c.txt").exists() && !d.join("c-renamed.txt").exists());
+        fs::remove_dir_all(&d).unwrap();
+    }
 }

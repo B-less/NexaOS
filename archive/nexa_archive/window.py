@@ -136,7 +136,7 @@ class ArchiveWindow(Gtk.Window):
         self.set_title(os.path.basename(self.path))
         self.store.clear()
         try:
-            entries = archiveops.list_contents(self.path)
+            entries, count = archiveops.list_contents(self.path)
         except archiveops.ArchiveError as e:
             self._error(str(e))
             return
@@ -144,7 +144,8 @@ class ArchiveWindow(Gtk.Window):
             icon = "folder" if e["is_dir"] else "text-x-generic"
             size = "" if e["is_dir"] else _human_size(e["size"])
             self.store.append([icon, e["name"], size])
-        self.status.set_text(f"{len(entries)} entries")
+        more = f" (the first {len(entries)} shown)" if count > len(entries) else ""
+        self.status.set_text(f"{count} entries{more}")
         self.extract_btn.set_sensitive(True)
         self.pages.set_visible_child_name("list")
 
@@ -156,11 +157,14 @@ class ArchiveWindow(Gtk.Window):
         if not dest:
             return
         try:
-            archiveops.extract_all(self.path, dest)
+            result = archiveops.extract_all(self.path, dest)
         except archiveops.ArchiveError as e:
             self._error(str(e))
             return
-        self.status.set_text(f"Extracted to {dest}")
+        made = result.get("path", dest)
+        left = result.get("skipped_count", 0)
+        note = f" ({left} unsafe or special item{'s' if left != 1 else ''} left out)" if left else ""
+        self.status.set_text(f"Extracted to {made}{note}")
 
     def _choose_dest(self, default_dir):
         dialog = Gtk.FileChooserDialog(
@@ -175,7 +179,7 @@ class ArchiveWindow(Gtk.Window):
         return dest
 
     def _on_open(self, _btn):
-        path = _choose_file(self, "Archives", ["*.zip", "*.tar", "*.tar.gz", "*.tgz", "*.tar.xz", "*.txz", "*.tar.bz2", "*.tbz2"])
+        path = _choose_file(self, "Archives", archiveops.PATTERNS)
         if path:
             self.path = os.path.abspath(path)
             self._load()
