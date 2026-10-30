@@ -66,7 +66,10 @@ collect denials on real use (HP test), then enforce.
 
 ## Step 4: verified boot
 
-Today Secure Boot must be off. Options:
+**Since 2026-10-30 the live USB boots with Secure Boot on** (docs/SECURE_BOOT.md):
+Debian's Microsoft-signed shim, then GRUB and the kernel signed with the
+NexaOS key, which each PC learns once in MokManager. Installed systems still
+need it off until the installer writes the same chain. The options weighed:
 
 1. **Microsoft-signed shim** (what Ubuntu/Fedora do): needs a shim signed by
    Microsoft for NexaOS's own key. That is a formal review process for an

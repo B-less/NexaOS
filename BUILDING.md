@@ -38,6 +38,13 @@ make preload-map  # after every refresh/iso: boot the ISO once, record what the 
 make test     # host-side unit tests (no VM); about 15 suites
 ```
 
+**Secure Boot** (docs/SECURE_BOOT.md): once per build machine, make the NexaOS
+signing key with `sh scripts/secureboot-key.sh` (kept in
+`~/.config/nexaos-keys/secureboot/`, never in the repo; back it up offline).
+With it, every ISO build signs GRUB and the kernel and puts Debian's
+Microsoft-signed shim in front, so the USB boots with Secure Boot on. Without
+it the ISO still builds, for Secure Boot off.
+
 The boot readahead map (`dist/nexa-preload.map`) only fits the `nexa.img` it
 was recorded on, and every `refresh` makes a new `nexa.img`. So after a
 `refresh` with an old map present, the ISO step stops with "was recorded for

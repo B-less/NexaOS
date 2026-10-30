@@ -60,7 +60,7 @@ fi
 # Retried: a DNS hiccup in the container makes apk report the packages as
 # missing ("no such package"), which used to fail the whole build.
 # Already in the nexa-build image: only missing tools are downloaded.
-missing=$(for p in xorriso syslinux grub grub-efi mtools dosfstools; do apk info -e "$p" >/dev/null || echo "$p"; done)
+missing=$(for p in xorriso syslinux grub grub-efi mtools dosfstools sbsigntool; do apk info -e "$p" >/dev/null || echo "$p"; done)
 for try in 1 2 3 4 5; do
     [ -z "$missing" ] && break
     apk add --no-cache $missing >/dev/null 2>&1 && break
@@ -190,37 +190,84 @@ menuentry "Reboot" {
     reboot
 }
 CFG_EOF
+# GRUB's built-in first script runs before its full language is loaded:
+# plain commands only (no if/else). --hint looks on the device GRUB was
+# started from first, so another NexaOS stick or disk isn't picked by mistake.
 cat > "$STAGE/embedded.cfg" << 'CFG_EOF'
 regexp --set=1:bootdev '^\(([^)]*)\)' "$cmdpath"
-if [ -n "$bootdev" -a -f "($bootdev)/boot/nexa-live.id" ]; then
-    set root=$bootdev
-else
-    search --no-floppy --file /boot/nexa-live.id --set=root
-fi
+search --no-floppy --file /boot/nexa-live.id --set=root --hint="$bootdev"
 configfile ($root)/boot/grub/grub.cfg
 CFG_EOF
-# prefix is deliberately left at GRUB's built-in memdisk: that's where the
-# packed modules are, and commands like linux/initrd auto-load from it.
-# Standalone: the modules are packed into the one binary, so it needs
-# nothing else from the medium except grub.cfg. Only the modules this boot
-# uses: with all of them packed in, GRUB probes every filesystem type it
-# knows on the CD, and under UEFI on an optical drive that hangs (seen in
-# QEMU/OVMF: `ls (cd0)/` never returned).
-grub-mkstandalone -O x86_64-efi -o "$STAGE/EFI/BOOT/BOOTX64.EFI" \
-    --install-modules="normal linux echo test regexp search search_fs_file \
-        configfile iso9660 fat exfat ntfs part_gpt part_msdos all_video \
-        efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup sleep smbios keystatus" \
-    --modules="part_gpt part_msdos iso9660 fat" \
-    --locales="" --fonts="" --themes="" \
-    "boot/grub/grub.cfg=$STAGE/embedded.cfg"
-rm "$STAGE/embedded.cfg"
+# One GRUB image with every module it needs built in (`grub-mkimage`, not
+# a standalone image with modules in a memdisk): with Secure Boot on, GRUB
+# refuses to load module files, so nothing may need loading. Only the
+# modules this boot uses: with all of them in, GRUB probes every
+# filesystem type it knows on the CD, and under UEFI on an optical drive
+# that hangs (seen in QEMU/OVMF: `ls (cd0)/` never returned). The SBAT
+# section says which GRUB this is; shim refuses a GRUB without one, or
+# with a generation older than the revocations (grub,5 since 2025).
+cat > "$STAGE/sbat.csv" << 'SBAT_EOF'
+sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
+grub,5,Free Software Foundation,grub,2.14,https://www.gnu.org/software/grub/
+grub.nexaos,1,NexaOS,grub,2.14,https://github.com/B-less/NexaOS
+SBAT_EOF
+grub-mkimage -O x86_64-efi -o "$STAGE/grub.efi" -p /boot/grub -c "$STAGE/embedded.cfg" --sbat "$STAGE/sbat.csv" \
+    normal linux echo test regexp search search_fs_file configfile iso9660 fat exfat ntfs part_gpt part_msdos \
+    all_video efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup sleep smbios keystatus
+rm "$STAGE/embedded.cfg" "$STAGE/sbat.csv"
+
+# Secure Boot (docs/SECURE_BOOT.md): with the NexaOS key on the build
+# machine (scripts/secureboot-key.sh, mounted at $NEXA_SB_KEYS) and the
+# Microsoft-signed shim fetched (scripts/fetch-shim.sh -> build/shim), the
+# firmware starts shim, shim starts GRUB (signed with the NexaOS key),
+# GRUB starts the kernel (signed too, checked through shim). A PC learns
+# the NexaOS key once, in MokManager, from ENROLL-THIS-KEY-NexaOS.cer on
+# the stick. Without them: the same GRUB, unsigned (Secure Boot off).
+SB_KEYS=${NEXA_SB_KEYS:-}
+EFI_FILES="BOOTX64.EFI"
+if [ -n "$SB_KEYS" ] && [ -f "$SB_KEYS/nexa-sb.key" ] && [ -f "$SB_KEYS/nexa-sb.crt" ] && [ -f "$SB_KEYS/nexa-sb.cer" ] \
+        && [ -f build/shim/shimx64.efi ] && [ -f build/shim/mmx64.efi ]; then
+    sbsign --key "$SB_KEYS/nexa-sb.key" --cert "$SB_KEYS/nexa-sb.crt" --output "$STAGE/EFI/BOOT/grubx64.efi" "$STAGE/grub.efi" >/dev/null
+    sbsign --key "$SB_KEYS/nexa-sb.key" --cert "$SB_KEYS/nexa-sb.crt" --output "$STAGE/boot/vmlinuz.signed" "$STAGE/boot/vmlinuz" >/dev/null
+    mv "$STAGE/boot/vmlinuz.signed" "$STAGE/boot/vmlinuz"
+    cp build/shim/shimx64.efi "$STAGE/EFI/BOOT/BOOTX64.EFI"
+    cp build/shim/mmx64.efi "$STAGE/EFI/BOOT/mmx64.efi"
+    cp "$SB_KEYS/nexa-sb.cer" "$STAGE/EFI/BOOT/ENROLL-THIS-KEY-NexaOS.cer"
+    cp "$SB_KEYS/nexa-sb.cer" "$STAGE/ENROLL-THIS-KEY-NexaOS.cer"
+    cat > "$STAGE/SECURE-BOOT-README.txt" << 'SBREADME_EOF'
+NexaOS starts with Secure Boot ON.
+
+The first time on each PC, a blue screen ("Shim UEFI key management")
+appears instead of NexaOS. Do this once:
+
+  1. Press a key, choose "Enroll key from disk".
+  2. Choose this USB stick, then the file ENROLL-THIS-KEY-NexaOS.cer
+     (inside EFI/BOOT if it isn't at the top).
+  3. Choose "Continue", then "Yes", then "Reboot".
+
+From then on this PC starts NexaOS with Secure Boot left on.
+If the PC refuses the stick before that screen, its firmware may not
+trust Microsoft's "third-party UEFI CA": turn that on in its Secure Boot
+settings (it doesn't turn Secure Boot off).
+SBREADME_EOF
+    EFI_FILES="BOOTX64.EFI grubx64.efi mmx64.efi ENROLL-THIS-KEY-NexaOS.cer"
+    echo "[*] Secure Boot: shim (Microsoft-signed) + GRUB and kernel signed with the NexaOS key"
+else
+    mv "$STAGE/grub.efi" "$STAGE/EFI/BOOT/BOOTX64.EFI"
+    echo "[!] Secure Boot: no NexaOS key or shim here (scripts/secureboot-key.sh, scripts/fetch-shim.sh); this ISO needs Secure Boot off."
+fi
+rm -f "$STAGE/grub.efi"
 
 # El Torito UEFI boot image: a small FAT filesystem holding the same binary.
 EFI_IMG="$STAGE/boot/efiboot.img"
-EFI_KB=$(( $(du -k "$STAGE/EFI/BOOT/BOOTX64.EFI" | cut -f1) + 1024 ))
+EFI_KB=$(( $(du -kc "$STAGE/EFI/BOOT"/* | tail -1 | cut -f1) + 1024 ))
 mkfs.vfat -C "$EFI_IMG" "$EFI_KB" >/dev/null
 mmd -i "$EFI_IMG" ::/EFI ::/EFI/BOOT
-mcopy -i "$EFI_IMG" "$STAGE/EFI/BOOT/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
+for f in $EFI_FILES; do
+    mcopy -i "$EFI_IMG" "$STAGE/EFI/BOOT/$f" "::/EFI/BOOT/$f"
+done
+# MokManager browses this small partition on a stick written in DD mode.
+[ -f "$STAGE/ENROLL-THIS-KEY-NexaOS.cer" ] && mcopy -i "$EFI_IMG" "$STAGE/ENROLL-THIS-KEY-NexaOS.cer" ::/ENROLL-THIS-KEY-NexaOS.cer
 
 ISOHDPFX=""
 for d in /usr/share/syslinux /usr/lib/syslinux/bios; do

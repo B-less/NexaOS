@@ -21,6 +21,11 @@ ALPINE_DOCKER_TAG := $(shell echo $(ALPINE_VERSION) | cut -d. -f1,2)
 # Build steps run in nexa-build (Alpine + the build tools, made once by
 # scripts/build-image.sh), so a rebuild doesn't download the tools again.
 DOCKER_RUN := sh $(BASE_DIR)/scripts/build-image.sh && docker run --rm -v $(BASE_DIR):/workspace -w /workspace nexa-build:$(ALPINE_DOCKER_TAG)
+# The ISO step also gets the Secure Boot key (read-only; scripts/secureboot-key.sh,
+# never in the repo) and Debian's Microsoft-signed shim (scripts/fetch-shim.sh).
+# Without either the ISO still builds, for Secure Boot off (docs/SECURE_BOOT.md).
+SB_KEYS ?= $(HOME)/.config/nexaos-keys/secureboot
+DOCKER_RUN_ISO := sh $(BASE_DIR)/scripts/build-image.sh && { sh $(BASE_DIR)/scripts/fetch-shim.sh || echo "[!] couldn't fetch the shim: this ISO needs Secure Boot off"; } && docker run --rm -v $(BASE_DIR):/workspace $(if $(wildcard $(SB_KEYS)/nexa-sb.key),-v $(SB_KEYS):/sbkeys:ro -e NEXA_SB_KEYS=/sbkeys,) -w /workspace nexa-build:$(ALPINE_DOCKER_TAG)
 # Paths as seen *inside* the container (workspace root == BASE_DIR), since the
 # absolute host paths in ROOTFS_DIR/DIST_DIR don't exist there.
 ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
@@ -207,7 +212,7 @@ refresh: core-binaries gui-apps native nexa-apps
 	@rm -f $(DIST_DIR)/nexa.img
 	@$(DOCKER_RUN) sh scripts/build-disk-image.sh $(ROOTFS_RELDIR) $(DIST_RELDIR)/nexa.img $(DISK_SIZE)
 ifeq ($(BUILD_ISO),yes)
-	@$(DOCKER_RUN) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
+	@$(DOCKER_RUN_ISO) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
 endif
 	@echo "$(COLOR_GREEN)✓ Refreshed: initramfs, disk image$(if $(filter yes,$(BUILD_ISO)), and ISO)$(COLOR_RESET)"
 
@@ -284,11 +289,11 @@ test-files-app: native
 # recorded on this nexa.img.
 preload-map:
 	@rm -f $(DIST_DIR)/nexa-preload.map
-	@[ $(ISO_OUTPUT) -nt $(DIST_DIR)/nexa.img ] || { $(DOCKER_RUN) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT)); }
+	@[ $(ISO_OUTPUT) -nt $(DIST_DIR)/nexa.img ] || { $(DOCKER_RUN_ISO) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT)); }
 	@python3 scripts/test-live-boot.py --no-checks --shot $(DIST_DIR)/preload-boot.png --fetch /run/nexa-preload/boot.map $(DIST_DIR)/nexa-preload.map
 	@# Only a real map goes on the ISO.
 	@$(BUILD_DIR)/native/nexa-preload show $(DIST_DIR)/nexa-preload.map || { rm -f $(DIST_DIR)/nexa-preload.map; echo "$(COLOR_RED)✗ No usable boot map was recorded$(COLOR_RESET)"; exit 1; }
-	@$(DOCKER_RUN) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
+	@$(DOCKER_RUN_ISO) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
 
 # The desktop "For you" card and Nexus' Suggested row (Nexa Patterns) in a
 # headless Sway, against the real nexa-patternd with a synthetic month of use.
@@ -432,7 +437,7 @@ gui: provision-rootfs
 iso: disk
 ifeq ($(BUILD_ISO),yes)
 	@echo "$(COLOR_BLUE)Creating bootable ISO image...$(COLOR_RESET)"
-	@$(DOCKER_RUN) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
+	@$(DOCKER_RUN_ISO) sh scripts/build-iso.sh $(DIST_RELDIR) $(patsubst $(BASE_DIR)/%,%,$(ISO_OUTPUT))
 else
 	@echo "ISO building disabled (BUILD_ISO=$(BUILD_ISO))"
 endif
