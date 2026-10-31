@@ -21,7 +21,9 @@ make iso      # rootfs + apps + initramfs + disk image + hybrid ISO
 
 The result is `dist/NexaOS-<version>.iso`, a hybrid image: BIOS (isolinux)
 and UEFI (GRUB) from a USB stick or DVD. Write it with Rufus (choose **DD
-image** mode if Rufus asks), `dd`, or balenaEtcher. Secure Boot must be off.
+image** mode if Rufus asks), `dd`, or balenaEtcher. Built with the Secure
+Boot key (below), it starts with Secure Boot on. Never clear a PC's Secure
+Boot keys for it: Windows then won't start (docs/SECURE_BOOT.md).
 
 The kernel source lives in `kernel/linux-6.18.33`; its config is
 `kernel.config.6.18.33` (copy it to `.config` there). The kernel is

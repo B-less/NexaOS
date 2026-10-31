@@ -431,6 +431,8 @@ class SettingsWindow(Gtk.Window):
             v = Gtk.Label(label=value)
             v.set_name("value")
             v.set_xalign(0)
+            v.set_line_wrap(True)  # a Secure Boot warning is a paragraph
+            v.set_max_width_chars(64)
             grid.attach(l, 0, i, 1, 1)
             grid.attach(v, 1, i, 1, 1)
         page.pack_start(grid, False, False, 0)
@@ -941,6 +943,8 @@ class SettingsWindow(Gtk.Window):
             v = Gtk.Label(label=value)
             v.set_name("value")
             v.set_xalign(0)
+            v.set_line_wrap(True)  # a Secure Boot warning is a paragraph
+            v.set_max_width_chars(64)
             grid.attach(l, 0, i, 1, 1)
             grid.attach(v, 1, i, 1, 1)
         page.pack_start(grid, False, False, 0)
@@ -985,7 +989,10 @@ def _security_info():
         r = json.loads(out)["result"]
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
         return []
-    return [("Security chip", r["tpm"]["summary"]), ("Secure Boot", r["secure_boot"])]
+    rows = [("Security chip", r["tpm"]["summary"]), ("Secure Boot", r["secure_boot"])]
+    for p in (r.get("keys") or {}).get("problems") or []:
+        rows.append(("Warning", f"{p['title']}. {p['detail']}"))
+    return rows
 
 
 def main():

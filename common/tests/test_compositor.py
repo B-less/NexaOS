@@ -57,7 +57,7 @@ check("screen off -> dpms off", calls[-1] == ["hyprctl", "dispatch", "dpms", "of
 calls.clear(); c.set_keyboard_layout("fr")
 check("keyboard layout via hyprctl keyword", calls[-1] == ["hyprctl", "keyword", "input:kb_layout", "fr"])
 calls.clear(); c.reload()
-check("reload", calls[-1] == ["hyprctl", "reload"])
+check("reload, then the saved screen settings back", calls[-2:] == [["hyprctl", "reload"], ["nexa-display", "apply-saved"]])
 
 # ---- Sway
 session("sway")

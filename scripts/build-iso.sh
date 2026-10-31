@@ -246,9 +246,27 @@ appears instead of NexaOS. Do this once:
   3. Choose "Continue", then "Yes", then "Reboot".
 
 From then on this PC starts NexaOS with Secure Boot left on.
-If the PC refuses the stick before that screen, its firmware may not
-trust Microsoft's "third-party UEFI CA": turn that on in its Secure Boot
-settings (it doesn't turn Secure Boot off).
+
+If the PC refuses the stick before that screen ("Secure Boot violation",
+or the boot menu just returns), its firmware doesn't trust Microsoft's
+third-party UEFI CA yet. Turn that on; it doesn't turn Secure Boot off:
+  ThinkPad: F1 > Security > Secure Boot > "Allow Microsoft 3rd Party UEFI CA"
+  Other PCs: "Third-party UEFI CA", "Microsoft UEFI CA" or similar.
+Or just start the stick with Secure Boot off.
+
+  NEVER choose "Clear All Secure Boot Keys", "Delete All Keys" or
+  "Reset to Setup Mode". That removes Microsoft's Windows key too, and
+  Windows then won't start (the boot menu just blinks and returns).
+
+If that already happened: in the same menu choose "Restore Factory Keys"
+("Reset to Default Keys", "Install Default Keys"), save and restart.
+Have your BitLocker recovery key ready (aka.ms/myrecoverykey): Windows
+may ask for it once. If Windows still won't start with Secure Boot on,
+turn Secure Boot off, start Windows, install all updates, then turn
+Secure Boot on again.
+
+NexaOS checks this at every start and warns you on the desktop
+(details: nexa-doctor firmware-keys --text in a terminal).
 SBREADME_EOF
     EFI_FILES="BOOTX64.EFI grubx64.efi mmx64.efi ENROLL-THIS-KEY-NexaOS.cer"
     echo "[*] Secure Boot: shim (Microsoft-signed) + GRUB and kernel signed with the NexaOS key"

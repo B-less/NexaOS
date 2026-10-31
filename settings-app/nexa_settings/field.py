@@ -243,9 +243,13 @@ def gather():
 
     def security():
         r = subprocess.run(["nexa-doctor", "security"], capture_output=True, text=True, timeout=4)
-        data = json.loads(r.stdout or "{}")
+        data = (json.loads(r.stdout or "{}") or {}).get("result") or {}
         sb = str(data.get("secure_boot", "unknown"))
         tpm = (data.get("tpm") or {}).get("summary", "")
+        problems = (data.get("keys") or {}).get("problems") or []
+        if problems:
+            # Cleared keys or Windows' key gone: Windows won't start.
+            return (problems[0]["title"], "warn", {"secure_boot": sb, "tpm": tpm, "problem": problems[0]})
         state = "ok" if "on" in sb.lower() and "off" not in sb.lower() else "warn"
         return (f"Secure Boot: {sb.split('(')[0].strip()}", state, {"secure_boot": sb, "tpm": tpm})
 

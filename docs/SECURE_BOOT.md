@@ -29,6 +29,36 @@ screen) instead of NexaOS:
 From then on that PC starts NexaOS with Secure Boot on. The same steps are
 in `SECURE-BOOT-README.txt` on the stick.
 
+If the firmware refuses the stick before MokManager, it doesn't trust
+Microsoft's third-party UEFI CA: turn that on (ThinkPad: **Allow Microsoft
+3rd Party UEFI CA**), or start with Secure Boot off.
+
+## Never clear the PC's keys (2026-10-31)
+
+On a ThinkPad, "Clear All Secure Boot Keys" was used when the stick didn't
+start. That empties PK, KEK and db: the firmware drops to setup mode and no
+longer has Microsoft's Windows certificate, and Windows Boot Manager then
+won't start (the F12 menu blinks and returns). NexaOS never needs keys
+cleared, and never writes firmware keys itself.
+
+The fix is in the firmware: Security > Secure Boot > **Restore Factory
+Keys** (other names: Reset to Default Keys, Install Default Keys). Have the
+BitLocker recovery key ready (aka.ms/myrecoverykey), since the measured
+boot changes. A PC's factory keys can predate Microsoft's **Windows UEFI CA
+2023**; if Windows' boot manager was already updated to the 2023 signature
+(KB5025885), start Windows once with Secure Boot off, install the updates
+(they add the 2023 certificate to db), then turn Secure Boot back on.
+
+**The check at boot:** `nexa-doctor` (Rust, `tools/nexa-doctor/src/secureboot.rs`)
+reads SecureBoot, SetupMode, PK, KEK, db, dbx and the Boot#### entries from
+efivarfs, read-only. It names each certificate and looks for Microsoft's
+Windows CAs (Windows Production PCA 2011, Windows UEFI CA 2023), the
+third-party CAs (UEFI CA 2011/2023) and a Windows Boot Manager entry. When
+the keys were cleared, or Windows is on the PC but db doesn't trust its
+certificate, it shows a notification that stays until closed (once per
+boot, at session start), a Doctor finding, and a warning in Settings >
+System. `nexa-doctor firmware-keys --text` prints the whole picture.
+
 ## The key
 
 - Made once on the build machine: `sh scripts/secureboot-key.sh` (RSA-2048,
@@ -60,6 +90,10 @@ USB stick:
 
 Still to check on real hardware: the HP with Secure Boot on and the key
 enrolled through MokManager.
+
+The key check: unit tests with synthetic certificates and the cleared,
+factory and own-keys cases; and the real Microsoft certificates from OVMF's
+`OVMF_VARS_4M.ms.fd` (all eight names read right, 2011 and 2023).
 
 ## Not covered yet
 

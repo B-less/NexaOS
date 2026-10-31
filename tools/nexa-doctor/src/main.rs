@@ -6,6 +6,8 @@
 //!   nexa-doctor fix ID         fix one finding (volume, brightness, wifi, restart:PART)
 //!   nexa-doctor log            what it did lately
 //!   nexa-doctor security       the security chip (TPM 1.2 / 2.0) and Secure Boot (JSON)
+//!   nexa-doctor firmware-keys [--text]  the PC's Secure Boot keys, read-only: cleared
+//!                              keys, or a missing Windows key, and how to fix them
 //!   nexa-doctor hardware [--text]  the computer's parts and which have no driver
 //!                              (the text is also saved to ~/nexa-hardware-report.txt)
 //!
@@ -20,12 +22,16 @@
 //! a backlight at 0 (a black screen) is set to 30%; a Wi-Fi card that has
 //! no network interface is repaired once (system broker: radio on, driver
 //! re-attached); a disk almost full and memory running out are reported.
+//! Once per boot it checks the PC's Secure Boot keys (secureboot.rs) and
+//! warns, with the BIOS steps, if they were cleared or Windows' key is
+//! gone: then Windows won't start. It never writes firmware keys.
 //!
 //! It runs as you with no extra rights and is deliberately not confined: the
 //! parts it restarts must not inherit a sandbox. Anything needing root goes
 //! through nexa-brokerd, which checks and logs it.
 
 mod hardware;
+mod secureboot;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -281,18 +287,17 @@ pub fn security(sys: &Path) -> Value {
         };
         json!({"present": false, "listed_by_firmware": listed, "summary": summary})
     };
-    let efi = sys.join("firmware/efi");
-    let secure_boot = if !efi.exists() {
+    let keys = secureboot::read(sys);
+    let secure_boot = if !keys.uefi {
         "Not available (started in legacy BIOS mode)"
+    } else if keys.setup_mode == Some(true) {
+        "Off (the PC's keys were cleared)"
+    } else if keys.secure_boot == Some(true) {
+        "On"
     } else {
-        // efivars: 4 attribute bytes, then the value.
-        match fs::read(efi.join("efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c")).ok().and_then(|b| b.get(4).copied()) {
-            Some(1) => "On",
-            Some(_) => "Off",
-            None => "Off",
-        }
+        "Off"
     };
-    json!({"tpm": tpm, "secure_boot": secure_boot})
+    json!({"tpm": tpm, "secure_boot": secure_boot, "keys": keys})
 }
 
 /// Free space on the home folder's filesystem, as a fraction.
@@ -347,6 +352,9 @@ pub fn check() -> Vec<Finding> {
             out.push(Finding { id: "memory".into(), title: "The computer is short of memory".into(),
                                detail: format!("Programs waited for memory {p:.0}% of the last minute. Close apps you aren't using."), fixable: false });
         }
+    }
+    for p in secureboot::read(&sys).problems {
+        out.push(Finding { id: p.id, title: p.title, detail: p.detail, fixable: false });
     }
     let cmdlines = my_processes(&proc_root());
     let missing = missing_parts(&cmdlines);
@@ -403,6 +411,7 @@ fn watch() -> ! {
     let mut told: HashMap<&'static str, Instant> = HashMap::new();
     let mut wifi_repaired = false;
     log("watching");
+    firmware_keys_once();
     loop {
         let cmdlines = my_processes(&proc_root());
         for p in parts().into_iter().filter(|p| p.session.is_empty() || p.session == session()) {
@@ -481,6 +490,25 @@ fn watch() -> ! {
     }
 }
 
+/// Once per boot (the boot id is kept in the state folder): warn about
+/// Secure Boot keys that stop Windows starting. A critical notification
+/// stays until it is closed.
+fn firmware_keys_once() {
+    let problems = secureboot::read(&sys_root()).problems;
+    let Some(p) = problems.first() else { return };
+    let boot_id = fs::read_to_string(proc_root().join("sys/kernel/random/boot_id")).unwrap_or_default();
+    let mark = state_dir().join("firmware-keys-told");
+    if !boot_id.is_empty() && fs::read_to_string(&mark).map_or(false, |m| m == boot_id) {
+        return;
+    }
+    let _ = fs::create_dir_all(state_dir());
+    let _ = fs::write(&mark, &boot_id);
+    log(&p.title);
+    let _ = Command::new("notify-send").args(["-a", "Nexa Doctor", "-u", "critical", "-i", "dialog-warning", &p.title,
+            &format!("{}\n\nDetails: nexa-doctor firmware-keys --text", p.detail)])
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let reply = match args.first().map(String::as_str) {
@@ -493,6 +521,14 @@ fn main() {
         Some("log") => Ok(json!({"log": fs::read_to_string(state_dir().join("log.jsonl")).unwrap_or_default().lines()
             .rev().take(50).filter_map(|l| serde_json::from_str::<Value>(l).ok()).collect::<Vec<_>>()})),
         Some("security") => Ok(security(&sys_root())),
+        Some("firmware-keys") => {
+            let k = secureboot::read(&sys_root());
+            if args.iter().any(|a| a == "--text") {
+                print!("{}", secureboot::text(&k));
+                return;
+            }
+            serde_json::to_value(k).map_err(|e| e.to_string())
+        }
         Some("hardware") => {
             let kmsg = std::env::var_os("NEXA_DOCTOR_KMSG").map(PathBuf::from).unwrap_or_else(|| "/dev/kmsg".into());
             let mut r = hardware::report(&sys_root(), &proc_root(), &kmsg);
@@ -515,7 +551,7 @@ fn main() {
             }
             Ok(r)
         }
-        _ => Err("usage: nexa-doctor watch | check | fix ID | log | security | hardware [--text]".into()),
+        _ => Err("usage: nexa-doctor watch | check | fix ID | log | security | firmware-keys [--text] | hardware [--text]".into()),
     };
     match reply {
         Ok(v) => println!("{}", json!({"ok": true, "result": v})),
@@ -601,7 +637,9 @@ mod tests {
         let v = security(&r);
         assert_eq!(v["tpm"]["summary"], "TPM 1.2 (separate chip, Infineon)", "{v}");
         assert_eq!(v["tpm"]["firmware"], "6.43");
-        assert_eq!(v["secure_boot"], "On");
+        assert_eq!(v["secure_boot"], "Off (the PC's keys were cleared)", "no PK and no SetupMode: cleared");
+        fs::write(r.join("firmware/efi/efivars/SetupMode-8be4df61-93ca-11d2-aa0d-00e098032b8c"), [6, 0, 0, 0, 0]).unwrap();
+        assert_eq!(security(&r)["secure_boot"], "On");
         // TPM 2.0 in the processor's firmware (Intel PTT): tpm_crb, no caps.
         fs::write(tpm.join("tpm_version_major"), "2\n").unwrap();
         fs::remove_file(tpm.join("device/caps")).unwrap();
