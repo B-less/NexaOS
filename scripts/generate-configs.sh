@@ -1186,6 +1186,12 @@ bindsym --locked XF86AudioLowerVolume exec nexa-media-key volume-down
 bindsym --locked XF86AudioMute exec nexa-media-key mute
 bindsym --locked XF86MonBrightnessUp exec nexa-media-key brightness-up
 bindsym --locked XF86MonBrightnessDown exec nexa-media-key brightness-down
+# Play/pause, next, previous: whatever is playing (Music, the browser) through MPRIS.
+bindsym --locked XF86AudioPlay exec playerctl play-pause
+bindsym --locked XF86AudioPause exec playerctl pause
+bindsym --locked XF86AudioNext exec playerctl next
+bindsym --locked XF86AudioPrev exec playerctl previous
+bindsym --locked XF86AudioStop exec playerctl stop
 
 # Lock screen (see /usr/local/bin/nexa-lock)
 bindsym $mod+Shift+l exec nexa-lock
@@ -1413,6 +1419,12 @@ bindel = , XF86AudioLowerVolume, exec, nexa-media-key volume-down
 bindl = , XF86AudioMute, exec, nexa-media-key mute
 bindel = , XF86MonBrightnessUp, exec, nexa-media-key brightness-up
 bindel = , XF86MonBrightnessDown, exec, nexa-media-key brightness-down
+# Play/pause, next, previous: whatever is playing (Music, the browser) through MPRIS.
+bindl = , XF86AudioPlay, exec, playerctl play-pause
+bindl = , XF86AudioPause, exec, playerctl pause
+bindl = , XF86AudioNext, exec, playerctl next
+bindl = , XF86AudioPrev, exec, playerctl previous
+bindl = , XF86AudioStop, exec, playerctl stop
 bindl = , switch:on:Lid Switch, exec, nexa-lid
 
 # Glass (clear or tinted) and the edge-lit borders, from nexa-theme: last, so

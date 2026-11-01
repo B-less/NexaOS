@@ -23,11 +23,11 @@ cat > "$rootfs/usr/share/applications/nexa-music.desktop" << 'DESKTOP_EOF'
 Type=Application
 Name=Music
 Comment=Play local audio files
-Exec=/usr/local/bin/nexa-music %f
+Exec=/usr/local/bin/nexa-music %F
 Icon=nexa-music
 Terminal=false
 Categories=AudioVideo;Player;
-MimeType=audio/mpeg;audio/x-wav;audio/ogg;audio/flac;
+MimeType=audio/mpeg;audio/x-wav;audio/ogg;audio/flac;audio/opus;audio/mp4;audio/x-m4a;audio/aac;audio/x-mpegurl;
 DESKTOP_EOF
 
 echo "nexa-music staged into $rootfs"

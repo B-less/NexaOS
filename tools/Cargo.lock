@@ -586,6 +586,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-musiclib"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "nexa-pack"
 version = "0.1.0"
 dependencies = [

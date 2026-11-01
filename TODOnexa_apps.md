@@ -166,13 +166,14 @@ Has: one page at a time, previous/next, zoom in/out.
 Has: a play list of opened files/folder, play/pause/next/previous, seek,
 volume.
 
-- [ ] Engine nexa-musiclib (Rust): scan ~/Music; read tags (MP3 ID3v1/v2.3/
+- [x] Engine nexa-musiclib (Rust, 2026-11-01): scan ~/Music; read tags (MP3 ID3v1/v2.3/
       v2.4, FLAC and Ogg Vorbis/Opus comments, M4A) and cover art; length;
       a library index kept in the cache and updated only for changed files;
       playlists (.m3u) read and written.
-- [ ] Library: Songs, Albums (with covers), Artists; search.
-- [ ] Queue: play next, add to queue, reorder, remove; shuffle and repeat
+- [x] Library: Songs, Albums (with covers), Artists; search.
+- [x] Queue: play next, add to queue, reorder, remove; shuffle and repeat
       (all/one).
-- [ ] Playlists: make, add to, rename, delete, play.
-- [ ] Media keys and the top bar's player controls (MPRIS).
-- [ ] Remembers the queue and position; gapless next song.
+- [x] Playlists: make, add to, rename, delete, play.
+- [x] Media keys (MPRIS; play/pause/next/previous keys bound to playerctl
+      in Sway and Hyprland). The top bar has no player controls yet.
+- [x] Remembers the queue and position; gapless next song.

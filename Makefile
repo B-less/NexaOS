@@ -32,7 +32,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later test-settings-devices test-bootfix test-editor-app test-viewer-app test-pdf-app
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later test-settings-devices test-bootfix test-editor-app test-viewer-app test-pdf-app test-music-app
 .SECONDARY:
 
 # ============================================================================
@@ -302,6 +302,11 @@ test-viewer-app: native
 test-pdf-app:
 	@sh scripts/build-c-tools.sh >/dev/null
 	@sh scripts/test-pdf-app.sh
+
+# The Music window driven in a headless Sway (and a session bus) against
+# nexa-musiclib and real songs: library, gapless, Up Next, playlists, MPRIS.
+test-music-app: native
+	@sh scripts/test-music-app.sh
 
 # Boot readahead: boot the fresh ISO once, record which parts of nexa.img the
 # boot reads (nexa-preload), and repack the ISO with that map so every later
