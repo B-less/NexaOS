@@ -149,17 +149,17 @@ Has: one image, previous/next in the folder, zoom in/out, fit, 100%.
 
 Has: one page at a time, previous/next, zoom in/out.
 
-- [ ] Engine nexa-pdfdoc (C, poppler-glib): document info, outline
+- [x] Engine nexa-pdfdoc (C, poppler-glib, 2026-11-01): document info, outline
       (contents), text search with page and position of every match,
       page thumbnails, page text; off the window's thread, so a big PDF
       never freezes it; refuses broken or locked files with a plain message.
-- [ ] Continuous scrolling through all pages; fit width / fit page / zoom.
-- [ ] Sidebar: page thumbnails and contents (outline), click to go.
-- [ ] Search (Ctrl+F): matches highlighted, next/previous, count.
-- [ ] Go to page; links in the document work; select and copy text.
-- [ ] Rotate; full screen and presentation mode (F5); dark reading mode.
-- [ ] Remembers the page and zoom of each document; recent documents.
-- [ ] Password-protected PDFs: asks for the password.
+- [x] Continuous scrolling through all pages; fit width / fit page / zoom.
+- [x] Sidebar: page thumbnails and contents (outline), click to go.
+- [x] Search (Ctrl+F): matches highlighted, next/previous, count.
+- [x] Go to page; links in the document work; select and copy text.
+- [x] Rotate; full screen and presentation mode (F5); dark reading mode.
+- [x] Remembers the page and zoom of each document; recent documents.
+- [x] Password-protected PDFs: asks for the password.
 
 ## Music (music-player, engine nexa-musiclib)
 
