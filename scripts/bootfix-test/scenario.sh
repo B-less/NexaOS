@@ -36,17 +36,38 @@ nexa-bootfix check
 echo "===== DRIVES"
 nexa-bootfix drives
 sleep 15
-echo "===== INTERACTIVE"
-printf 'all\nyes\n\n' | nexa-bootfix
+# Plays the person at the desktop while Files is open: checks Files runs as
+# them on a read-only Windows drive, copies one photo to the stick, takes a
+# screenshot, closes Files.
+picker() {
+    for i in $(seq 1 60); do pgrep -f nexa_files >/dev/null && break; sleep 1; done
+    sleep 6
+    ps -o user,args | grep '[n]exa_files' | grep -q '^user ' && echo FILES_AS_USER
+    M=$(awk '$2 ~ /Windows-C/ {print $2}' /proc/mounts | head -1)
+    echo "windows drive: $M"
+    su user -s /bin/sh -c "touch '$M/x' 2>/dev/null" || echo FILES_DRIVE_READONLY
+    U=$(awk '$1 ~ /^\/dev\/sd[b-z]1$/ {print $2}' /proc/mounts | head -1)
+    su user -s /bin/sh -c "cp '$M/Users/Bless/Pictures/photo.jpg' '$U/'" && echo PICKED_AS_USER
+    su user -s /bin/sh -c 'XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=$(ls /run/user/1000 | grep "^wayland-[0-9]*$" | head -1) grim /tmp/files.png' && cp /tmp/files.png /root/shot.png
+    pkill -f nexa_files
+}
+echo "===== INTERACTIVE (pick in Files)"
+picker &
+( echo 1; sleep 50; echo; echo yes; echo ) | nexa-bootfix
+wait
+echo "===== INTERACTIVE (whole folders)"
+printf '2\nall\n\n\n' | nexa-bootfix
 echo "===== CHECK AFTER"
 nexa-bootfix check | head -12
 [ "$(sha256sum /dev/$L | cut -c1-64)" = "$before" ] && echo LOST_DISK_UNCHANGED
 echo "===== ON THE USB DRIVE"
 for d in /dev/sd[b-z]1; do m=$(awk -v d=$d '$1==d{print $2}' /proc/mounts); [ -n "$m" ] || { mkdir -p /mnt/u; mount $d /mnt/u && m=/mnt/u; }
-    ls $m/NexaOS-bootfix-*/ $m/NexaOS-bootfix-*/backup/boot-partition/EFI/Microsoft/Boot 2>/dev/null && cp $m/NexaOS-bootfix-*/screenshot.png /root/shot.png
+    ls $m/NexaOS-bootfix-*/ $m/NexaOS-bootfix-*/backup/boot-partition/EFI/Microsoft/Boot 2>/dev/null
+    cat $m/NexaOS-bootfix-*/files-copied.txt 2>/dev/null
+    cmp $m/photo.jpg /root/photo.jpg && echo PICKED_COPIED
     F=$(ls -d $m/NexaOS-bootfix-*/Files 2>/dev/null | head -1)
     if [ -n "$F" ]; then
-        find "$F"; cat $m/NexaOS-bootfix-*/files-copied.txt
+        find "$F"
         grep -q NEXA-LOST-NOTES "$F/Bless/Documents/notes.txt" && echo NOTES_COPIED
         cmp "$F/Bless/Pictures/photo.jpg" /root/photo.jpg && echo PHOTO_COPIED
         [ ! -e "$F/Bless/AppData" ] && echo APPDATA_SKIPPED

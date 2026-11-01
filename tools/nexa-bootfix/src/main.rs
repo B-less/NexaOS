@@ -25,6 +25,7 @@
 //! never edits BCD, never formats anything; those steps are explained
 //! instead (bcdboot in the Windows installer, the BIOS key menu).
 
+mod desktop;
 mod disk;
 mod efi;
 mod lost;
@@ -54,6 +55,11 @@ fn efivars() -> PathBuf { sys_root().join("firmware/efi/efivars") }
 // ---------- mounting ----------
 
 fn mount(dev: &Path, at: &Path, fs_type: &str, readonly: bool) -> Result<(), String> {
+    mount_with(dev, at, fs_type, readonly, None)
+}
+
+/// The same, with filesystem options (e.g. who owns the files).
+fn mount_with(dev: &Path, at: &Path, fs_type: &str, readonly: bool, options: Option<&str>) -> Result<(), String> {
     fs::create_dir_all(at).map_err(|e| e.to_string())?;
     let c = |s: &str| CString::new(s).unwrap();
     let (src, tgt) = (c(&dev.to_string_lossy()), c(&at.to_string_lossy()));
@@ -64,10 +70,12 @@ fn mount(dev: &Path, at: &Path, fs_type: &str, readonly: bool) -> Result<(), Str
         "exfat" => &["exfat"],
         other => return Err(format!("can't open a {other} filesystem")),
     };
+    let data = options.map(c);
+    let data_ptr = data.as_ref().map_or(std::ptr::null(), |d| d.as_ptr() as *const libc::c_void);
     let mut last = String::new();
     for t in types {
         // SAFETY: plain mount(2) with NUL-terminated strings.
-        let r = unsafe { libc::mount(src.as_ptr(), tgt.as_ptr(), c(t).as_ptr(), flags, std::ptr::null()) };
+        let r = unsafe { libc::mount(src.as_ptr(), tgt.as_ptr(), c(t).as_ptr(), flags, data_ptr) };
         if r == 0 {
             return Ok(());
         }
@@ -78,8 +86,13 @@ fn mount(dev: &Path, at: &Path, fs_type: &str, readonly: bool) -> Result<(), Str
 
 fn umount(at: &Path) {
     let p = CString::new(at.to_string_lossy().as_bytes()).unwrap();
-    // SAFETY: umount2(2).
-    unsafe { libc::umount2(p.as_ptr(), 0) };
+    // SAFETY: umount2(2). Still in use (a window open on it): let go of it
+    // now, the kernel finishes when the last file is closed.
+    unsafe {
+        if libc::umount2(p.as_ptr(), 0) != 0 {
+            libc::umount2(p.as_ptr(), libc::MNT_DETACH);
+        }
+    }
     let _ = fs::remove_dir(at);
 }
 
@@ -345,9 +358,9 @@ fn scan_disk(d: &disk::Disk) -> lost::Scan {
 }
 
 /// Mount a found partition read-only (through a read-only loop device).
-fn open_lost(disk: &Path, sector: u64, f: &lost::Found, at: &Path) -> Result<(), String> {
+fn open_lost(disk: &Path, sector: u64, f: &lost::Found, at: &Path, options: Option<&str>) -> Result<(), String> {
     let (dev, handle) = lost::attach(&dev_root(), disk, f.start, f.size, sector)?;
-    let r = mount(&dev, at, &f.fs, true);
+    let r = mount_with(&dev, at, &f.fs, true, options);
     // The mount holds the loop device now; it goes away when unmounted.
     drop(handle);
     r
@@ -366,7 +379,7 @@ fn look_inside(disk: &Path, sector: u64, f: &mut lost::Found) {
         }
     }
     let at = work_dir().join(format!("lost-{}", f.start / lost::STEP));
-    if let Err(e) = open_lost(disk, sector, f, &at) {
+    if let Err(e) = open_lost(disk, sector, f, &at, None) {
         f.what = format!("can't be opened: {e}");
         return;
     }
@@ -700,7 +713,9 @@ fn open_drive(d: &Drive) -> Result<(PathBuf, Option<PathBuf>), String> {
         return Ok((PathBuf::from(m), None));
     }
     let at = work_dir().join("drive");
-    mount(&dev_root().join(&d.dev), &at, &d.fs, false).map_err(|e| format!("can't open {}: {e}", d.dev))?;
+    // Owned by the person at the desktop, so Files can copy onto it too.
+    let opts = desktop::current().map(|u| desktop::owner_options(&d.fs, &u.user));
+    mount_with(&dev_root().join(&d.dev), &at, &d.fs, false, opts.as_deref()).map_err(|e| format!("can't open {}: {e}", d.dev))?;
     Ok((at.clone(), Some(at)))
 }
 
@@ -822,34 +837,9 @@ fn fix(r: &Report, backup_to: &Path) -> Result<Vec<String>, String> {
 /// person who ran doas, else any desktop on this PC. Root may use their
 /// sockets.
 fn screenshot(to: &Path) -> Result<(), String> {
-    let mut tries: Vec<(PathBuf, String)> = Vec::new();
-    if let (Ok(r), Ok(d)) = (std::env::var("XDG_RUNTIME_DIR"), std::env::var("WAYLAND_DISPLAY")) {
-        tries.push((PathBuf::from(r), d));
-    }
-    let mut dirs = Vec::new();
-    if let Ok(user) = std::env::var("DOAS_USER").or_else(|_| std::env::var("SUDO_USER")) {
-        if let Ok(c) = CString::new(user) {
-            // SAFETY: getpwnam returns a static struct or NULL.
-            let pw = unsafe { libc::getpwnam(c.as_ptr()) };
-            if !pw.is_null() {
-                dirs.push(PathBuf::from(format!("/run/user/{}", unsafe { (*pw).pw_uid })));
-            }
-        }
-    }
-    let mut others: Vec<PathBuf> = fs::read_dir("/run/user").into_iter().flatten().flatten().map(|e| e.path()).collect();
-    others.sort();
-    dirs.extend(others);
-    for dir in dirs {
-        let mut socks: Vec<String> = fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.starts_with("wayland-") && !n.ends_with(".lock")).collect();
-        socks.sort();
-        tries.extend(socks.into_iter().map(|s| (dir.clone(), s)));
-    }
+    let tries = desktop::wayland_sockets();
     let mut last = "no desktop running (no Wayland display)".to_string();
     for (dir, display) in tries {
-        if !dir.join(&display).exists() {
-            continue;
-        }
         let out = Command::new("grim").arg(to).env("XDG_RUNTIME_DIR", &dir).env("WAYLAND_DISPLAY", &display)
             .stdin(Stdio::null()).stdout(Stdio::null()).output().map_err(|e| format!("grim: {e}"))?;
         if out.status.success() {
@@ -880,29 +870,60 @@ fn rescue_files(r: &Report, folder: &Path, fat: bool) -> String {
     println!("They're still on the internal disk. NexaOS only reads it: nothing there changes.\n");
     let sources: Vec<(&lost::Scan, usize, &lost::Found)> = r.lost.iter()
         .flat_map(|l| l.found.iter().enumerate().filter(|(_, f)| has_files(f)).map(move |(i, f)| (l, i, f))).collect();
+    // Read-only, but shown as the desktop user's, so Files can open it.
+    let desk = desktop::current();
     let mut opened = Vec::new();
-    let mut list: Vec<lost::Item> = Vec::new();
+    let mut mounted: Vec<(PathBuf, usize, &lost::Found)> = Vec::new();
     for (l, i, f) in &sources {
         let sector = r.disks.iter().find(|d| d.dev == l.disk).map_or(512, |d| d.sector);
-        let at = work_dir().join(format!("files-{}-{i}", l.disk));
-        match open_lost(&dev_root().join(&l.disk), sector, f, &at) {
+        let at = work_dir().join(if f.what == "Windows (C:)" { format!("Windows-C-{}-{i}", l.disk) } else { format!("drive-{}-{i}", l.disk) });
+        let opts = desk.as_ref().map(|d| desktop::owner_options(&f.fs, &d.user));
+        match open_lost(&dev_root().join(&l.disk), sector, f, &at, opts.as_deref()) {
             Ok(()) => {
-                println!("Reading {} ({})...", f.what, lost::human(f.size));
-                for mut it in lost::items(&at, f.what == "Windows (C:)") {
-                    if it.label == "the whole drive" {
-                        it.label = format!("{} ({}) - all of it", f.what, lost::human(f.size));
-                    }
-                    if sources.len() > 1 {
-                        it.dest = Path::new(&format!("partition-{}", i + 1)).join(&it.dest);
-                    }
-                    list.push(it);
-                }
+                mounted.push((at.clone(), *i, f));
                 opened.push(at);
             }
             Err(e) => println!("Can't open {}: {e}", f.what),
         }
     }
     let close = |opened: &[PathBuf]| opened.iter().for_each(|m| umount(m));
+    if mounted.is_empty() {
+        return "The partitions with files couldn't be opened.\n".into();
+    }
+    if let Some(d) = &desk {
+        println!("How do you want to choose what to copy?");
+        println!("  1  Open your Windows drive in Files and pick the files yourself");
+        println!("  2  Pick whole folders here, by number");
+        let a = loop {
+            let a = ask("Type 1 or 2 and Enter: ");
+            if a == "1" || a == "2" || a == "s" {
+                break a;
+            }
+        };
+        if a == "1" {
+            let drive_root = folder.parent().unwrap_or(folder);
+            match pick_in_files(d, &mounted, drive_root, folder) {
+                Ok(log) => {
+                    close(&opened);
+                    return log;
+                }
+                Err(e) => println!("Files didn't open ({e}). Pick whole folders instead:\n"),
+            }
+        }
+    }
+    let mut list: Vec<lost::Item> = Vec::new();
+    for (at, i, f) in &mounted {
+        println!("Reading {} ({})...", f.what, lost::human(f.size));
+        for mut it in lost::items(at, f.what == "Windows (C:)") {
+            if it.label == "the whole drive" {
+                it.label = format!("{} ({}) - all of it", f.what, lost::human(f.size));
+            }
+            if sources.len() > 1 {
+                it.dest = Path::new(&format!("partition-{}", i + 1)).join(&it.dest);
+            }
+            list.push(it);
+        }
+    }
     if list.is_empty() {
         println!("No files found in the user folders.");
         close(&opened);
@@ -916,7 +937,7 @@ fn rescue_files(r: &Report, folder: &Path, fat: bool) -> String {
     println!("\nFree on the USB drive: {}{}", lost::human(free), if fat { " (FAT32: files of 4 GB or more can't go on it)" } else { "" });
     let chosen: Vec<usize> = loop {
         let a = ask("Type the numbers to copy (e.g. 1 3 4) or all, then Enter. (Enter alone: don't copy.) ");
-        if a.is_empty() || a == "s" {
+        if a.is_empty() || ["s", "exit", "q", "quit", "n", "no"].contains(&a.as_str()) {
             break vec![];
         }
         let mut pick: Vec<usize> = if a == "all" {
@@ -973,6 +994,52 @@ fn rescue_files(r: &Report, folder: &Path, fat: bool) -> String {
         log += &format!("\nNot copied ({}):\n{}\n", done.failed.len(), done.failed.join("\n"));
     }
     log
+}
+
+/// Open the lost partitions in Files as the desktop user and let them copy
+/// what they want to the USB drive; then tell what landed on the drive.
+fn pick_in_files(d: &desktop::Desktop, mounted: &[(PathBuf, usize, &lost::Found)], drive_root: &Path, report: &Path) -> Result<String, String> {
+    // Start in the user's own folder when there's just one.
+    let (first, _, f) = &mounted[0];
+    let start = if f.what == "Windows (C:)" {
+        let users = lost::users(first);
+        match (find_ci(first, &["Users"]), users.as_slice()) {
+            (Some(u), [one]) => u.join(one),
+            (Some(u), _) => u,
+            _ => first.clone(),
+        }
+    } else {
+        first.clone()
+    };
+    let before = desktop::file_set(drive_root, report);
+    let mut child = desktop::launch(d, "/usr/local/bin/nexa-files", &[&start]).map_err(|e| e.to_string())?;
+    println!("\nFiles is open on your Windows drive. It's read-only: nothing on it can change.");
+    println!("  1. Select what you want (Ctrl+click picks several files or folders).");
+    println!("  2. Copy (Ctrl+C), click the USB drive in Files' side bar, then Paste (Ctrl+V).");
+    println!("  3. Wait until the copying has finished, then close Files.");
+    for (at, _, f) in mounted.iter().skip(1) {
+        println!("  (Also read-only: {} at {})", f.what, at.display());
+    }
+    println!("The USB drive is {}.", drive_root.display());
+    loop {
+        let a = ask("\nWhen you're done, close Files and press Enter here. ");
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            break;
+        }
+        if a == "s" {
+            break; // no more input: go on, Files keeps what it already copied
+        }
+        println!("Files is still open. Let any copy finish, close Files, then press Enter.");
+    }
+    sync();
+    let new = desktop::added(&before, &desktop::file_set(drive_root, report));
+    let bytes: u64 = new.iter().map(|(_, n)| n).sum();
+    println!("\nCOPIED: {} files, {} are new on the USB drive.", new.len(), lost::human(bytes));
+    let mut log = format!("Picked in Files. New on the USB drive: {} files, {}.\n\n", new.len(), lost::human(bytes));
+    for (p, n) in &new {
+        log += &format!("{}  ({})\n", p.display(), lost::human(*n));
+    }
+    Ok(log)
 }
 
 fn interactive() -> i32 {

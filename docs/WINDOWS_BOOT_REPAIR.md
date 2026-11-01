@@ -45,8 +45,15 @@ partition only empties the list.
 - Each one found is mounted read-only through a read-only loop device over
   the disk (opened read-only), to tell Windows (C:), the recovery and EFI
   partitions and data drives apart, and to list the users.
-- In the step-by-step run it lists each user's folders (Desktop, Documents,
-  Pictures, ...) with their sizes; you type the numbers, or `all`. They're
+- In the step-by-step run you choose how to pick:
+  1. **In Files**: the Windows drive opens in Files (Nexa Files), as you,
+     not root, still read-only (`desktop.rs`: the desktop's user and
+     Wayland display, mount options uid/gid, started with initgroups,
+     setgid, setuid). You select single files or folders, copy them and
+     paste on the USB drive, then close Files and press Enter. The new files
+     on the USB drive are listed in `files-copied.txt`.
+  2. **Whole folders**: it lists each user's folders (Desktop, Documents,
+     Pictures, ...) with their sizes; you type the numbers, or `all`. They're
   copied to the USB drive under `Files/<user>/<folder>`. AppData, the
   recycle bin and Windows' own folders are left out. On a FAT32 drive,
   files of 4 GB or more are skipped and listed in `files-copied.txt`.
@@ -93,6 +100,10 @@ resizes anything. For those it explains the step:
   backup and screenshot saved on the stick.
 - The same run with a second NVMe disk holding Windows and a user's
   folders, whose partition list (primary and backup) is erased in the VM:
-  both partitions found, Documents and Pictures copied (AppData not), and
-  the disk's SHA-256 the same before and after.
+  both partitions found; picking in Files: Files runs as the live user, the
+  Windows drive refuses writes, a photo copied by that user reaches the
+  stick and is counted; whole folders: Documents and Pictures copied
+  (AppData not); the disk's SHA-256 the same before and after both runs.
+  (The test desktop sits on its lock screen, so the Files window itself
+  wasn't seen in a screenshot.)
 - Not checked yet: a real Windows install, a real BitLocker drive.

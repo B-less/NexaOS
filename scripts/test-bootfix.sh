@@ -9,8 +9,10 @@
 #   and screenshot saved on the stick.
 #   A second NVMe disk holds Windows with user folders; inside the ISO its
 #   partition list is erased (partitions deleted, as on a real ThinkPad).
-#   nexa-bootfix must find the partitions, copy the folders to the stick
-#   (not AppData) and leave that disk byte-for-byte unchanged.
+#   nexa-bootfix must find the partitions, copy files to the stick
+#   (not AppData) and leave that disk byte-for-byte unchanged. Once picking
+#   in Files (run as the desktop user, on the read-only drive), once by
+#   whole folders.
 #   sh scripts/test-bootfix.sh      (needs dist/NexaOS-*.iso and build/shim)
 set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
@@ -59,7 +61,7 @@ NEXA_TEST_NVME="$work/win.img" NEXA_TEST_NVME2="$work/lost.img" NEXA_TEST_USB2="
     python3 "$repo/scripts/test-live-boot.py" --no-checks --shot "$work/desktop.png" \
     --run 'for i in $(seq 1 15); do wget -qO /root/t.sh http://10.0.2.2:8765/t.sh && break; sleep 3; done; sh /root/t.sh 2>&1' \
     --fetch /root/shot.png "$work/screenshot.png" > "$work/run.txt" 2>&1 || true
-grep -E 'RESULT|DONE|NOT FIXED|Screenshot|RESTORED|COPIED|SKIPPED|UNCHANGED|^at [0-9]+ MB' "$work/run.txt" || true
+grep -E 'RESULT|DONE|NOT FIXED|Screenshot|RESTORED|COPIED|SKIPPED|UNCHANGED|FILES_|PICKED|^at [0-9]+ MB' "$work/run.txt" || true
 fail=0
 grep -q 'RESULT: 3 fault' "$work/run.txt" || { echo "FAIL: the broken disk wasn't reported"; fail=1; }
 grep -q 'Wrote boot entry .*Windows Boot Manager' "$work/run.txt" || { echo "FAIL: no boot entry written"; fail=1; }
@@ -68,6 +70,10 @@ grep -q FALLBACK_RESTORED "$work/run.txt" || { echo "FAIL: fallback not put back
 grep -q 'Screenshot saved' "$work/run.txt" || { echo "FAIL: no screenshot"; fail=1; }
 grep -q 'report-before.txt' "$work/run.txt" || { echo "FAIL: no report on the stick"; fail=1; }
 grep -q 'Windows (C:) (users: Bless)' "$work/run.txt" || { echo "FAIL: the deleted Windows partition wasn't found"; fail=1; }
+grep -q FILES_AS_USER "$work/run.txt" || { echo "FAIL: Files didn't open as the desktop user"; fail=1; }
+grep -q FILES_DRIVE_READONLY "$work/run.txt" || { echo "FAIL: the Windows drive in Files wasn't read-only"; fail=1; }
+grep -q PICKED_COPIED "$work/run.txt" || { echo "FAIL: a file picked in Files didn't reach the stick"; fail=1; }
+grep -q 'COPIED: 1 files' "$work/run.txt" || { echo "FAIL: the picked file wasn't counted"; fail=1; }
 grep -q NOTES_COPIED "$work/run.txt" || { echo "FAIL: Documents not copied"; fail=1; }
 grep -q PHOTO_COPIED "$work/run.txt" || { echo "FAIL: Pictures not copied"; fail=1; }
 grep -q APPDATA_SKIPPED "$work/run.txt" || { echo "FAIL: AppData was copied"; fail=1; }
