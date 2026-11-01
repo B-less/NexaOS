@@ -102,6 +102,7 @@ cd kernel/linux-6.18.33 && make -j"$(nproc)" bzImage && cp arch/x86/boot/bzImage
 | `make test-desktop-card` | The desktop "For you" card (bottom layer, never takes the keyboard, a button per suggestion with its reason, Don't suggest, Move, Hide for today, off = no card) and Nexus' Suggested row, against the real `nexa-patternd` holding a synthetic month; screenshots in dist/card-test/ |
 | `make test-files-app` | The Files window driven like a person would (clicks, right-click menus, Ctrl+A/C/X/V/Z, F2, Delete, Backspace, mouse back button, Ctrl+scroll), copying, moving, the Trash and undo through the real `nexa-fileops` engine, plus a screenshot (dist/files-test.png) |
 | `python3 scripts/test-live-boot.py` | Boots the ISO (UEFI, as a USB stick) in QEMU, screenshots the desktop, logs in on serial and reports Alpine version, firewall, kernel hardening, SSH off, firmware errors, running desktop parts, Bluetooth service, WireGuard |
+| `make test-bootfix` | Windows Boot Repair (`nexa-bootfix`): the live ISO in QEMU with a broken fake Windows disk (NVMe) and a report USB stick; the faults are found, fixed after a backup, and the report and screenshot saved (docs/WINDOWS_BOOT_REPAIR.md) |
 | `python3 scripts/test-install-cycle.py [--uefi]` | Boots the live ISO, installs to a blank virtual disk with a custom username and password, boots the installed disk alone and logs in |
 | `sh scripts/test-app-headless.sh APP_DIR MODULE out.png` | Runs one app in a headless Sway container and saves a screenshot (see the script for `SETUP`, `WALLPAPER`, `APP_ARGS`) |
 

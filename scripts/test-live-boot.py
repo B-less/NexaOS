@@ -7,6 +7,7 @@ Usage: python3 scripts/test-live-boot.py [ISO] [--shot desktop.png] [--run 'shel
 --no-checks skips the health report (only --run / --fetch / the screenshot).
 --fetch REMOTE LOCAL copies a file off the booted system after 85 s of uptime
 (used by `make preload-map` for the boot readahead map).
+NEXA_TEST_NVME / NEXA_TEST_USB2 attach extra disk images (see extra_drives).
 --disk FILE boots a writable USB-stick image (e.g. the ISO written into a bigger
 file) instead of the read-only ISO; used by scripts/test-persistence.py.
 Defaults: dist/NexaOS-<PROJECT_VERSION>.iso, screenshot to dist/live-desktop.png.
@@ -117,6 +118,17 @@ def ppm_to_png(ppm_path, png_path, half=True):
                                + chunk(b"IDAT", zlib.compress(b"".join(rows), 6)) + chunk(b"IEND", b""))
 
 
+def extra_drives():
+    """NEXA_TEST_NVME=FILE adds an internal NVMe disk, NEXA_TEST_USB2=FILE a
+    second USB stick (raw images, writable), e.g. for nexa-bootfix tests."""
+    out = []
+    if os.environ.get("NEXA_TEST_NVME"):
+        out += ["-drive", f"file={os.environ['NEXA_TEST_NVME']},format=raw,if=none,id=nv", "-device", "nvme,drive=nv,serial=NEXATEST"]
+    if os.environ.get("NEXA_TEST_USB2"):
+        out += ["-drive", f"file={os.environ['NEXA_TEST_USB2']},format=raw,if=none,id=u2", "-device", "usb-storage,drive=u2"]
+    return out
+
+
 def main(argv):
     extra = argv[argv.index("--run") + 1] if "--run" in argv else None
     disk = argv[argv.index("--disk") + 1] if "--disk" in argv else None
@@ -134,7 +146,7 @@ def main(argv):
         ["qemu-system-x86_64", "-enable-kvm", "-cpu", "host", "-m", "4G", "-smp", "2", "-bios", OVMF,
          "-drive", (f"file={disk},format=raw,if=none,id=u" if disk
                     else f"file={iso},format=raw,if=none,id=u,readonly=on"), "-device", "qemu-xhci",
-         "-device", "usb-storage,drive=u", "-nic", "user,model=virtio", "-display", "none",
+         "-device", "usb-storage,drive=u"] + extra_drives() + ["-nic", "user,model=virtio", "-display", "none",
          "-serial", f"unix:{ser},server,nowait", "-monitor", f"unix:{mon},server,nowait"],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=open(os.path.join(work, "qemu.err"), "w"))
     try:

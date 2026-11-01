@@ -267,6 +267,10 @@ Secure Boot on again.
 
 NexaOS checks this at every start and warns you on the desktop
 (details: nexa-doctor firmware-keys --text in a terminal).
+
+If Windows still won't start, open "Windows Boot Repair" from the NexaOS
+app menu, with a second USB drive plugged in: it finds the fault, fixes
+the safe parts after a backup, and saves a report and a screenshot there.
 SBREADME_EOF
     EFI_FILES="BOOTX64.EFI grubx64.efi mmx64.efi ENROLL-THIS-KEY-NexaOS.cer"
     echo "[*] Secure Boot: shim (Microsoft-signed) + GRUB and kernel signed with the NexaOS key"

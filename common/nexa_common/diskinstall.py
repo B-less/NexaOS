@@ -459,7 +459,8 @@ def set_password(mountpoint, password, username=LIVE_USER):
 # Root helpers that can change the system (install software, run the
 # assistant's control tools): on an installed system they need the user's
 # password. The live USB, which has no password, permits them without one.
-PASSWORD_HELPERS = ("/usr/local/bin/nexa-software-helper", "/usr/local/bin/nexa-install-helper")
+PASSWORD_HELPERS = ("/usr/local/bin/nexa-software-helper", "/usr/local/bin/nexa-install-helper",
+                    "/usr/local/bin/nexa-bootfix")
 # Wipes whole disks; only meaningful on the live USB.
 LIVE_ONLY_HELPERS = ("/usr/local/bin/nexa-setup-helper",)
 
