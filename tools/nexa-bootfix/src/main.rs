@@ -29,6 +29,7 @@ mod desktop;
 mod disk;
 mod efi;
 mod lost;
+mod mbr;
 mod pe;
 #[path = "../../nexa-doctor/src/secureboot.rs"]
 mod secureboot;
@@ -176,6 +177,8 @@ struct Report {
     keys: secureboot::Keys,
     /// Internal disks with an empty partition list: what's still on them.
     lost: Vec<lost::Scan>,
+    /// Windows Legacy BIOS boot partitions on MBR disks.
+    legacy: Vec<Legacy>,
     findings: Vec<Finding>,
 }
 
@@ -302,16 +305,84 @@ fn check() -> Report {
     let entries = if uefi { efi::entries(&dir) } else { vec![] };
     let keys = secureboot::read(&sys_root());
     let lost = internal.iter().filter(|d| d.partitions.is_empty()).map(|d| scan_disk(d)).collect();
+    let legacy = find_legacy(&internal);
     let mut r = Report {
         time: now().1,
         uefi,
         boot_order: efi::boot_order(&dir).iter().map(|n| format!("{n:04X}")).collect(),
         boot_current: efi::boot_current(&dir).map(|n| format!("{n:04X}")),
-        disks, esps, windows, entries, keys, lost,
+        disks, esps, windows, entries, keys, lost, legacy,
         findings: vec![],
     };
     r.findings = findings(&r);
     r
+}
+
+// ---------- Windows in Legacy BIOS mode ----------
+
+#[derive(Debug, Serialize, Clone, Default)]
+struct Legacy {
+    dev: String,
+    disk: String,
+    /// Marked active in the MBR (the BIOS starts that one).
+    active: bool,
+    disk_signature: u32,
+    /// The disk ID Windows' BCD expects.
+    bcd_signature: Option<u32>,
+}
+
+/// NTFS partitions with bootmgr and \Boot\BCD on internal MBR disks.
+fn find_legacy(internal: &[&disk::Disk]) -> Vec<Legacy> {
+    let mut out = Vec::new();
+    for d in internal.iter().filter(|d| !d.gpt && !d.partitions.is_empty()) {
+        let Some((sig, entries)) = disk::read_file(&dev_root().join(&d.dev), 0, 512).as_deref().and_then(mbr::parse) else { continue };
+        for p in d.partitions.iter().filter(|p| p.fs == "ntfs") {
+            let at = work_dir().join(format!("legacy-{}", p.dev));
+            let (root, undo) = match mounted_at(&p.dev) {
+                Some(m) => (m, false),
+                None => match mount(&dev_root().join(&p.dev), &at, "ntfs", true) {
+                    Ok(()) => (at.clone(), true),
+                    Err(_) => continue,
+                },
+            };
+            if find_ci(&root, &["bootmgr"]).is_some() {
+                if let Some(bcd) = find_ci(&root, &["Boot", "BCD"]) {
+                    out.push(Legacy {
+                        dev: p.dev.clone(), disk: d.dev.clone(), disk_signature: sig,
+                        active: entries.iter().any(|e| e.0 && e.2 as u64 == p.first_lba),
+                        bcd_signature: fs::read(&bcd).ok().and_then(|b| mbr::bcd_disk(&b)).map(|x| x.0),
+                    });
+                }
+            }
+            if undo {
+                umount(&at);
+            }
+        }
+    }
+    out
+}
+
+const LEGACY_BIOS: &str = "Set the BIOS to start it: ThinkPad: F1 > Startup > UEFI/Legacy Boot: Both, UEFI/Legacy Boot Priority: \
+Legacy First (or Legacy Only), CSM Support: Yes. Secure Boot must be off for that (Security > Secure Boot: Disabled). Save, restart, \
+and choose the internal disk (e.g. \"NVMe0\") in the F12 boot menu.";
+
+fn legacy_findings(r: &Report) -> Vec<Finding> {
+    let mut out = Vec::new();
+    for l in &r.legacy {
+        if !l.active {
+            out.push(find("fault", format!("Windows' boot partition {} isn't marked active", l.dev),
+                format!("The BIOS starts the active partition. In the Windows installer's command prompt (Shift+F10): diskpart, \
+select disk 0, select partition 1, active, exit. {LEGACY_BIOS}"), None));
+        } else if l.bcd_signature.map_or(false, |s| s != l.disk_signature) {
+            out.push(find("fault", format!("{}'s disk ID doesn't match Windows' boot settings", l.disk),
+                format!("The disk ID is {:08X}; Windows' BCD expects {:08X}. In the Windows installer's command prompt (Shift+F10): \
+bcdboot C:\\Windows /s <the boot partition's letter>: /f BIOS. {LEGACY_BIOS}", l.disk_signature, l.bcd_signature.unwrap_or(0)), None));
+        } else {
+            out.push(find("warning", "Windows on this PC starts in Legacy BIOS mode",
+                format!("Its boot files are on {} (marked active, disk ID {:08X}, as Windows expects). {LEGACY_BIOS}", l.dev, l.disk_signature), None));
+        }
+    }
+    out
 }
 
 // ---------- lost partitions ----------
@@ -322,7 +393,7 @@ fn scan_disk(d: &disk::Disk) -> lost::Scan {
     let path = dev_root().join(&d.dev);
     let bytes = fs::read_to_string(sys_root().join("block").join(&d.dev).join("size")).ok()
         .and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0) * 512;
-    let mut s = lost::Scan { disk: d.dev.clone(), size: bytes, ..Default::default() };
+    let mut s = lost::Scan { disk: d.dev.clone(), size: bytes, sector: d.sector, ..Default::default() };
     let Ok(file) = fs::File::open(&path) else { return s };
     let mut read = |at: u64, len: usize| {
         let mut b = vec![0u8; len];
@@ -384,10 +455,22 @@ fn look_inside(disk: &Path, sector: u64, f: &mut lost::Found) {
         return;
     }
     let has = |p: &[&str]| find_ci(&at, p).is_some();
+    // Windows' Legacy BIOS boot files: bootmgr, and BCD saying where Windows is.
+    if f.fs == "ntfs" && has(&["bootmgr"]) {
+        if let Some(bcd) = find_ci(&at, &["Boot", "BCD"]) {
+            f.legacy_boot = true;
+            if let Some((sig, offs)) = fs::read(&bcd).ok().and_then(|b| mbr::bcd_disk(&b)) {
+                f.bcd_signature = Some(sig);
+                f.bcd_offsets = offs;
+            }
+        }
+    }
     f.what = if f.fs == "vfat" {
         if has(&["EFI", "Microsoft"]) { "EFI boot partition (Windows)" } else if has(&["EFI"]) { "EFI boot partition" } else { "FAT32 drive" }
     } else if has(&["Windows", "System32"]) {
         "Windows (C:)"
+    } else if f.legacy_boot {
+        "Windows boot (Legacy BIOS)"
     } else if has(&["Recovery", "WindowsRE"]) || (has(&["Recovery"]) && f.size < 4 << 30) {
         "Windows recovery"
     } else {
@@ -409,11 +492,22 @@ fn lost_finding(s: &lost::Scan, boots_elsewhere: bool) -> Finding {
     let list = s.found.iter().map(|f| format!("{} ({})", f.what, lost::human(f.size))).collect::<Vec<_>>().join(", ");
     if s.found.iter().any(has_files) {
         let users: Vec<&str> = s.found.iter().flat_map(|f| f.users.iter().map(String::as_str)).collect();
+        let restore = mbr::plan(&s.found, s.size, s.sector.max(512));
+        let legacy = s.found.iter().any(|f| f.legacy_boot);
+        let tail = match (&restore, legacy) {
+            (Ok(p), _) => format!(" This Windows was installed in Legacy BIOS mode. After your files are safe, NexaOS can put the \
+partition list back as it was (disk ID {:08X} and the partition starts, from Windows' own boot settings), so Windows starts again \
+without reinstalling: only the disk's first sector and the empty partition list at its start and end are written, after they're \
+saved to the USB drive (and it can be undone).", p.signature),
+            (Err(e), true) => format!(" This Windows was installed in Legacy BIOS mode, but NexaOS won't put its partition list back: {e}."),
+            _ => String::new(),
+        };
         return find("fault", format!("The partition list on {disk} is empty, but Windows' partitions are still on it"),
             format!("They were deleted (in the Windows installer's \"Where do you want to install Windows?\" screen, or with diskpart clean), \
 so the PC finds nothing to start. Still on the disk: {list}.{} Your files are still there: NexaOS can copy them to a USB drive, \
 reading the internal disk without changing anything on it. Until your files are safe, don't install Windows or anything else \
-on this disk and don't create partitions on it.", if users.is_empty() { String::new() } else { format!(" User folders: {}.", users.join(", ")) }), None);
+on this disk and don't create partitions on it.{tail}", if users.is_empty() { String::new() } else { format!(" User folders: {}.", users.join(", ")) }),
+            restore.is_ok().then_some("restore-mbr"));
     }
     if s.found.iter().any(|f| f.fs == "bitlocker") {
         return find("fault", format!("The partition list on {disk} is empty; Windows is still on it, locked by BitLocker"),
@@ -449,7 +543,8 @@ fn findings(r: &Report) -> Vec<Finding> {
     for s in &r.lost {
         out.push(lost_finding(s, !r.esps.is_empty()));
     }
-    if r.esps.is_empty() && r.lost.is_empty() {
+    out.extend(legacy_findings(r));
+    if r.esps.is_empty() && r.lost.is_empty() && r.legacy.is_empty() {
         out.push(find("fault", "No EFI boot partition on the internal disk",
             format!("Windows needs one to start (a small FAT32 partition). {BCDBOOT}"), None));
     }
@@ -610,6 +705,10 @@ fn text(r: &Report) -> String {
             s += &format!("  {:<12} {:>7} MB  {:<26} {:<9} {}\n", p.dev, p.size_mb, p.kind, if p.fs.is_empty() { "-" } else { &p.fs }, p.name);
         }
     }
+    for l in &r.legacy {
+        s += &format!("\n--- Windows Legacy BIOS boot on {} (disk {}): active: {}, disk ID {:08X}, Windows expects {}\n", l.dev, l.disk,
+            if l.active { "yes" } else { "NO" }, l.disk_signature, l.bcd_signature.map_or("?".into(), |x| format!("{x:08X}")));
+    }
     for l in &r.lost {
         s += &format!("\n--- Lost partitions on {} (looked at {} places, {}% of them hold data)\n", l.disk, l.checked, l.data_percent());
         if l.found.is_empty() {
@@ -755,6 +854,13 @@ fn fix(r: &Report, backup_to: &Path) -> Result<Vec<String>, String> {
     if wanted.is_empty() {
         return Ok(vec![]);
     }
+    let mut done = Vec::new();
+    if wanted.contains(&"restore-mbr") {
+        done.extend(restore_mbr(r, backup_to)?);
+        if r.esps.is_empty() {
+            return Ok(done);
+        }
+    }
     let esp = r.esps.iter().find(|e| e.readable && e.has_microsoft_boot).or_else(|| r.esps.iter().find(|e| e.readable))
         .ok_or("no readable boot partition")?;
     // 1. Back up the whole boot partition and the boot entries.
@@ -777,7 +883,7 @@ fn fix(r: &Report, backup_to: &Path) -> Result<Vec<String>, String> {
         }
     }
     sync();
-    let mut done = vec![format!("Backed up the boot partition ({} KB) and the boot entries to {}", copied / 1024, backup.display())];
+    done.push(format!("Backed up the boot partition ({} KB) and the boot entries to {}", copied / 1024, backup.display()));
     // 2. Windows' own boot manager, if a fix needs it.
     let source: Option<Vec<u8>> = r.windows.iter().filter(|w| w.bootmgr_copy.as_ref().map_or(false, |i| i.problem.is_none())).find_map(|w| {
         let wat = work_dir().join(format!("win-{}", w.dev));
@@ -848,6 +954,128 @@ fn screenshot(to: &Path) -> Result<(), String> {
         last = format!("grim ({}/{display}): {}", dir.display(), String::from_utf8_lossy(&out.stderr).trim());
     }
     Err(last)
+}
+
+// ---------- putting a deleted MBR partition list back ----------
+
+const BLKRRPART: u64 = 0x125f;
+
+/// Ask the kernel to read a disk's partition list again.
+fn reread_partitions(f: &fs::File) -> bool {
+    use std::os::unix::io::AsRawFd;
+    // SAFETY: BLKRRPART takes no argument.
+    unsafe { libc::ioctl(f.as_raw_fd(), BLKRRPART as _) == 0 }
+}
+
+fn sys_disk_bytes(dev: &str) -> u64 {
+    fs::read_to_string(sys_root().join("block").join(dev).join("size")).ok().and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0) * 512
+}
+
+/// Write back the MBR partition list of a Windows installed in Legacy BIOS
+/// mode (see mbr::plan for when it's allowed). The disk's first and last
+/// MiB are saved to `backup_to`/backup and read back before anything is
+/// written; then only the first sector and the empty GPT (start and end)
+/// are written.
+fn restore_mbr(r: &Report, backup_to: &Path) -> Result<Vec<String>, String> {
+    let (scan, plan) = r.lost.iter().find_map(|l| mbr::plan(&l.found, l.size, l.sector.max(512)).ok().map(|p| (l, p)))
+        .ok_or("there's no partition list NexaOS can safely put back")?;
+    let sector = scan.sector.max(512);
+    let size = scan.size;
+    const MIB: u64 = 1 << 20;
+    if sys_disk_bytes(&scan.disk) != size || size < 4 * MIB {
+        return Err(format!("{} isn't the disk that was checked; nothing written", scan.disk));
+    }
+    let path = dev_root().join(&scan.disk);
+    let disk = fs::OpenOptions::new().read(true).write(true).open(&path).map_err(|e| format!("can't open {}: {e}", scan.disk))?;
+    let read = |at: u64, len: u64| -> Result<Vec<u8>, String> {
+        let mut b = vec![0u8; len as usize];
+        disk.read_exact_at(&mut b, at).map_err(|e| format!("can't read {}: {e}", scan.disk))?;
+        Ok(b)
+    };
+    let tail_at = size - MIB;
+    let (head, tail) = (read(0, MIB)?, read(tail_at, MIB)?);
+    // Still as checked: no partition list (a protective MBR at most), and
+    // every partition's boot sector where the scan saw it.
+    if let Some((_, parts)) = mbr::parse(&head[..512]) {
+        if parts.iter().any(|p| p.1 != 0xee) {
+            return Err(format!("{} has a partition list again; nothing written", scan.disk));
+        }
+    }
+    let mut from_head = |at: u64, len: usize| head.get(at as usize..at as usize + len).map(|b| b.to_vec());
+    if disk::parse_gpt(&mut from_head, sector).map_or(false, |e| !e.is_empty()) {
+        return Err(format!("{} has a partition list again; nothing written", scan.disk));
+    }
+    for p in &plan.parts {
+        if lost::boot_sector(&read(p.start_lba as u64 * sector, 512)?).is_none() {
+            return Err(format!("the partition at {} MB has changed since it was checked; nothing written", p.start_lba as u64 * sector >> 20));
+        }
+    }
+    // 1. Back up, and read the backup back.
+    let dir = backup_to.join("backup");
+    fs::create_dir_all(&dir).map_err(|e| format!("can't make the backup folder: {e}"))?;
+    let mbr0 = mbr::build(&plan);
+    let mut ranges: Vec<(u64, Vec<u8>)> = vec![(0, mbr0.to_vec())];
+    if head[sector as usize..sector as usize + 8] == *b"EFI PART" {
+        ranges.push((sector, vec![0u8; 33 * sector as usize])); // the empty GPT at the start
+    }
+    let last_end = plan.parts.iter().map(|p| (p.start_lba as u64 + p.sectors as u64) * sector).max().unwrap_or(0);
+    let gpt_end = size - 33 * sector;
+    if tail[(size - sector - tail_at) as usize..][..8] == *b"EFI PART" && gpt_end >= last_end {
+        ranges.push((gpt_end, vec![0u8; 33 * sector as usize])); // its copy at the end
+    }
+    let info = format!("disk={}\nmodel={}\nsize={size}\nend_at={tail_at}\n{}",
+        scan.disk, r.disks.iter().find(|d| d.dev == scan.disk).map_or("", |d| d.model.as_str()),
+        ranges.iter().map(|(at, b)| format!("range={at}:{}\n", b.len())).collect::<String>());
+    for (name, data) in [("disk-start.bin", &head[..]), ("disk-end.bin", &tail[..]), ("disk.txt", info.as_bytes())] {
+        write_synced(&dir.join(name), data).map_err(|e| format!("can't save the backup ({name}): {e}; nothing written"))?;
+        if fs::read(dir.join(name)).ok().as_deref() != Some(data) {
+            return Err(format!("the backup ({name}) didn't read back the same; nothing written"));
+        }
+    }
+    // 2. Write.
+    for (at, data) in &ranges {
+        disk.write_all_at(data, *at).map_err(|e| format!("writing {}: {e} (undo: doas nexa-bootfix undo-partitions {})", scan.disk, backup_to.display()))?;
+    }
+    disk.sync_all().map_err(|e| format!("writing {}: {e}", scan.disk))?;
+    // 3. Check what's on the disk now.
+    if read(0, 512)? != mbr0.to_vec() {
+        return Err(format!("the new first sector didn't read back the same (undo: doas nexa-bootfix undo-partitions {})", backup_to.display()));
+    }
+    let seen = reread_partitions(&disk);
+    let parts = plan.parts.iter().enumerate().map(|(i, p)| format!("{} {}{}", i + 1, p.what, if p.active { " (active)" } else { "" })).collect::<Vec<_>>().join(", ");
+    Ok(vec![
+        format!("Saved the disk's first and last MiB to {}", dir.display()),
+        format!("Put back the partition list on {} (MBR, disk ID {:08X}): {parts}{}", scan.disk, plan.signature,
+            if seen { "" } else { " (NexaOS sees it after a restart)" }),
+        format!("To undo it: doas nexa-bootfix undo-partitions {} --yes", backup_to.display()),
+    ])
+}
+
+/// Put back what restore_mbr replaced, from its backup folder.
+fn undo_partitions(folder: &Path) -> Result<String, String> {
+    let dir = if folder.join("backup/disk.txt").exists() { folder.join("backup") } else { folder.to_path_buf() };
+    let info = fs::read_to_string(dir.join("disk.txt")).map_err(|e| format!("no backup in {}: {e}", dir.display()))?;
+    let get = |k: &str| info.lines().find_map(|l| l.strip_prefix(&format!("{k}="))).map(str::to_string);
+    let dev = get("disk").ok_or("disk.txt: no disk")?;
+    let size: u64 = get("size").and_then(|v| v.parse().ok()).ok_or("disk.txt: no size")?;
+    let end_at: u64 = get("end_at").and_then(|v| v.parse().ok()).ok_or("disk.txt: no end_at")?;
+    if sys_disk_bytes(&dev) != size {
+        return Err(format!("{dev} isn't the disk this backup came from (its size differs); nothing written"));
+    }
+    let (head, tail) = (fs::read(dir.join("disk-start.bin")).map_err(|e| e.to_string())?, fs::read(dir.join("disk-end.bin")).map_err(|e| e.to_string())?);
+    let disk = fs::OpenOptions::new().read(true).write(true).open(dev_root().join(&dev)).map_err(|e| format!("can't open {dev}: {e}"))?;
+    let mut n = 0;
+    for r in info.lines().filter_map(|l| l.strip_prefix("range=")) {
+        let (at, len) = r.split_once(':').and_then(|(a, l)| Some((a.parse::<u64>().ok()?, l.parse::<usize>().ok()?))).ok_or("disk.txt: bad range")?;
+        let src = if at + len as u64 <= head.len() as u64 { &head[at as usize..at as usize + len] }
+            else if at >= end_at && (at - end_at) as usize + len <= tail.len() { &tail[(at - end_at) as usize..(at - end_at) as usize + len] }
+            else { return Err("disk.txt: a range outside the backup".into()) };
+        disk.write_all_at(src, at).map_err(|e| format!("writing {dev}: {e}"))?;
+        n += 1;
+    }
+    disk.sync_all().map_err(|e| e.to_string())?;
+    reread_partitions(&disk);
+    Ok(format!("Put back {n} part(s) of {dev} as they were before."))
 }
 
 // ---------- the step-by-step run ----------
@@ -1107,7 +1335,20 @@ fn interactive() -> i32 {
         if folder.is_none() {
             println!("(No USB drive: the backup goes to memory and is lost when the PC turns off.)");
         }
-        let a = ask("\nThe whole boot partition and the boot entries are backed up first.\nApply these fixes? Type yes and Enter: ");
+        let restore = fixes.iter().any(|f| f.fix.as_deref() == Some("restore-mbr"));
+        if restore {
+            println!("\nPutting the partition list back WRITES TO THE INTERNAL DISK: its first sector and the empty");
+            println!("partition list at its start and end (your files and Windows itself aren't touched). Do it only");
+            println!("after your files are copied to a USB drive and you've opened them on another computer.");
+            println!("The disk's first and last MiB are saved to the USB drive first; it can be undone.");
+        }
+        let a = if restore && folder.is_none() {
+            println!("A USB drive is needed for the backup: nothing changed. Run Windows Boot Repair again with one.");
+            String::new()
+        } else {
+            ask(if restore { "\nAre your files safe, and do you want to put the partition list back? Type yes and Enter: " }
+                else { "\nThe whole boot partition and the boot entries are backed up first.\nApply these fixes? Type yes and Enter: " })
+        };
         if a == "yes" || a == "y" {
             match fix(&before, &backup_root) {
                 Ok(done) => {
@@ -1223,6 +1464,20 @@ fn main() {
                 }
             }
         }
+        Some("undo-partitions") => {
+            need_root();
+            let (Some(dir), true) = (args.get(1), args.iter().any(|a| a == "--yes")) else {
+                eprintln!("usage: doas nexa-bootfix undo-partitions FOLDER --yes  (FOLDER: the NexaOS-bootfix-... folder with backup/disk.txt)");
+                std::process::exit(2);
+            };
+            match undo_partitions(Path::new(dir)) {
+                Ok(m) => println!("{m}"),
+                Err(e) => {
+                    eprintln!("NOT DONE: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Some("screenshot") => {
             need_root();
             match screenshot(Path::new(args.get(1).map(String::as_str).unwrap_or("screenshot.png"))) {
@@ -1253,6 +1508,7 @@ mod tests {
             time: "t".into(), uefi: true, disks: vec![], windows: vec![], boot_order: vec![], boot_current: None,
             keys: secureboot::Keys { uefi: true, setup_mode: Some(false), secure_boot: Some(false), ..Default::default() },
             lost: vec![],
+            legacy: vec![],
             esps: vec![Esp {
                 dev: "nvme0n1p1".into(), disk: "nvme0n1".into(), guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(), number: 1,
                 first_lba: 2048, sectors: 204800, readable: true, has_microsoft_boot: true,
@@ -1331,12 +1587,27 @@ mod tests {
         r.esps.clear();
         r.entries.clear();
         let c = lost::Found { start: 1 << 30, size: 200 << 30, fs: "ntfs".into(), what: "Windows (C:)".into(), users: vec!["Bless".into()], from: "scan".into(), ..Default::default() };
-        r.lost = vec![lost::Scan { disk: "nvme0n1".into(), size: 256 << 30, checked: 300, with_data: 200, found: vec![c] }];
+        r.lost = vec![lost::Scan { disk: "nvme0n1".into(), size: 256 << 30, sector: 512, checked: 300, with_data: 200, found: vec![c] }];
         let f = findings(&r);
         assert!(f[0].title.contains("still on it") && f[0].detail.contains("Bless") && f[0].detail.contains("copy them"), "{f:?}");
         // The misleading "no EFI partition" step (bcdboot can't help) is left out.
         assert!(!f.iter().any(|x| x.title.contains("No EFI")));
         assert!(text(&r).contains("Lost partitions on nvme0n1"));
+        // UEFI Windows: nothing to put back.
+        assert!(f[0].fix.is_none());
+        // The ThinkPad: Windows in Legacy BIOS mode, its BCD agrees: offered.
+        let mut tp = mbr::tests::thinkpad();
+        tp[1].users = vec!["Lenovo".into()];
+        let mut t = base();
+        t.esps.clear();
+        t.lost = vec![lost::Scan { disk: "nvme0n1".into(), size: 256060514304, sector: 512, checked: 6, with_data: 3, found: tp }];
+        let f = findings(&t);
+        assert_eq!(f[0].fix.as_deref(), Some("restore-mbr"), "{f:?}");
+        assert!(f[0].detail.contains("A76F4909") && f[0].detail.contains("Legacy BIOS"));
+        // ... but not when the BCD names another partition.
+        t.lost[0].found[0].bcd_offsets.push(7 << 30);
+        let f = findings(&t);
+        assert!(f[0].fix.is_none() && f[0].detail.contains("won't put"), "{f:?}");
         // Blank (trimmed) disk: said plainly.
         r.lost[0].found.clear();
         r.lost[0].with_data = 0;
@@ -1349,6 +1620,23 @@ mod tests {
         ok.lost = r.lost.clone();
         ok.lost[0].with_data = 0;
         assert!(findings(&ok).iter().all(|f| f.level != "fault"));
+    }
+
+    #[test]
+    fn legacy_windows() {
+        let mut r = base();
+        r.esps.clear();
+        r.entries.clear();
+        r.legacy = vec![Legacy { dev: "nvme0n1p1".into(), disk: "nvme0n1".into(), active: true, disk_signature: 0xa76f4909, bcd_signature: Some(0xa76f4909) }];
+        let f = findings(&r);
+        // No "no EFI partition" fault: it starts the old way; the BIOS steps are given.
+        assert!(!f.iter().any(|x| x.level == "fault"), "{f:?}");
+        assert!(f.iter().any(|x| x.title.contains("Legacy BIOS") && x.detail.contains("CSM Support")));
+        r.legacy[0].bcd_signature = Some(1);
+        assert!(findings(&r)[0].title.contains("disk ID"));
+        r.legacy[0].active = false;
+        assert!(findings(&r)[0].title.contains("active"));
+        assert!(text(&r).contains("Legacy BIOS boot on nvme0n1p1"));
     }
 
     #[test]

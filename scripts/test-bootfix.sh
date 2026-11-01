@@ -40,18 +40,39 @@ truncate -s $(( (e3-s3+1)*512 )) /tmp/ntfs.img
 mkntfs -q -F -f -L Windows /tmp/ntfs.img >/dev/null 2>&1
 dd if=/tmp/ntfs.img of=win.img bs=512 seek="$s3" conv=notrunc status=none
 truncate -s 512M lost.img
-sgdisk -o -n1:2048:+100M -t1:ef00 -n2:0:+16M -t2:0c01 -n3:0:0 -t3:0700 lost.img >/dev/null
-s1=$(sgdisk -i1 lost.img | sed -n "s/First sector: \([0-9]*\).*/\1/p"); e1=$(sgdisk -i1 lost.img | sed -n "s/Last sector: \([0-9]*\).*/\1/p")
-s3=$(sgdisk -i3 lost.img | sed -n "s/First sector: \([0-9]*\).*/\1/p"); e3=$(sgdisk -i3 lost.img | sed -n "s/Last sector: \([0-9]*\).*/\1/p")
-mkfs.vfat -F32 -n SYSTEM --offset "$s1" lost.img $(( (e1-s1+1)/2 )) >/dev/null 2>&1
-mmd -i "lost.img@@$((s1*512))" ::/EFI ::/EFI/Microsoft ::/EFI/Microsoft/Boot
-truncate -s 0 /tmp/ntfs2.img; truncate -s $(( (e3-s3+1)*512 )) /tmp/ntfs2.img
-mkntfs -q -F -f -L Windows /tmp/ntfs2.img >/dev/null 2>&1
-dd if=/tmp/ntfs2.img of=lost.img bs=512 seek="$s3" conv=notrunc status=none
+# Windows installed in Legacy BIOS mode, its partition list emptied (an
+# empty GPT, as the Windows installer leaves it): System Reserved (boot
+# files) at 1 MiB, C: at 101 MiB, recovery at 501 MiB.
+sgdisk -o lost.img >/dev/null
+ntfs_at() { truncate -s 0 /tmp/p.img; truncate -s $(( $2 * 512 )) /tmp/p.img
+    mkntfs -q -F -f -p "$1" -H 255 -S 63 -L "$3" /tmp/p.img >/dev/null 2>&1
+    dd if=/tmp/p.img of=lost.img bs=512 seek="$1" conv=notrunc status=none; }
+ntfs_at 2048 204800 "System Reserved"
+ntfs_at 206848 819200 Windows
+ntfs_at 1026048 18432 Recovery
 truncate -s 64M usb.img
 echo type=c | sfdisk -q usb.img
 mkfs.vfat -F32 -n REPORTS --offset 2048 usb.img $(( (131072-2048)/2 )) >/dev/null 2>&1
 chmod 666 win.img usb.img lost.img'
+# Its boot partition: a stand-in for Windows' boot code that says on the
+# serial port it was started (the BIOS -> MBR -> active partition path), a
+# bootmgr, and a BCD naming the three partitions on disk 1234ABCD.
+python3 - "$work" << 'PY'
+import struct, sys
+w = sys.argv[1]
+code = bytes([0xba, 0xf8, 0x03]) + b"".join(bytes([0xb0, c, 0xee]) for c in b"NEXA-VBR-OK\r\n") + bytes([0xfa, 0xf4, 0xeb, 0xfd])
+with open(w + "/lost.img", "r+b") as f:
+    f.seek(2048 * 512 + 0x54)
+    f.write(code)
+bcd = bytearray(b"regf" + bytes(4092))
+for off in (2048 * 512, 206848 * 512, 1026048 * 512):
+    d = bytearray(0x48)
+    struct.pack_into("<I", d, 0, 6); struct.pack_into("<I", d, 8, 0x48); struct.pack_into("<Q", d, 16, off)
+    struct.pack_into("<I", d, 36, 1); struct.pack_into("<I", d, 40, 0x1234ABCD)
+    bcd += b"\xa0\xff\xff\xffent\0" + d
+open(w + "/serve/BCD", "wb").write(bcd)
+open(w + "/serve/bootmgr", "wb").write(b"BOOTMGR" * 1000)
+PY
 docker run --rm -v "$repo:/src" -v "$work:/s" -v /var/tmp/nexa-cargo:/root/.cargo/registry -w /src/tools nexa-rust:3.24 sh -c \
     't=$(rustc -vV | sed -n "s/^host: //p"); RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -q -p nexa-bootfix --target $t
      cp target/$t/release/nexa-bootfix /s/serve/; chown -R '"$(id -u):$(id -g)"' /s/serve target'
@@ -77,6 +98,17 @@ grep -q 'COPIED: 1 files' "$work/run.txt" || { echo "FAIL: the picked file wasn'
 grep -q NOTES_COPIED "$work/run.txt" || { echo "FAIL: Documents not copied"; fail=1; }
 grep -q PHOTO_COPIED "$work/run.txt" || { echo "FAIL: Pictures not copied"; fail=1; }
 grep -q APPDATA_SKIPPED "$work/run.txt" || { echo "FAIL: AppData was copied"; fail=1; }
-grep -q LOST_DISK_UNCHANGED "$work/run.txt" || { echo "FAIL: the disk with the deleted partitions changed"; fail=1; }
-[ $fail = 0 ] && echo "PASS: nexa-bootfix found, fixed and reported the broken Windows boot, and rescued the files from deleted partitions (log: $work/run.txt)"
+grep -q LOST_DISK_UNCHANGED "$work/run.txt" || { echo "FAIL: the disk with the deleted partitions changed before the restore was asked for"; fail=1; }
+grep -q 'Windows boot (Legacy BIOS)' "$work/run.txt" || { echo "FAIL: the Legacy BIOS boot partition wasn't recognised"; fail=1; }
+grep -q MBR_SIG_OK "$work/run.txt" || { echo "FAIL: the MBR wasn't written with Windows' disk ID"; fail=1; }
+grep -q KERNEL_SEES_PARTITIONS "$work/run.txt" || { echo "FAIL: the restored partitions aren't seen"; fail=1; }
+grep -q C_MOUNTS "$work/run.txt" || { echo "FAIL: the restored C: doesn't open"; fail=1; }
+grep -q 'starts in Legacy BIOS mode' "$work/run.txt" || { echo "FAIL: no Legacy BIOS steps after the restore"; fail=1; }
+grep -q UNDO_OK "$work/run.txt" || { echo "FAIL: undo didn't give back the disk as it was"; fail=1; }
+# The restored disk, started by a plain BIOS (SeaBIOS): MBR code -> active partition.
+timeout 30 qemu-system-x86_64 -m 128 -drive file="$work/lost.img",format=raw,if=ide -display none -no-reboot \
+    -serial file:"$work/legacy-serial.txt" >/dev/null 2>&1 || true
+grep -q NEXA-VBR-OK "$work/legacy-serial.txt" && echo "LEGACY_BOOT_OK: the BIOS started the restored disk's active partition" \
+    || { echo "FAIL: the restored disk didn't start in Legacy BIOS mode"; fail=1; }
+[ $fail = 0 ] && echo "PASS: nexa-bootfix found, fixed and reported the broken Windows boot, put back a Legacy BIOS partition list, and rescued the files from deleted partitions (log: $work/run.txt)"
 exit $fail

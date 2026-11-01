@@ -28,12 +28,20 @@ pub struct Found {
     pub users: Vec<String>,
     /// "scan" or "backup partition table"
     pub from: String,
+    /// Windows' Legacy BIOS boot files are on it (\bootmgr, \Boot\BCD).
+    pub legacy_boot: bool,
+    /// From that BCD: the MBR disk signature and the partition starts
+    /// (bytes) Windows boots from.
+    pub bcd_signature: Option<u32>,
+    pub bcd_offsets: Vec<u64>,
 }
 
 #[derive(Debug, Serialize, Clone, Default)]
 pub struct Scan {
     pub disk: String,
     pub size: u64,
+    /// The disk's sector size.
+    pub sector: u64,
     /// 1 MiB steps read, and how many of them weren't blank.
     pub checked: u64,
     pub with_data: u64,

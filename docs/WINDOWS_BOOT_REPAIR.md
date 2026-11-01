@@ -64,6 +64,38 @@ partition only empties the list.
 Nothing is written to that disk. Don't install anything on it until the
 files are copied and checked on another computer.
 
+## Windows in Legacy BIOS mode: putting its partition list back
+
+Some PCs run Windows installed the old way (Legacy BIOS, MBR disk): a
+100 MB "System Reserved" partition with `bootmgr` and `Boot\BCD`, no EFI
+folder. Such a Windows only starts with the BIOS set to Legacy (or Both);
+switching the BIOS to UEFI-only makes it look broken.
+
+If its partition list was deleted, nexa-bootfix can put it back so that
+Windows starts as it was, without reinstalling (`mbr.rs`):
+
+- Windows' BCD on the boot partition names every partition it boots from,
+  by its start and the disk's MBR signature (disk ID). The restore is
+  offered only if every start the BCD names is a partition the scan found
+  whole, none overlap, there are at most 4, and the list is still empty.
+- The disk's first and last MiB are saved to the USB drive
+  (`backup/disk-start.bin`, `disk-end.bin`, `disk.txt`) and read back
+  before anything is written. Then only the first sector (boot code that
+  starts the active partition, the disk ID, the partitions; the boot
+  partition active, the recovery partition type 0x27) and the empty GPT at
+  the disk's start and end are written, and read back.
+- In the step-by-step run it's asked separately, after the files are
+  copied: "Are your files safe?". It needs the USB drive for the backup.
+- Undo: `doas nexa-bootfix undo-partitions <the NexaOS-bootfix-... folder> --yes`
+  writes back exactly what was replaced.
+- Then the BIOS: Startup > UEFI/Legacy Boot: Both, Legacy First (or Legacy
+  Only), CSM Support: Yes, Secure Boot off. The report says so whenever it
+  finds a Legacy BIOS Windows, and checks the boot partition is active and
+  the disk ID matches the BCD.
+
+The boot code is Syslinux's `mbr.bin` (MIT licence), in
+`tools/nexa-bootfix/boot/`.
+
 ## What it fixes, and only after a backup
 
 First the whole EFI boot partition and every Boot#### variable are copied
@@ -106,4 +138,14 @@ resizes anything. For those it explains the step:
   (AppData not); the disk's SHA-256 the same before and after both runs.
   (The test desktop sits on its lock screen, so the Files window itself
   wasn't seen in a screenshot.)
+- Legacy BIOS restore: a disk laid out like the ThinkPad's (empty GPT;
+  System Reserved with bootmgr and a BCD naming the three partitions on
+  disk 1234ABCD; C:; recovery) as an internal NVMe drive. Answering "no"
+  leaves it byte-for-byte unchanged; "yes" writes the MBR with that disk ID,
+  the kernel sees the three partitions, C: opens, the report gives the
+  BIOS steps; undo gives back the disk byte-for-byte; then the restored
+  disk, booted by SeaBIOS in QEMU, starts its active partition (a stand-in
+  boot sector that writes to the serial port).
+- The BCD reading against the ThinkPad's real BCD (outside the repo):
+  disk ID A76F4909 and the three starts the scan found.
 - Not checked yet: a real Windows install, a real BitLocker drive.

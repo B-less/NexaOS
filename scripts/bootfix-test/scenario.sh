@@ -16,19 +16,22 @@ cp /mnt/e/EFI/Microsoft/Boot/bootmgfw.efi /mnt/w/Windows/Boot/EFI/bootmgfw.efi
 head -c 3000 /mnt/w/Windows/Boot/EFI/bootmgfw.efi > /mnt/e/EFI/Microsoft/Boot/bootmgfw.efi
 mv /mnt/e/EFI/Boot/bootx64.efi /mnt/e/EFI/Boot/old.bin
 umount /mnt/e /mnt/w
-# Windows with a user's files, then its partition list erased (primary and backup).
-mount -t ntfs3 /dev/${L}p3 /mnt/l
+# Windows (Legacy BIOS) with a user's files; its partition list is already
+# empty, so the partitions are reached through loop devices at their starts.
+lo() { D=$(losetup -f); losetup -o $(( $1 * 512 )) $D /dev/$L; echo $D; }
+S=$(lo 2048); mount -t ntfs3 $S /mnt/l
+mkdir -p /mnt/l/Boot
+wget -qO /mnt/l/bootmgr http://10.0.2.2:8765/bootmgr; wget -qO /mnt/l/Boot/BCD http://10.0.2.2:8765/BCD
+umount /mnt/l; losetup -d $S
+C=$(lo 206848); mount -t ntfs3 $C /mnt/l
 mkdir -p /mnt/l/Windows/System32 /mnt/l/Users/Bless/Documents /mnt/l/Users/Bless/Pictures /mnt/l/Users/Bless/AppData/Local /mnt/l/Users/Default
 echo NEXA-LOST-NOTES > /mnt/l/Users/Bless/Documents/notes.txt
 head -c 300000 /dev/urandom > /root/photo.jpg
 cp /root/photo.jpg /mnt/l/Users/Bless/Pictures/photo.jpg
 head -c 5000 /dev/urandom > /mnt/l/Users/Bless/AppData/Local/cache.bin
-umount /mnt/l
-last=$(( $(cat /sys/block/$L/size) - 1 ))
-dd if=/dev/zero of=/dev/$L bs=512 seek=2 count=32 conv=notrunc 2>/dev/null
-dd if=/dev/zero of=/dev/$L bs=512 seek=$((last - 32)) count=32 conv=notrunc 2>/dev/null
+umount /mnt/l; losetup -d $C
+R=$(lo 1026048); mount -t ntfs3 $R /mnt/l; mkdir -p /mnt/l/Recovery/WindowsRE; umount /mnt/l; losetup -d $R
 sync
-blockdev --rereadpt /dev/$L 2>/dev/null
 ls /sys/block/$L
 before=$(sha256sum /dev/$L | cut -c1-64)
 echo "===== CHECK BEFORE"
@@ -53,13 +56,26 @@ picker() {
 }
 echo "===== INTERACTIVE (pick in Files)"
 picker &
-( echo 1; sleep 50; echo; echo yes; echo ) | nexa-bootfix
+( echo 1; sleep 50; echo; echo no; echo ) | nexa-bootfix
 wait
+[ "$(sha256sum /dev/$L | cut -c1-64)" = "$before" ] && echo LOST_DISK_UNCHANGED
 echo "===== INTERACTIVE (whole folders)"
-printf '2\nall\n\n\n' | nexa-bootfix
+printf '2\nall\nyes\n\n' | nexa-bootfix
+echo "===== RESTORED PARTITION LIST"
+[ "$(dd if=/dev/$L bs=1 skip=440 count=4 2>/dev/null | od -An -tx1 | tr -d ' ')" = "cdab3412" ] \
+    && [ "$(dd if=/dev/$L bs=1 skip=510 count=2 2>/dev/null | od -An -tx1 | tr -d ' ')" = "55aa" ] && echo MBR_SIG_OK
+ls /sys/block/$L
+[ -e /sys/block/$L/${L}p1 ] && [ -e /sys/block/$L/${L}p2 ] && [ -e /sys/block/$L/${L}p3 ] && echo KERNEL_SEES_PARTITIONS
+mount -o ro -t ntfs3 /dev/${L}p2 /mnt/l && [ -d /mnt/l/Windows/System32 ] && echo C_MOUNTS; umount /mnt/l
+nexa-bootfix check | grep -A2 'Legacy BIOS'
+echo "===== UNDO, THEN AGAIN"
+B=$(ls -d /media/sd[b-z]1/NexaOS-bootfix-*/backup/disk.txt | head -1)
+nexa-bootfix undo-partitions "${B%/backup/disk.txt}" --yes
+[ "$(sha256sum /dev/$L | cut -c1-64)" = "$before" ] && echo UNDO_OK
+nexa-bootfix fix --yes --to /root/redo | grep -E 'DONE|NOT'
+sync
 echo "===== CHECK AFTER"
 nexa-bootfix check | head -12
-[ "$(sha256sum /dev/$L | cut -c1-64)" = "$before" ] && echo LOST_DISK_UNCHANGED
 echo "===== ON THE USB DRIVE"
 for d in /dev/sd[b-z]1; do m=$(awk -v d=$d '$1==d{print $2}' /proc/mounts); [ -n "$m" ] || { mkdir -p /mnt/u; mount $d /mnt/u && m=/mnt/u; }
     ls $m/NexaOS-bootfix-*/ $m/NexaOS-bootfix-*/backup/boot-partition/EFI/Microsoft/Boot 2>/dev/null
