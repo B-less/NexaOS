@@ -1,0 +1,10 @@
+[package]
+name = "nexa-textio"
+version = "0.1.0"
+edition = "2021"
+description = "Opens and saves text files for the Editor: any encoding and line ending, safe saves, drafts of unsaved changes"
+
+[dependencies]
+libc = "0.2"
+nexa-sys = { path = "../nexa-sys" }
+serde_json = "1"

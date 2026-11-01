@@ -102,3 +102,77 @@ permissions, install/remove/open through the broker.
 - [ ] Screenshots on app pages.
 - [ ] Per-app permission switches after install (with nexa-run).
 - [ ] More apps in the catalogue (see TODO.md: Photos, Backup, Mail).
+
+## Text Editor (text-editor, engine nexa-textio)
+
+Has: one file, syntax colours (GtkSourceView), New/Open/Save/Save As,
+asks before throwing away changes, line and column.
+
+- [x] Engine nexa-textio (Rust, 2026-11-01): open any text file whatever its encoding
+      (UTF-8, UTF-8/16 with a BOM, else Windows-1252), line endings
+      (LF, CRLF, CR), refuse binary files and files over 64 MB with a plain
+      message; save safely (new file next to it, synced, then swapped in;
+      keeps permissions; same encoding and line endings unless changed);
+      refuse to overwrite a file changed by another program since it was
+      opened unless asked.
+- [x] Tabs: several files, Ctrl+T / Ctrl+W / Ctrl+Tab, a dot on unsaved tabs.
+- [x] Find and replace bar (Ctrl+F, Ctrl+H): case, whole word, regular
+      expression, next/previous, replace, replace all with a count.
+- [x] Go to line (Ctrl+L); zoom (Ctrl +/-/0); word wrap, line numbers,
+      show spaces, highlight current line (View menu, remembered).
+- [x] Encoding and line endings shown in the status bar and changeable;
+      language picker.
+- [x] Recent files; drafts of unsaved changes kept (crash or power cut)
+      and offered back on the next start; the open tabs come back.
+- [x] Notice when the file changes on disk: reload or keep yours.
+- [x] Drag and drop files onto the window.
+
+## Image Viewer (image-viewer, engine nexa-imageinfo)
+
+Has: one image, previous/next in the folder, zoom in/out, fit, 100%.
+
+- [ ] Engine nexa-imageinfo (Rust): size and type from the file's header
+      (JPEG, PNG, GIF, WebP, BMP, TIFF), EXIF (camera, lens, date taken,
+      exposure, ISO, focal length, orientation, whether GPS is in it);
+      turn a JPEG losslessly by changing its EXIF orientation in place.
+- [ ] Zoom with the wheel around the pointer, drag to pan, double-click
+      fit/100%; photos shown the right way up (EXIF orientation).
+- [ ] Rotate left/right and flip (saved losslessly when the engine can,
+      else asks to save a copy); delete to the Trash with undo
+      (nexa-fileops); copy the image.
+- [ ] Strip of the folder's pictures (nexa-thumb); sort by name or date.
+- [ ] Info panel (I): file, size, dimensions, EXIF.
+- [ ] Full screen (F11) and slideshow (F5), animated GIFs play.
+- [ ] Set as wallpaper.
+
+## PDF Viewer (pdf-viewer, engine nexa-pdfdoc)
+
+Has: one page at a time, previous/next, zoom in/out.
+
+- [ ] Engine nexa-pdfdoc (C, poppler-glib): document info, outline
+      (contents), text search with page and position of every match,
+      page thumbnails, page text; off the window's thread, so a big PDF
+      never freezes it; refuses broken or locked files with a plain message.
+- [ ] Continuous scrolling through all pages; fit width / fit page / zoom.
+- [ ] Sidebar: page thumbnails and contents (outline), click to go.
+- [ ] Search (Ctrl+F): matches highlighted, next/previous, count.
+- [ ] Go to page; links in the document work; select and copy text.
+- [ ] Rotate; full screen and presentation mode (F5); dark reading mode.
+- [ ] Remembers the page and zoom of each document; recent documents.
+- [ ] Password-protected PDFs: asks for the password.
+
+## Music (music-player, engine nexa-musiclib)
+
+Has: a play list of opened files/folder, play/pause/next/previous, seek,
+volume.
+
+- [ ] Engine nexa-musiclib (Rust): scan ~/Music; read tags (MP3 ID3v1/v2.3/
+      v2.4, FLAC and Ogg Vorbis/Opus comments, M4A) and cover art; length;
+      a library index kept in the cache and updated only for changed files;
+      playlists (.m3u) read and written.
+- [ ] Library: Songs, Albums (with covers), Artists; search.
+- [ ] Queue: play next, add to queue, reorder, remove; shuffle and repeat
+      (all/one).
+- [ ] Playlists: make, add to, rename, delete, play.
+- [ ] Media keys and the top bar's player controls (MPRIS).
+- [ ] Remembers the queue and position; gapless next song.
