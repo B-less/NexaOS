@@ -131,19 +131,19 @@ asks before throwing away changes, line and column.
 
 Has: one image, previous/next in the folder, zoom in/out, fit, 100%.
 
-- [ ] Engine nexa-imageinfo (Rust): size and type from the file's header
+- [x] Engine nexa-imageinfo (Rust, 2026-11-01): size and type from the file's header
       (JPEG, PNG, GIF, WebP, BMP, TIFF), EXIF (camera, lens, date taken,
       exposure, ISO, focal length, orientation, whether GPS is in it);
       turn a JPEG losslessly by changing its EXIF orientation in place.
-- [ ] Zoom with the wheel around the pointer, drag to pan, double-click
+- [x] Zoom with the wheel around the pointer, drag to pan, double-click
       fit/100%; photos shown the right way up (EXIF orientation).
-- [ ] Rotate left/right and flip (saved losslessly when the engine can,
+- [x] Rotate left/right and flip (saved losslessly when the engine can,
       else asks to save a copy); delete to the Trash with undo
       (nexa-fileops); copy the image.
-- [ ] Strip of the folder's pictures (nexa-thumb); sort by name or date.
-- [ ] Info panel (I): file, size, dimensions, EXIF.
-- [ ] Full screen (F11) and slideshow (F5), animated GIFs play.
-- [ ] Set as wallpaper.
+- [x] Strip of the folder's pictures (nexa-thumb); sort by name or date.
+- [x] Info panel (I): file, size, dimensions, EXIF.
+- [x] Full screen (F11) and slideshow (F5), animated GIFs play.
+- [x] Set as wallpaper.
 
 ## PDF Viewer (pdf-viewer, engine nexa-pdfdoc)
 

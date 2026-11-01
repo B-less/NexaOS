@@ -221,6 +221,18 @@ def screen_power(on):
     return False
 
 
+WALLPAPER_PATH = "/usr/share/backgrounds/nexaos/wallpaper.png"
+
+
+def apply_wallpaper(src):
+    """Make the picture `src` the desktop wallpaper, kept for the next login
+    too (the session starts with WALLPAPER_PATH), as Settings does."""
+    import shutil
+    shutil.copyfile(src, WALLPAPER_PATH)
+    if not set_wallpaper(WALLPAPER_PATH):
+        raise OSError("the desktop session didn't accept the new wallpaper")
+
+
 def set_wallpaper(path):
     wm = which()
     if wm == "sway":

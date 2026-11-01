@@ -1,0 +1,10 @@
+[package]
+name = "nexa-imageinfo"
+version = "0.1.0"
+edition = "2021"
+description = "Reads a picture's size, type and EXIF details for the Image Viewer, and turns JPEG photos losslessly"
+
+[dependencies]
+libc = "0.2"
+nexa-sys = { path = "../nexa-sys" }
+serde_json = "1"
