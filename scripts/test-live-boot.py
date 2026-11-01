@@ -119,11 +119,13 @@ def ppm_to_png(ppm_path, png_path, half=True):
 
 
 def extra_drives():
-    """NEXA_TEST_NVME=FILE adds an internal NVMe disk, NEXA_TEST_USB2=FILE a
+    """NEXA_TEST_NVME=FILE (and NEXA_TEST_NVME2) add internal NVMe disks, NEXA_TEST_USB2=FILE a
     second USB stick (raw images, writable), e.g. for nexa-bootfix tests."""
     out = []
     if os.environ.get("NEXA_TEST_NVME"):
         out += ["-drive", f"file={os.environ['NEXA_TEST_NVME']},format=raw,if=none,id=nv", "-device", "nvme,drive=nv,serial=NEXATEST"]
+    if os.environ.get("NEXA_TEST_NVME2"):
+        out += ["-drive", f"file={os.environ['NEXA_TEST_NVME2']},format=raw,if=none,id=nv2", "-device", "nvme,drive=nv2,serial=NEXALOST"]
     if os.environ.get("NEXA_TEST_USB2"):
         out += ["-drive", f"file={os.environ['NEXA_TEST_USB2']},format=raw,if=none,id=u2", "-device", "usb-storage,drive=u2"]
     return out

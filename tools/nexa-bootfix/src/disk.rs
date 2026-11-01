@@ -97,7 +97,13 @@ pub fn fs_of(head: &[u8]) -> &'static str {
 
 /// Parse a GPT: header at LBA 1, entries after it.
 pub fn parse_gpt(read_at: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>, sector: u64) -> Option<Vec<(u32, String, String, String, u64, u64)>> {
-    let h = read_at(sector, 92)?;
+    parse_gpt_at(read_at, sector, 1)
+}
+
+/// The same, from the header at `header_lba` (the backup header is in the
+/// disk's last sector).
+pub fn parse_gpt_at(read_at: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>, sector: u64, header_lba: u64) -> Option<Vec<(u32, String, String, String, u64, u64)>> {
+    let h = read_at(header_lba * sector, 92)?;
     if &h[..8] != b"EFI PART" {
         return None;
     }
@@ -122,7 +128,7 @@ pub fn parse_gpt(read_at: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>, sector:
     Some(out)
 }
 
-fn read_file(path: &Path, at: u64, len: usize) -> Option<Vec<u8>> {
+pub fn read_file(path: &Path, at: u64, len: usize) -> Option<Vec<u8>> {
     let mut f = fs::File::open(path).ok()?;
     f.seek(SeekFrom::Start(at)).ok()?;
     let mut b = vec![0u8; len];

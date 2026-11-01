@@ -12,6 +12,11 @@
 //! loader), the Windows drive (BitLocker, Windows' own copy of the boot
 //! manager), the firmware's boot entries, and the Secure Boot keys.
 //!
+//! When the internal disk's partition list is empty (partitions deleted in
+//! the Windows installer, or diskpart clean), it looks for the partitions
+//! still on it by their boot sectors, opens them read-only and offers to
+//! copy each user's folders to the USB drive.
+//!
 //! Fixes it may make, after copying the whole boot partition and the boot
 //! entries to the USB drive: put back a missing or damaged Windows Boot
 //! Manager from Windows' own copy (same version, same signature), put back
@@ -22,6 +27,7 @@
 
 mod disk;
 mod efi;
+mod lost;
 mod pe;
 #[path = "../../nexa-doctor/src/secureboot.rs"]
 mod secureboot;
@@ -31,6 +37,7 @@ use serde_json::json;
 use std::ffi::CString;
 use std::fs;
 use std::io::{BufRead, Write};
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -154,6 +161,8 @@ struct Report {
     boot_order: Vec<String>,
     boot_current: Option<String>,
     keys: secureboot::Keys,
+    /// Internal disks with an empty partition list: what's still on them.
+    lost: Vec<lost::Scan>,
     findings: Vec<Finding>,
 }
 
@@ -279,16 +288,137 @@ fn check() -> Report {
     let uefi = sys_root().join("firmware/efi").exists();
     let entries = if uefi { efi::entries(&dir) } else { vec![] };
     let keys = secureboot::read(&sys_root());
+    let lost = internal.iter().filter(|d| d.partitions.is_empty()).map(|d| scan_disk(d)).collect();
     let mut r = Report {
         time: now().1,
         uefi,
         boot_order: efi::boot_order(&dir).iter().map(|n| format!("{n:04X}")).collect(),
         boot_current: efi::boot_current(&dir).map(|n| format!("{n:04X}")),
-        disks, esps, windows, entries, keys,
+        disks, esps, windows, entries, keys, lost,
         findings: vec![],
     };
     r.findings = findings(&r);
     r
+}
+
+// ---------- lost partitions ----------
+
+/// Look for the partitions still on a disk whose partition list is empty,
+/// and at what's inside them. Read-only.
+fn scan_disk(d: &disk::Disk) -> lost::Scan {
+    let path = dev_root().join(&d.dev);
+    let bytes = fs::read_to_string(sys_root().join("block").join(&d.dev).join("size")).ok()
+        .and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0) * 512;
+    let mut s = lost::Scan { disk: d.dev.clone(), size: bytes, ..Default::default() };
+    let Ok(file) = fs::File::open(&path) else { return s };
+    let mut read = |at: u64, len: usize| {
+        let mut b = vec![0u8; len];
+        file.read_exact_at(&mut b, at).ok().map(|_| b)
+    };
+    let name = d.dev.clone();
+    let (mut found, checked, with_data) = lost::scan(&mut read, bytes, &mut |p| eprint!("\rLooking for lost partitions on {name}: {p}%   "));
+    eprintln!();
+    // The backup partition list, in the disk's last sector, may still have them.
+    let last_lba = (bytes / d.sector).saturating_sub(1);
+    for (_, _, _, _, first, last) in disk::parse_gpt_at(&mut read, d.sector, last_lba).unwrap_or_default() {
+        let start = first * d.sector;
+        if last < first || last >= last_lba {
+            continue;
+        }
+        if let Some(f) = found.iter_mut().find(|f| f.start == start) {
+            f.from = "scan and backup partition table".into();
+            continue;
+        }
+        let head = read(start, 4096).unwrap_or_default();
+        let (fs_type, label) = lost::boot_sector(&head).map(|(f, _, l)| (f, l)).unwrap_or(("", String::new()));
+        found.push(lost::Found { start, size: (last + 1 - first) * d.sector, fs: fs_type.into(), label,
+            from: "backup partition table".into(), ..Default::default() });
+    }
+    found.sort_by_key(|f| f.start);
+    for f in &mut found {
+        look_inside(&path, d.sector, f);
+    }
+    s.checked = checked;
+    s.with_data = with_data;
+    s.found = found;
+    s
+}
+
+/// Mount a found partition read-only (through a read-only loop device).
+fn open_lost(disk: &Path, sector: u64, f: &lost::Found, at: &Path) -> Result<(), String> {
+    let (dev, handle) = lost::attach(&dev_root(), disk, f.start, f.size, sector)?;
+    let r = mount(&dev, at, &f.fs, true);
+    // The mount holds the loop device now; it goes away when unmounted.
+    drop(handle);
+    r
+}
+
+fn look_inside(disk: &Path, sector: u64, f: &mut lost::Found) {
+    match f.fs.as_str() {
+        "bitlocker" => {
+            f.what = "locked by BitLocker".into();
+            return;
+        }
+        "ntfs" | "vfat" | "exfat" => {}
+        _ => {
+            f.what = "unknown".into();
+            return;
+        }
+    }
+    let at = work_dir().join(format!("lost-{}", f.start / lost::STEP));
+    if let Err(e) = open_lost(disk, sector, f, &at) {
+        f.what = format!("can't be opened: {e}");
+        return;
+    }
+    let has = |p: &[&str]| find_ci(&at, p).is_some();
+    f.what = if f.fs == "vfat" {
+        if has(&["EFI", "Microsoft"]) { "EFI boot partition (Windows)" } else if has(&["EFI"]) { "EFI boot partition" } else { "FAT32 drive" }
+    } else if has(&["Windows", "System32"]) {
+        "Windows (C:)"
+    } else if has(&["Recovery", "WindowsRE"]) || (has(&["Recovery"]) && f.size < 4 << 30) {
+        "Windows recovery"
+    } else {
+        "data drive"
+    }.into();
+    if f.what == "Windows (C:)" {
+        f.users = lost::users(&at);
+    }
+    umount(&at);
+}
+
+/// A found partition with someone's files on it.
+fn has_files(f: &lost::Found) -> bool {
+    f.what == "Windows (C:)" || f.what == "data drive"
+}
+
+fn lost_finding(s: &lost::Scan, boots_elsewhere: bool) -> Finding {
+    let disk = &s.disk;
+    let list = s.found.iter().map(|f| format!("{} ({})", f.what, lost::human(f.size))).collect::<Vec<_>>().join(", ");
+    if s.found.iter().any(has_files) {
+        let users: Vec<&str> = s.found.iter().flat_map(|f| f.users.iter().map(String::as_str)).collect();
+        return find("fault", format!("The partition list on {disk} is empty, but Windows' partitions are still on it"),
+            format!("They were deleted (in the Windows installer's \"Where do you want to install Windows?\" screen, or with diskpart clean), \
+so the PC finds nothing to start. Still on the disk: {list}.{} Your files are still there: NexaOS can copy them to a USB drive, \
+reading the internal disk without changing anything on it. Until your files are safe, don't install Windows or anything else \
+on this disk and don't create partitions on it.", if users.is_empty() { String::new() } else { format!(" User folders: {}.", users.join(", ")) }), None);
+    }
+    if s.found.iter().any(|f| f.fs == "bitlocker") {
+        return find("fault", format!("The partition list on {disk} is empty; Windows is still on it, locked by BitLocker"),
+            format!("Still on the disk: {list}. NexaOS can't open BitLocker drives yet, so it can't copy the files. Don't install \
+anything on this disk. Getting the files back needs your BitLocker recovery key (aka.ms/myrecoverykey, from another device) \
+and a data-recovery program."), None);
+    }
+    let level = if boots_elsewhere { "info" } else { "fault" };
+    if s.with_data * 100 < s.checked.max(1) {
+        return find(level, format!("{disk} is blank"),
+            "Its partition list is empty and it reads back blank everywhere NexaOS looked: SSDs erase deleted space by themselves, \
+so files that were on it can't be brought back from this disk (files kept in OneDrive or another cloud are still there). \
+To use the PC again, install Windows from the installer USB and choose the empty space.", None);
+    }
+    find(level, format!("The partition list on {disk} is empty"),
+        format!("No Windows partition was found where they usually start{}, but {}% of the disk still holds data. \
+Don't install anything on it: a recovery program (PhotoRec, free) may still find files.",
+            if list.is_empty() { String::new() } else { format!(" (only: {list})") }, s.data_percent()), None)
 }
 
 const BCDBOOT: &str = "Rebuild them from the Windows installer USB: on its first screen press Shift+F10, run diskpart, \
@@ -303,7 +433,10 @@ fn findings(r: &Report) -> Vec<Finding> {
             "Boot entries and Secure Boot can't be checked. Restart and choose the stick's UEFI entry in the F12 menu.", None));
     }
     let good_copy = r.windows.iter().any(|w| w.bootmgr_copy.as_ref().map_or(false, |i| i.valid && i.problem.is_none()));
-    if r.esps.is_empty() {
+    for s in &r.lost {
+        out.push(lost_finding(s, !r.esps.is_empty()));
+    }
+    if r.esps.is_empty() && r.lost.is_empty() {
         out.push(find("fault", "No EFI boot partition on the internal disk",
             format!("Windows needs one to start (a small FAT32 partition). {BCDBOOT}"), None));
     }
@@ -462,6 +595,18 @@ fn text(r: &Report) -> String {
             if d.removable && !d.boot_stick { " (removable)" } else { "" }, if d.gpt { "" } else { " (MBR)" });
         for p in &d.partitions {
             s += &format!("  {:<12} {:>7} MB  {:<26} {:<9} {}\n", p.dev, p.size_mb, p.kind, if p.fs.is_empty() { "-" } else { &p.fs }, p.name);
+        }
+    }
+    for l in &r.lost {
+        s += &format!("\n--- Lost partitions on {} (looked at {} places, {}% of them hold data)\n", l.disk, l.checked, l.data_percent());
+        if l.found.is_empty() {
+            s += "none found\n";
+        }
+        for f in &l.found {
+            s += &format!("at {} MB: {}, {}{}: {}{}{}\n", f.start >> 20, lost::human(f.size), f.fs,
+                if f.label.is_empty() { String::new() } else { format!(" \"{}\"", f.label) }, f.what,
+                if f.users.is_empty() { String::new() } else { format!(" (users: {})", f.users.join(", ")) },
+                if f.from == "scan" { String::new() } else { format!(" [from the {}]", f.from) });
         }
     }
     for e in &r.esps {
@@ -728,6 +873,108 @@ fn ask(prompt: &str) -> String {
     }
 }
 
+/// Offer each user's folders on the lost partitions, copy the chosen ones
+/// to `folder`/Files. Returns the copy log.
+fn rescue_files(r: &Report, folder: &Path, fat: bool) -> String {
+    println!("\n=== Copy your files ===");
+    println!("They're still on the internal disk. NexaOS only reads it: nothing there changes.\n");
+    let sources: Vec<(&lost::Scan, usize, &lost::Found)> = r.lost.iter()
+        .flat_map(|l| l.found.iter().enumerate().filter(|(_, f)| has_files(f)).map(move |(i, f)| (l, i, f))).collect();
+    let mut opened = Vec::new();
+    let mut list: Vec<lost::Item> = Vec::new();
+    for (l, i, f) in &sources {
+        let sector = r.disks.iter().find(|d| d.dev == l.disk).map_or(512, |d| d.sector);
+        let at = work_dir().join(format!("files-{}-{i}", l.disk));
+        match open_lost(&dev_root().join(&l.disk), sector, f, &at) {
+            Ok(()) => {
+                println!("Reading {} ({})...", f.what, lost::human(f.size));
+                for mut it in lost::items(&at, f.what == "Windows (C:)") {
+                    if it.label == "the whole drive" {
+                        it.label = format!("{} ({}) - all of it", f.what, lost::human(f.size));
+                    }
+                    if sources.len() > 1 {
+                        it.dest = Path::new(&format!("partition-{}", i + 1)).join(&it.dest);
+                    }
+                    list.push(it);
+                }
+                opened.push(at);
+            }
+            Err(e) => println!("Can't open {}: {e}", f.what),
+        }
+    }
+    let close = |opened: &[PathBuf]| opened.iter().for_each(|m| umount(m));
+    if list.is_empty() {
+        println!("No files found in the user folders.");
+        close(&opened);
+        return "No files found in the user folders.\n".into();
+    }
+    println!();
+    for (i, it) in list.iter().enumerate() {
+        println!("  {:>2}. {:<44} {:>9}  ({} file{})", i + 1, it.label, lost::human(it.bytes), it.files, if it.files == 1 { "" } else { "s" });
+    }
+    let free = free_mb(folder).unwrap_or(0) << 20;
+    println!("\nFree on the USB drive: {}{}", lost::human(free), if fat { " (FAT32: files of 4 GB or more can't go on it)" } else { "" });
+    let chosen: Vec<usize> = loop {
+        let a = ask("Type the numbers to copy (e.g. 1 3 4) or all, then Enter. (Enter alone: don't copy.) ");
+        if a.is_empty() || a == "s" {
+            break vec![];
+        }
+        let mut pick: Vec<usize> = if a == "all" {
+            (0..list.len()).collect()
+        } else {
+            a.split(|c: char| c == ' ' || c == ',').filter_map(|w| w.parse::<usize>().ok()).filter(|n| (1..=list.len()).contains(n)).map(|n| n - 1).collect()
+        };
+        pick.sort();
+        pick.dedup();
+        if pick.is_empty() {
+            println!("Type numbers from the list, or all.");
+            continue;
+        }
+        let total: u64 = pick.iter().map(|i| list[*i].bytes).sum();
+        if total + total / 50 + (16 << 20) > free {
+            println!("That's {}, more than the {} free on the USB drive. Pick fewer, or use a bigger drive (exFAT or NTFS for files over 4 GB).",
+                lost::human(total), lost::human(free));
+            continue;
+        }
+        break pick;
+    };
+    if chosen.is_empty() {
+        close(&opened);
+        println!("No files copied.");
+        return "No files copied (none chosen).\n".into();
+    }
+    let total: u64 = chosen.iter().map(|i| list[*i].bytes).sum();
+    let to = folder.join("Files");
+    let mut done = lost::Copied::default();
+    let mut log = String::new();
+    for i in &chosen {
+        let it = &list[*i];
+        println!("Copying {}...", it.label);
+        let mut next = 0u64;
+        lost::copy_into(&it.path, &to.join(&it.dest), fat, &mut done, &mut |c| {
+            if c.bytes >= next {
+                next = c.bytes + (64 << 20);
+                print!("\r  {} of {} ({} files)   ", lost::human(c.bytes), lost::human(total), c.files);
+                let _ = std::io::stdout().flush();
+            }
+        });
+        println!();
+        log += &format!("{} -> Files/{}\n", it.label, it.dest.display());
+    }
+    sync();
+    close(&opened);
+    println!("\nCOPIED: {} files, {} to Files on the USB drive.", done.files, lost::human(done.bytes));
+    log += &format!("\nCopied {} files, {}.\n", done.files, lost::human(done.bytes));
+    if !done.failed.is_empty() {
+        println!("NOT COPIED: {} file(s) (the list is in files-copied.txt):", done.failed.len());
+        for f in done.failed.iter().take(8) {
+            println!("  {f}");
+        }
+        log += &format!("\nNot copied ({}):\n{}\n", done.failed.len(), done.failed.join("\n"));
+    }
+    log
+}
+
 fn interactive() -> i32 {
     println!("NexaOS boot check for Windows\n=============================\n");
     println!("This looks at the internal disk's boot files, the firmware's boot entries and the");
@@ -773,6 +1020,15 @@ fn interactive() -> i32 {
     };
     save("report-before.txt", text(&before).as_bytes());
     save("report-before.json", serde_json::to_string_pretty(&before).unwrap_or_default().as_bytes());
+    if before.lost.iter().any(|l| l.found.iter().any(has_files)) {
+        match (&folder, &drive) {
+            (Some(f), Some(d)) => {
+                let log = rescue_files(&before, f, d.fs == "vfat");
+                save("files-copied.txt", log.as_bytes());
+            }
+            _ => println!("\nYour files can be copied to a USB drive: run Windows Boot Repair again with one plugged in."),
+        }
+    }
     let fixes: Vec<&Finding> = before.findings.iter().filter(|f| f.fix.is_some()).collect();
     let mut changed = false;
     if !fixes.is_empty() {
@@ -823,6 +1079,9 @@ fn interactive() -> i32 {
             println!("  - {}", f.title);
         }
     }
+    if before_lost_files(&after) {
+        println!("\nAfter your files are copied, check them on another computer before installing anything on this disk.");
+    }
     if let Some(f) = &folder {
         std::thread::sleep(std::time::Duration::from_millis(400));
         match screenshot(&f.join("screenshot.png")) {
@@ -839,6 +1098,10 @@ fn interactive() -> i32 {
     }
     ask("\nPress Enter to close. ");
     0
+}
+
+fn before_lost_files(r: &Report) -> bool {
+    r.lost.iter().any(|l| l.found.iter().any(has_files))
 }
 
 fn main() {
@@ -922,6 +1185,7 @@ mod tests {
         Report {
             time: "t".into(), uefi: true, disks: vec![], windows: vec![], boot_order: vec![], boot_current: None,
             keys: secureboot::Keys { uefi: true, setup_mode: Some(false), secure_boot: Some(false), ..Default::default() },
+            lost: vec![],
             esps: vec![Esp {
                 dev: "nvme0n1p1".into(), disk: "nvme0n1".into(), guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(), number: 1,
                 first_lba: 2048, sectors: 204800, readable: true, has_microsoft_boot: true,
@@ -992,6 +1256,32 @@ mod tests {
         r.esps[0].fallback = None;
         assert_eq!(ids(&r)[0].1.as_deref(), Some("restore-fallback"));
         assert!(text(&r).contains("Fallback"));
+    }
+
+    #[test]
+    fn deleted_partitions() {
+        let mut r = base();
+        r.esps.clear();
+        r.entries.clear();
+        let c = lost::Found { start: 1 << 30, size: 200 << 30, fs: "ntfs".into(), what: "Windows (C:)".into(), users: vec!["Bless".into()], from: "scan".into(), ..Default::default() };
+        r.lost = vec![lost::Scan { disk: "nvme0n1".into(), size: 256 << 30, checked: 300, with_data: 200, found: vec![c] }];
+        let f = findings(&r);
+        assert!(f[0].title.contains("still on it") && f[0].detail.contains("Bless") && f[0].detail.contains("copy them"), "{f:?}");
+        // The misleading "no EFI partition" step (bcdboot can't help) is left out.
+        assert!(!f.iter().any(|x| x.title.contains("No EFI")));
+        assert!(text(&r).contains("Lost partitions on nvme0n1"));
+        // Blank (trimmed) disk: said plainly.
+        r.lost[0].found.clear();
+        r.lost[0].with_data = 0;
+        assert!(findings(&r)[0].title.contains("is blank"));
+        // Some data, nothing recognised.
+        r.lost[0].with_data = 50;
+        assert!(findings(&r)[0].detail.contains("PhotoRec"));
+        // A blank second disk next to a working Windows: only a note.
+        let mut ok = base();
+        ok.lost = r.lost.clone();
+        ok.lost[0].with_data = 0;
+        assert!(findings(&ok).iter().all(|f| f.level != "fault"));
     }
 
     #[test]

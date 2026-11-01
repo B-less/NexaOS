@@ -31,6 +31,32 @@ On the live USB it needs no password; an installed NexaOS asks for yours.
 A boot manager signed with a key the PC's db doesn't have, with Secure Boot
 on, is reported as the reason Windows is refused.
 
+## Deleted partitions: getting your files back
+
+If the internal disk's partition list is empty (the partitions were deleted
+in the Windows installer's "Where do you want to install Windows?" screen,
+or with `diskpart clean`), Windows can't start and the Windows installer's
+Repair has nothing to repair. The files are often still there: deleting a
+partition only empties the list.
+
+- It looks for the partitions on every 1 MiB boundary (where Windows starts
+  them) by their boot sectors: NTFS, BitLocker, FAT32, exFAT (`lost.rs`).
+  It also reads the backup partition list in the disk's last sector.
+- Each one found is mounted read-only through a read-only loop device over
+  the disk (opened read-only), to tell Windows (C:), the recovery and EFI
+  partitions and data drives apart, and to list the users.
+- In the step-by-step run it lists each user's folders (Desktop, Documents,
+  Pictures, ...) with their sizes; you type the numbers, or `all`. They're
+  copied to the USB drive under `Files/<user>/<folder>`. AppData, the
+  recycle bin and Windows' own folders are left out. On a FAT32 drive,
+  files of 4 GB or more are skipped and listed in `files-copied.txt`.
+- It says plainly when the disk reads back blank (SSDs erase deleted space
+  by themselves): then the files can't be brought back from it.
+- BitLocker partitions are found and reported, but not opened yet.
+
+Nothing is written to that disk. Don't install anything on it until the
+files are copied and checked on another computer.
+
 ## What it fixes, and only after a backup
 
 First the whole EFI boot partition and every Boot#### variable are copied
@@ -65,4 +91,8 @@ resizes anything. For those it explains the step:
   internal NVMe drive and a FAT32 USB stick. The boot manager cut short, the
   fallback removed, no Windows entry: all three found, fixed, and the report,
   backup and screenshot saved on the stick.
+- The same run with a second NVMe disk holding Windows and a user's
+  folders, whose partition list (primary and backup) is erased in the VM:
+  both partitions found, Documents and Pictures copied (AppData not), and
+  the disk's SHA-256 the same before and after.
 - Not checked yet: a real Windows install, a real BitLocker drive.
