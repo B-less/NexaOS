@@ -20,7 +20,8 @@ from gi.repository import Gtk, Gdk, Gio, GLib, Pango, WebKit2  # noqa: E402
 
 from nexa_common.titlebar import attach_titlebar  # noqa: E402
 
-from . import blocker, downloads, newtab, session, tor  # noqa: E402
+from . import blocker, downloads, newtab, passwords, reader, session, tor, webdata  # noqa: E402
+from .bookmark_manager import BookmarkManager  # noqa: E402
 from .bookmarks import Bookmarks  # noqa: E402
 from .history import History  # noqa: E402
 from .prefs import PERMISSIONS, Prefs, data_dir, host_of, site_of  # noqa: E402
@@ -33,6 +34,8 @@ window { background-image: none; background-color: @nexa_bg; }
 #toolbtn { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text; border-radius: 6px; padding: 4px 10px; }
 #toolbtn:hover { background-image: none; background-color: @nexa_hover; }
 #toolbtn:disabled { color: @nexa_disabled; }
+#toolbtn-on { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; border-radius: 6px; padding: 4px 10px; }
+row.current { background-color: @nexa_selected; border-radius: 10px; }
 #shield-on { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 6px; padding: 4px 10px; }
 #shield-off { background-image: none; background-color: @nexa_surface_hi; color: @nexa_muted; border-radius: 6px; padding: 4px 10px; }
 #private-badge { background-image: none; background-color: @nexa_accent; color: @nexa_on_accent; border-radius: 10px; padding: 2px 10px; font-weight: bold; }
@@ -191,6 +194,9 @@ class Tab:
     def __init__(self, win, view):
         self.win, self.view = win, view
         self.newtab = False
+        self.pinned = False
+        self.reader_url = None  # the page shown in Reader view
+        self.reader_pending = False  # the reader page is loading (its own load, not a navigation)
         self.upgraded = {}  # https url -> the http url it replaced
         self.page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.infobar = Gtk.InfoBar(show_close_button=True)
@@ -214,6 +220,7 @@ class Tab:
         close.set_name("tabclose")
         close.set_tooltip_text("Close tab (Ctrl+W)")
         close.connect("clicked", lambda *_: win.close_tab(self))
+        self.close_btn = close
         for w in (self.icon, self.spinner, self.title, self.audio, close):
             head.pack_start(w, False, False, 0)
         head.set_child_packing(self.title, True, True, 0, Gtk.PackType.START)
@@ -235,10 +242,21 @@ class Tab:
 
     # head (the tab itself)
     def _on_head_click(self, _w, event):
-        if event.button == 2:
+        if event.button == 2 and not self.pinned:
             self.win.close_tab(self)
             return True
+        if event.button == 3:
+            self.win.tab_menu(self).popup_at_pointer(event)
+            return True
         return False
+
+    def set_pinned(self, pinned):
+        """A pinned tab: just its icon, kept at the start, not closed by
+        Ctrl+W or a middle click, and back next time."""
+        self.pinned = pinned
+        self.title.set_visible(not pinned)
+        self.close_btn.set_visible(not pinned)
+        self.head.set_tooltip_text((self.view.get_title() or "") + (" (pinned)" if pinned else ""))
 
     def _on_mouse(self, _view, event):
         if event.button == 8 and self.view.can_go_back():
@@ -274,6 +292,7 @@ class Tab:
         self.view.set_is_muted(not self.view.get_is_muted())
         self.audio.set_label("🔇" if self.view.get_is_muted() else "🔊")
         self.audio.set_tooltip_text("Unmute this tab" if self.view.get_is_muted() else "Mute this tab")
+        self.audio.set_visible(self.view.is_playing_audio() or self.view.get_is_muted())
 
     def _on_favicon(self, view, _p):
         surface = view.get_favicon()
@@ -391,23 +410,30 @@ class BrowserWindow(Gtk.Window):
         _ucms.append(self.ucm)
         _apply_to(self.ucm)
         self.tabs = []
-        self.closed = []  # reopen with Ctrl+Shift+T
+        self.closed = []  # [{url, title}], newest last: reopen with Ctrl+Shift+T or from the tab list
         self.downloads = []  # dicts: download, name, path, meter, widgets, state
         self._session_pending = 0
         self._fullscreen = False
 
         self._build_ui()
         self.connect("destroy", self._on_destroy)
+        # Saved passwords: offered after a sign-in, filled on request. Never
+        # in private or Tor windows.
+        self.passwords = None if private else passwords.Watcher(self, self.ucm)
         if use_tor:
             tab = self.new_tab(None)
             self._connect_tor(tab, start_url or TOR_HOME_URL)
         else:
             urls, active = (session.load() if restore else ([], 0))
+            pinned, closed = session.load_extra() if restore else ([], [])
+            self.closed = closed
             if start_url:
                 self.new_tab(start_url)
             elif urls:
                 for u in urls:
-                    self.new_tab(u, background=True)
+                    t = self.new_tab(u, background=True)
+                    if u in pinned:
+                        t.set_pinned(True)
                 self.notebook.set_current_page(active)
             else:
                 self.new_tab(PREFS["home"] or None)
@@ -452,6 +478,8 @@ class BrowserWindow(Gtk.Window):
         if self.history is not None:
             self._attach_completion()
 
+        self.reader_btn = btn("Reader", "Reader view: just the article (F9)", self.toggle_reader)
+        toolbar.pack_start(self.reader_btn, False, False, 0)
         self.star_btn = btn("☆", "Bookmark this page (Ctrl+D)", self.toggle_bookmark)
         toolbar.pack_start(self.star_btn, False, False, 0)
         self.shield_btn = Gtk.Button(label="🛡")
@@ -485,6 +513,9 @@ class BrowserWindow(Gtk.Window):
         newtab_btn = btn("+", "New tab (Ctrl+T)", lambda: self.new_tab(None))
         newtab_btn.show()
         self.notebook.set_action_widget(newtab_btn, Gtk.PackType.END)
+        self.tablist_btn = btn("⌄", "All tabs and recently closed ones (Ctrl+Shift+A)", lambda: self.show_tab_list())
+        self.tablist_btn.show()
+        self.notebook.set_action_widget(self.tablist_btn, Gtk.PackType.START)
         self.notebook.connect("switch-page", self._on_switch_page)
         self.notebook.connect("page-reordered", lambda *_: self._session_soon())
         root.pack_start(self.notebook, True, True, 0)
@@ -519,10 +550,15 @@ class BrowserWindow(Gtk.Window):
         item("New Tor window", "", lambda: _track(BrowserWindow(use_tor=True)))
         box.pack_start(Gtk.Separator(), False, False, 4)
         item("Bookmarks", "Ctrl+Shift+O", self.show_bookmarks)
+        item("Manage bookmarks", "", self.show_bookmark_manager)
+        if not self.private:
+            item("Passwords", "", lambda: passwords.PasswordManager(self).show_all())
         if self.history is not None:
             item("History", "Ctrl+H", self.show_history)
         item("Downloads", "", lambda: self.downloads_btn.set_active(True))
         item("Reopen closed tab", "Ctrl+Shift+T", self.reopen_closed)
+        item("All tabs", "Ctrl+Shift+A", self.show_tab_list)
+        item("Reader view", "F9", self.toggle_reader)
         box.pack_start(Gtk.Separator(), False, False, 4)
         item("Find in page", "Ctrl+F", self.show_find)
         zoom = Gtk.Box(spacing=6)
@@ -630,13 +666,15 @@ class BrowserWindow(Gtk.Window):
     def tab_of(self, view):
         return next((t for t in self.tabs if t.view is view), None)
 
-    def close_tab(self, tab):
+    def close_tab(self, tab, force=False):
         if tab not in self.tabs:
             return
-        uri = tab.view.get_uri()
-        if uri and not tab.newtab:
-            self.closed.append(uri)
-            del self.closed[:-20]
+        if tab.pinned and not force:
+            return  # a pinned tab closes only from its menu
+        uri = tab.reader_url or tab.view.get_uri()
+        if uri and not tab.newtab and not uri.startswith(("about:", "data:")):
+            self.closed.append({"url": uri, "title": tab.view.get_title() or uri})
+            del self.closed[:-session.MAX_CLOSED]
         self.tabs.remove(tab)
         self.notebook.remove_page(self.notebook.page_num(tab.page))
         tab.page.destroy()
@@ -645,16 +683,189 @@ class BrowserWindow(Gtk.Window):
             return
         self._session_soon()
 
-    def reopen_closed(self):
-        if self.closed:
-            self.new_tab(self.closed.pop())
+    def reopen_closed(self, entry=None):
+        if entry is None and self.closed:
+            entry = self.closed[-1]
+        if entry is not None:
+            self.closed = [c for c in self.closed if c is not entry]
+            self.new_tab(entry["url"])
+
+    # ---- the tab's own menu (right click), pinning, the tab list
+    def tab_menu(self, tab):
+        m = Gtk.Menu()
+
+        def item(label, fn, ok=True):
+            it = Gtk.MenuItem(label=label)
+            it.set_sensitive(ok)
+            it.connect("activate", lambda *_: fn())
+            m.append(it)
+        item("Reload", lambda: tab.view.reload())
+        item("Duplicate", lambda: self.new_tab(tab.reader_url or tab.view.get_uri(), after_current=True), not tab.newtab)
+        item("Unpin" if tab.pinned else "Pin", lambda: self.pin(tab, not tab.pinned))
+        item("Unmute" if tab.view.get_is_muted() else "Mute", tab.toggle_mute)
+        m.append(Gtk.SeparatorMenuItem())
+        item("Close Tab", lambda: self.close_tab(tab, force=True))
+        item("Close Other Tabs", lambda: [self.close_tab(t) for t in list(self.tabs) if t is not tab], len(self.tabs) > 1)
+        item("Close Tabs to the Right", lambda: [self.close_tab(t) for t in self._in_order()[self._in_order().index(tab) + 1:]],
+             tab in self._in_order() and self._in_order().index(tab) < len(self.tabs) - 1)
+        m.append(Gtk.SeparatorMenuItem())
+        item("Reopen Closed Tab", self.reopen_closed, bool(self.closed))
+        m.show_all()
+        m.attach_to_widget(tab.head, None)
+        return m
+
+    def _in_order(self):
+        """Tabs in the order they're shown."""
+        pages = [self.notebook.get_nth_page(n) for n in range(self.notebook.get_n_pages())]
+        return [t for p in pages for t in self.tabs if t.page is p]
+
+    def pin(self, tab, pinned):
+        tab.set_pinned(pinned)
+        order = self._in_order()
+        n_pinned = len([t for t in order if t.pinned and t is not tab])
+        self.notebook.reorder_child(tab.page, n_pinned)
+        self._session_soon()
+
+    def show_tab_list(self):
+        pop = Gtk.Popover()
+        pop.set_relative_to(self.tablist_btn)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_border_width(10)
+        search = Gtk.SearchEntry(placeholder_text="Find a tab")
+        box.pack_start(search, False, False, 0)
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_size_request(440, 380)
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        lst = Gtk.ListBox()
+        scroller.add(lst)
+        box.pack_start(scroller, True, True, 0)
+
+        def fill(*_a):
+            for c in lst.get_children():
+                c.destroy()
+            words = search.get_text().lower().split()
+
+            def match(title, url):
+                return all(w in (title + " " + url).lower() for w in words)
+            for t in self._in_order():
+                url = t.reader_url or ("" if t.newtab else t.view.get_uri() or "")
+                title = t.view.get_title() or ("New tab" if t.newtab else url)
+                if match(title, url):
+                    lst.add(self._tab_row(pop, title, url, t))
+            closed = [c for c in reversed(self.closed) if match(c["title"], c["url"])]
+            if closed:
+                head = Gtk.Label(label="Recently closed", xalign=0)
+                head.set_name("panel-title")
+                head.set_margin_top(8)
+                lst.add(head)
+                for c in closed:
+                    lst.add(self._tab_row(pop, c["title"], c["url"], None, closed=c))
+            lst.show_all()
+        search.connect("search-changed", fill)
+        lst.connect("row-activated", lambda _l, row: (pop.popdown(), row.activate_fn()) if hasattr(row, "activate_fn") else None)
+        fill()
+        box.show_all()
+        pop.add(box)
+        pop.popup()
+        search.grab_focus()
+        self.tab_list_popover = pop
+        return pop
+
+    def _tab_row(self, pop, title, url, tab, closed=None):
+        row = Gtk.ListBoxRow()
+        item = Gtk.Box(spacing=6)
+        item.set_name("panel-row")
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        mark = "📌 " if tab is not None and tab.pinned else "🔇 " if tab is not None and tab.view.get_is_muted() else ""
+        col.pack_start(Gtk.Label(label=mark + title, xalign=0, ellipsize=Pango.EllipsizeMode.END), False, False, 0)
+        u = Gtk.Label(label=url, xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        u.set_name("panel-muted")
+        col.pack_start(u, False, False, 0)
+        item.pack_start(col, True, True, 0)
+        if tab is not None:
+            x = Gtk.Button(label="✕")
+            x.set_name("tabclose")
+            x.set_tooltip_text("Close")
+            x.connect("clicked", lambda *_: (self.close_tab(tab, force=True), row.destroy()))
+            item.pack_end(x, False, False, 0)
+            row.activate_fn = lambda: self.notebook.set_current_page(self.notebook.page_num(tab.page))
+            if tab is self.current():
+                row.get_style_context().add_class("current")
+        else:
+            row.activate_fn = lambda: self.reopen_closed(closed)
+        row.add(item)
+        return row
+
+    # ---- Reader view
+    def toggle_reader(self):
+        tab = self.current()
+        if tab is None:
+            return
+        if tab.reader_url:
+            url, tab.reader_url = tab.reader_url, None
+            if tab.view.can_go_back():
+                tab.view.go_back()
+            else:
+                tab.view.load_uri(url)
+            self._sync_buttons()
+            return
+        url = tab.view.get_uri() or ""
+        if tab.newtab or not url.startswith(("https://", "http://")):
+            return
+
+        def got_html(view, res):
+            try:
+                page = view.evaluate_javascript_finish(res).to_string()
+            except GLib.Error:
+                page = None
+            if not page:
+                tab.show_info("This page can't be shown in Reader view.")
+                return
+
+            def work():
+                try:
+                    art = webdata.run("reader", html=page[:60_000_000], url=url)
+                    GLib.idle_add(show, art, None)
+                except webdata.EngineError as e:
+                    GLib.idle_add(show, None, e)
+            threading.Thread(target=work, daemon=True).start()
+
+        def show(art, error):
+            if (tab.view.get_uri() or "") != url:
+                return False  # moved on meanwhile
+            if error is not None:
+                tab.show_info("This page doesn't look like an article, so Reader view can't make it simpler." if error.code == "no_article"
+                              else GLib.markup_escape_text(str(error)))
+                return False
+            tab.reader_url = url
+            tab.reader_pending = True
+            # The article's own address as the base (relative links); the
+            # page's Content-Security-Policy lets no script run in it.
+            tab.view.load_html(reader.page(art, url, self._theme_colors()), url)
+            self._sync_buttons()
+            return False
+        tab.view.evaluate_javascript("document.documentElement.outerHTML", -1, None, None, None, got_html)
+
+    def _theme_colors(self):
+        try:
+            from nexa_common import themes
+            pal = themes.app_palette(themes.THEMES[themes.load_settings()["theme"]])
+            return {k: pal[v] for k, v in (("bg", "bg"), ("surface", "surface"), ("text", "text"), ("muted", "muted"),
+                                            ("accent", "accent")) if str(pal.get(v, "")).startswith("#")}
+        except Exception:
+            return None
+
+    def show_bookmark_manager(self):
+        m = BookmarkManager(BOOKMARKS, parent=self, open_url=lambda url: self.new_tab(url), changed=self._sync_buttons)
+        m.show_all()
+        return m
 
     def _on_switch_page(self, _nb, page, _n):
         tab = next((t for t in self.tabs if t.page is page), None)
         if tab is None:
             return
         uri = tab.view.get_uri() or ""
-        self.url_entry.set_text("" if tab.newtab else uri)
+        self.url_entry.set_text("" if tab.newtab else (tab.reader_url or uri))
         GLib.idle_add(self._sync_buttons)
         self._update_title(tab)
         if self.find_revealer.get_reveal_child():
@@ -674,8 +885,11 @@ class BrowserWindow(Gtk.Window):
         self.back_btn.set_sensitive(view.can_go_back())
         self.fwd_btn.set_sensitive(view.can_go_forward())
         self.reload_btn.set_label("✕" if view.is_loading() else "⟳")
-        uri = view.get_uri() or ""
+        uri = tab.reader_url or view.get_uri() or ""
         real = uri and not tab.newtab and not uri.startswith(("about:", "data:"))
+        self.reader_btn.set_name("toolbtn-on" if tab.reader_url else "toolbtn")
+        self.reader_btn.set_tooltip_text("Back to the full page (F9)" if tab.reader_url else "Reader view: just the article (F9)")
+        self.reader_btn.set_sensitive(bool(real))
         self.star_btn.set_label("★" if real and BOOKMARKS.has(uri) else "☆")
         self.star_btn.set_sensitive(bool(real))
         on = PREFS.blocking_on(uri) if real else PREFS["block_ads"]
@@ -702,6 +916,13 @@ class BrowserWindow(Gtk.Window):
 
     def _on_load_changed(self, view, event):
         tab = self.tab_of(view)
+        if event == WebKit2.LoadEvent.COMMITTED and tab:
+            if tab.reader_pending:
+                tab.reader_pending = False  # the reader page itself
+                self._sync_buttons()
+                return
+            if tab.reader_url:
+                tab.reader_url = None  # a real page (a link, Back, Reload): Reader view is over
         if event == WebKit2.LoadEvent.COMMITTED and tab and not tab.newtab:
             uri = view.get_uri()
             view.set_zoom_level(PREFS.zoom_for(uri))
@@ -900,6 +1121,7 @@ class BrowserWindow(Gtk.Window):
             (True, True, Gdk.KEY_n): _open_private_window,
             (True, False, Gdk.KEY_t): lambda: self.new_tab(None),
             (True, True, Gdk.KEY_t): self.reopen_closed,
+            (True, True, Gdk.KEY_a): self.show_tab_list,
             (True, False, Gdk.KEY_w): lambda: self.close_tab(self.current()),
             (True, False, Gdk.KEY_l): lambda: (self.url_entry.grab_focus(), self.url_entry.select_region(0, -1)),
             (True, False, Gdk.KEY_f): self.show_find,
@@ -942,6 +1164,9 @@ class BrowserWindow(Gtk.Window):
         if event.keyval == Gdk.KEY_F11:
             self.toggle_fullscreen()
             return True
+        if event.keyval == Gdk.KEY_F9:
+            self.toggle_reader()
+            return True
         if event.keyval == Gdk.KEY_F12:
             view.get_inspector().show()
             return True
@@ -959,11 +1184,17 @@ class BrowserWindow(Gtk.Window):
     def _save_session(self):
         self._session_pending = 0
         if PREFS["restore_session"]:
-            urls = []
+            urls, pinned, closed = [], [], []
             for w in _open_windows:
                 if not w.private:
-                    urls += [t.view.get_uri() for t in w.tabs if not t.newtab]
-            session.save(urls, self.notebook.get_current_page())
+                    for t in w._in_order():
+                        if not t.newtab:
+                            u = t.reader_url or t.view.get_uri()
+                            urls.append(u)
+                            if t.pinned:
+                                pinned.append(u)
+                    closed += w.closed
+            session.save(urls, self.notebook.get_current_page(), pinned=pinned, closed=closed)
         return False
 
     def _on_destroy(self, _w):

@@ -86,11 +86,24 @@ permissions, find in page, zoom per site, bookmarks, history, downloads,
 session restore, private and Tor windows, developer tools, printing,
 spell checking, clear browsing data.
 
-- [ ] Saved passwords: offer to save, fill on return, a manager; stored
-      encrypted (Rust vault, key in the keyring).
-- [ ] Reader view.
-- [ ] Pinned tabs, mute a tab, reopen closed tab, tab list.
-- [ ] Bookmark manager (folders, edit, import from Firefox/Chrome HTML).
+- [x] Saved passwords (2026-11-02): offered after signing in, filled only
+      when you click Fill In, never in private or Tor windows; the page side
+      is a script in its own world the page's scripts can't see; stored by
+      nexa-webdata (Rust) encrypted with ChaCha20-Poly1305, the key either a
+      0600 key file or a primary password (PBKDF2-HMAC-SHA256); a Passwords
+      window (show, copy, delete, never-save list, primary password).
+      NexaOS has no keyring yet, so "key in the keyring" became that.
+- [x] Reader view (2026-11-02, F9): nexa-webdata finds the article (scores
+      paragraph-rich parts, leaves out menus, sidebars, sharing buttons)
+      and writes it again with safe tags only; shown in the theme's colours
+      with a Content-Security-Policy that lets no script run.
+- [x] Pinned tabs, mute a tab, reopen closed tab, tab list (2026-11-02): a
+      tab menu (right click: reload, duplicate, pin, mute, close others/to
+      the right), pinned tabs first and kept next time, the tab list
+      (Ctrl+Shift+A) with search and recently closed tabs (kept next time).
+- [x] Bookmark manager (2026-11-02): folders (new, rename, delete), edit
+      name/address/folder, search, import and export of other browsers'
+      HTML bookmark files through nexa-webdata.
 
 ## Store
 

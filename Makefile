@@ -32,7 +32,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later test-settings-devices test-bootfix test-editor-app test-viewer-app test-pdf-app test-music-app
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later test-settings-devices test-bootfix test-editor-app test-viewer-app test-pdf-app test-music-app test-browser-features
 .SECONDARY:
 
 # ============================================================================
@@ -411,6 +411,11 @@ test-why: native
 # permissions, pop-ups, video in every format, session restore.
 test-browser: native
 	@sh scripts/test-browser.sh
+
+# Pinned/muted tabs, the tab list, the bookmark manager (import/export),
+# Reader view and saved passwords, against nexa-webdata.
+test-browser-features: native
+	@sh scripts/test-browser-features.sh
 
 # Rewind (Magic Layer): real MicroBrain watching real settings files.
 test-rewind: native

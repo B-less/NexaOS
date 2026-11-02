@@ -1,7 +1,7 @@
 # All of NexaOS's native tools build as one workspace: shared dependencies
 # compile once into one target folder, and only changed crates rebuild.
 [workspace]
-members = ["nexa-sys", "nexa-pack", "nexa-mindd", "nexa-tools", "nexa-brokerd", "nexa-run", "nexa-fileops", "nexa-kerneld", "nexa-patternd", "nexa-preload", "nexa-store", "nexa-doctor", "nexa-linkd", "nexa-microbrain", "nexa-dna", "nexa-sessiond", "nexa-webfilter", "nexa-archiver", "nexa-bootfix", "nexa-textio", "nexa-imageinfo", "nexa-musiclib"]
+members = ["nexa-sys", "nexa-pack", "nexa-mindd", "nexa-tools", "nexa-brokerd", "nexa-run", "nexa-fileops", "nexa-kerneld", "nexa-patternd", "nexa-preload", "nexa-store", "nexa-doctor", "nexa-linkd", "nexa-microbrain", "nexa-dna", "nexa-sessiond", "nexa-webfilter", "nexa-archiver", "nexa-bootfix", "nexa-textio", "nexa-imageinfo", "nexa-musiclib", "nexa-webdata"]
 resolver = "2"
 
 # Thin LTO keeps most of full LTO's size/speed benefit at a fraction of the
