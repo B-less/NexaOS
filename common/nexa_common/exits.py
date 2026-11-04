@@ -5,9 +5,9 @@ about what the app did; the last 200 at most.
 
     ~/.local/state/nexa/exits.jsonl   {"at", "app", "pid", "signal" | "code", "ran_s"}
 
-The desktop (one process for the Dock, Nexus and the panel) is the parent
-of the apps it starts, so it can see how they ended: GLib's child watch,
-no extra process."""
+The desktop (Nexus and the panel; Orbit, in C, writes the same file) is
+the parent of the apps it starts, so it can see how they ended: GLib's
+child watch, no extra process."""
 import json
 import os
 import time

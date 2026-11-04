@@ -2,7 +2,7 @@
  * Sway has no pointer, so apps get no clicks; this gives the seat one.
  * Built into build/test/ only: never part of the system image.
  *
- *   nexa-vpointer W H [move X Y] [click] [press] [release] [drag X Y] [wait MS]...
+ *   nexa-vpointer W H [move X Y] [click] [rclick] [mclick] [press] [release] [drag X Y] [wait MS]...
  *
  * W H: the output size (positions are absolute, in that space). drag moves
  * in 12 steps with the button held.
@@ -60,14 +60,16 @@ int main(int argc, char **argv)
             cx = atof(argv[i + 1]); cy = atof(argv[i + 2]); i += 2;
             zwlr_virtual_pointer_v1_motion_absolute(p, ms(), (uint32_t)cx, (uint32_t)cy, W, H);
             zwlr_virtual_pointer_v1_frame(p);
-        } else if (!strcmp(argv[i], "press") || !strcmp(argv[i], "release") || !strcmp(argv[i], "click")) {
-            int press = argv[i][0] != 'r';
-            zwlr_virtual_pointer_v1_button(p, ms(), BTN_LEFT, press ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED);
+        } else if (!strcmp(argv[i], "press") || !strcmp(argv[i], "release") || !strcmp(argv[i], "click") ||
+                   !strcmp(argv[i], "rclick") || !strcmp(argv[i], "mclick")) {
+            int press = strcmp(argv[i], "release") != 0, click = strstr(argv[i], "click") != NULL;
+            uint32_t btn = argv[i][0] == 'r' && click ? BTN_RIGHT : argv[i][0] == 'm' ? BTN_MIDDLE : BTN_LEFT;
+            zwlr_virtual_pointer_v1_button(p, ms(), btn, press ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED);
             zwlr_virtual_pointer_v1_frame(p);
-            if (!strcmp(argv[i], "click")) {
+            if (click) {
                 wl_display_roundtrip(dpy);
                 usleep(40000);
-                zwlr_virtual_pointer_v1_button(p, ms(), BTN_LEFT, WL_POINTER_BUTTON_STATE_RELEASED);
+                zwlr_virtual_pointer_v1_button(p, ms(), btn, WL_POINTER_BUTTON_STATE_RELEASED);
                 zwlr_virtual_pointer_v1_frame(p);
             }
         } else if (!strcmp(argv[i], "drag") && i + 2 < argc) {

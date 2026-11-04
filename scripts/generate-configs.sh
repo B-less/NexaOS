@@ -1146,9 +1146,11 @@ exec wireplumber
 # twice; it flashed before the lock screen).
 exec nexa-bar
 exec mako
-# The Dock, the For you card, drives on the desktop and Nexa Link's pop-ups,
-# in one process (nexa_shell parts): about 65 MB less than four.
+# The For you card, drives on the desktop and Nexa Link's pop-ups, in one
+# process (nexa_shell parts): about 65 MB less than three.
 exec nexa-parts
+# Orbit (C): the app rail on the left edge; Super+O gives it the keyboard.
+exec nexa-orbit
 # Living backgrounds (C): the wallpaper, and each Nexa app's style behind its glass.
 exec nexa-living
 exec nexa-idle
@@ -1168,6 +1170,7 @@ bindsym $mod+Return exec $term
 bindsym $mod+d exec $menu
 bindsym $mod+space exec nexa-nexus
 bindsym $mod+n exec nexa-control
+bindsym $mod+o exec pkill -USR1 -u "$(id -u)" -x nexa-orbit
 bindsym $mod+a exec $assistant
 bindsym $mod+e exec $files
 bindsym $mod+w exec $browser
@@ -1280,6 +1283,7 @@ exec-once = swaybg -i /usr/share/backgrounds/nexaos/wallpaper.png -m fill
 exec-once = nexa-bar
 exec-once = mako
 exec-once = nexa-parts
+exec-once = nexa-orbit
 exec-once = nexa-living
 exec-once = nexa-idle
 # Background services once the screen has drawn (see the Sway config).
@@ -1380,6 +1384,7 @@ bind = SUPER, Return, exec, foot
 bind = SUPER, D, exec, nexa-start
 bind = SUPER, Space, exec, nexa-nexus
 bind = SUPER, N, exec, nexa-control
+bind = SUPER, O, exec, pkill -USR1 -u "$(id -u)" -x nexa-orbit
 bind = SUPER, A, exec, nexa-ai-gui
 bind = SUPER, E, exec, nexa-files
 bind = SUPER, W, exec, nexa-browser

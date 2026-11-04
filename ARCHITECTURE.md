@@ -41,7 +41,7 @@ signed HTTPS repositories.
 | Bar | waybar, with the start button, clock, Control Centre, tray |
 | `nexa-start` | Start menu: search, pinned apps, power (Super+D) |
 | `nexa-control` | Control Centre: Wi-Fi, volume, brightness, Do Not Disturb (Super+N) |
-| `nexa-dock` | Dock with magnification, running-app dots, Launchpad first |
+| `nexa-orbit` | Orbit (C, tools-c/nexa-orbit): the app rail on the left edge; hexagon frames show running, CPU activity, in front, waiting, starting; Super+O for the keyboard |
 | `nexa-launchpad` | Full-screen app grid with type-to-search (Super+Space) |
 | `nexa-lock` | Lock screen: starts `nexa-locker` (C, ext-session-lock), swaylock as fallback; idle lock/blank set in Settings > Power |
 | mako | Notifications |

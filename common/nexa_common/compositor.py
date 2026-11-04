@@ -136,7 +136,7 @@ def toggle_maximize(pid, restore_size=None):
 
 def usable_area():
     """(x, y, width, height) of the screen in front, minus what the bar and
-    the Dock keep for themselves; None if the compositor can't say. GTK on
+    Orbit keep for themselves; None if the compositor can't say. GTK on
     Wayland only knows the whole screen, so tall windows opened with their
     title bar under the top bar."""
     wm = which()

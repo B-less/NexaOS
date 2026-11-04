@@ -342,6 +342,10 @@ iconset:
 	@docker run --rm -v "$(BASE_DIR)/assets/iconset:/i" nexa-apptest:$(basename $(ALPINE_VERSION)) python3 -c "import gi; gi.require_version('GdkPixbuf', '2.0'); from gi.repository import GdkPixbuf; GdkPixbuf.Pixbuf.new_from_file_at_size('/i/NexaHexa/preview.svg', 1240, -1).savev('/i/preview.png', 'png', [], []); GdkPixbuf.Pixbuf.new_from_file_at_size('/i/NexaHexa/preview-themes.svg', 1240, -1).savev('/i/preview-themes.png', 'png', [], [])" 2>/dev/null
 	@echo "icons: assets/iconset/NexaHexa, preview: assets/iconset/preview.png"
 
+# Orbit, the app rail (C): unit tests, then a headless Sway with a real pointer.
+test-orbit:
+	@sh scripts/test-orbit.sh
+
 # USB drives on the desktop (nexa_shell drives) in a headless Sway.
 test-desktop-drives:
 	@sh scripts/test-desktop-drives.sh

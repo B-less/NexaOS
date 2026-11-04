@@ -4,8 +4,8 @@ A full-screen layer over the dimmed, blurred desktop. Apps sit in a
 honeycomb of hexagon tiles (rows of 7 and 6, so alternate rows interlock),
 favourites first. Typing searches apps, Settings pages, does arithmetic, or
 hands the question to the assistant (see search.py). Power actions sit at
-the bottom. Super+Space, Super+D, the bar's NexaOS button and the Orbit
-dock's first icon all open it; Escape or a click on empty space closes it.
+the bottom. Super+Space, Super+D, the bar's NexaOS button and the NexaOS mark
+at the top of Orbit all open it; Escape or a click on empty space closes it.
 """
 import os
 import pwd

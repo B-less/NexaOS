@@ -11,7 +11,7 @@
 //!   nexa-doctor hardware [--text]  the computer's parts and which have no driver
 //!                              (the text is also saved to ~/nexa-hardware-report.txt)
 //!
-//! Watchdog: the desktop's own parts (the bar, notifications, the Dock, the
+//! Watchdog: the desktop's own parts (the bar, notifications, Orbit, the
 //! "For you" card, Nexa Patterns, the focus watcher, idle/screen-off,
 //! battery warnings, Hyprland's wallpaper) are restarted if they stop - at
 //! most 3 times in 5 minutes each, then it says so instead of looping. Only
@@ -74,8 +74,9 @@ fn parts() -> Vec<Part> {
         // the pointer touches the top edge) for either session.
         part("the top bar", &["waybar"], &["nexa-bar"], ""),
         part("notifications", &["mako"], &["mako"], ""),
-        // The Dock, the For you card, drives and Nexa Link's pop-ups: one process.
-        part("the Dock and desktop parts", &["nexa_shell", "parts"], &["nexa-parts"], ""),
+        // The For you card, drives and Nexa Link's pop-ups: one process.
+        part("the desktop parts", &["nexa_shell", "parts"], &["nexa-parts"], ""),
+        part("Orbit", &["nexa-orbit"], &["nexa-orbit"], ""),
         part("Nexa Link", &["nexa-linkd", "serve"], &["nexa-linkd", "serve"], ""),
         part("Nexa MicroBrain", &["nexa-microbrain", "serve"], &["nexa-microbrain", "serve"], ""),
         part("Nexa Patterns", &["nexa-patternd", "serve"], &["nexa-patternd", "serve"], ""),
@@ -568,10 +569,13 @@ mod tests {
 
     #[test]
     fn matching_and_backoff() {
-        let p = part("the Dock", &["nexa_shell", "dock"], &["nexa-dock"], "");
-        assert!(running(&["python3 -m nexa_shell dock".into()], &p));
+        let p = part("the desktop parts", &["nexa_shell", "parts"], &["nexa-parts"], "");
+        assert!(running(&["python3 -m nexa_shell parts".into()], &p));
         assert!(!running(&["python3 -m nexa_shell nexus".into()], &p));
-        assert!(!running(&["nexa-doctor fix restart:nexa_shell dock".into()], &p), "never itself");
+        assert!(!running(&["nexa-doctor fix restart:nexa_shell parts".into()], &p), "never itself");
+        let o = part("Orbit", &["nexa-orbit"], &["nexa-orbit"], "");
+        assert!(running(&["/usr/local/bin/nexa-orbit".into()], &o));
+        assert!(!running(&["nexa-living".into()], &o));
         let mut h = Vec::new();
         let t = Instant::now();
         for _ in 0..3 {

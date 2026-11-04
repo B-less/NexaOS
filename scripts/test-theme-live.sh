@@ -21,7 +21,7 @@ mkdir -p $HOME/.local/share/icons && cp -r /src/assets/iconset/NexaHexa /src/ass
 mkdir -p /usr/local/share/applications
 printf "[Desktop Entry]\nType=Application\nName=Files\nExec=true\nIcon=nexa-files\n" > /usr/local/share/applications/nexa-files.desktop
 export GSETTINGS_BACKEND=keyfile
-for t in headless_theme_live.py headless_vp_theme_live.py headless_icon_shift.py headless_dock_icons.py; do
+for t in headless_theme_live.py headless_vp_theme_live.py headless_icon_shift.py; do
     PYTHONPATH=/src/common python3 -c "from nexa_common import themes; themes.apply(\"horizon\", icon_style=\"colour\", reload=False)" >/dev/null 2>&1
     python3 /src/common/tests/$t 2>&1 > /tmp/out.log 2>&1 || rc=1; grep -E "^(PASS|FAIL)" /tmp/out.log; grep -A8 Traceback /tmp/out.log | head -12
 done
