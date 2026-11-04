@@ -110,10 +110,18 @@ spell checking, clear browsing data.
 Has: signed catalogue (nexa-store), categories, app pages with
 permissions, install/remove/open through the broker.
 
-- [ ] Updates: which installed apps have a newer version, update one or all.
-- [ ] Search.
-- [ ] Screenshots on app pages.
-- [ ] Per-app permission switches after install (with nexa-run).
+- [x] Updates (2026-11-04): which installed apps have a newer version (it was
+      there), Update on an app's page, and Update All: one after the other,
+      an unverified one left for you to decide on its page.
+- [x] Search (2026-11-04): every word, in names, descriptions, categories
+      and catalogues, across the whole Store whatever page is open.
+- [x] Screenshots on app pages (2026-11-04): `screenshots` in nexa.toml (up to
+      6, PNG/JPEG, 3 MB each) go into the signed package; `nexa-pack repo
+      build` puts them in the catalogue; nexa-store fetches them; the page
+      shows them, a click shows one bigger (Left/Right, Esc).
+- [x] Per-app permission switches after install (2026-11-04): on an installed
+      app's page, one switch per permission (the same file Settings > Privacy
+      writes and nexa-run reads), marked when NexaOS can't enforce it yet.
 - [ ] More apps in the catalogue (see TODO.md: Photos, Backup, Mail).
 
 ## Text Editor (text-editor, engine nexa-textio)

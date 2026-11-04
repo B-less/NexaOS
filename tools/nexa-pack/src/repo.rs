@@ -46,6 +46,9 @@ pub struct Entry {
     pub package: String,
     #[serde(default)]
     pub icon: Option<String>,
+    /// Pictures of the app: screenshots/<id>-N.png|jpg in the catalogue.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub screenshots: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -93,6 +96,10 @@ impl Index {
                     return Err(format!("bad icon path for {}: {:?}", e.id, icon));
                 }
             }
+            if e.screenshots.len() > crate::manifest::MAX_SCREENSHOTS
+                || e.screenshots.iter().any(|s| !is_safe_path(s) || !s.starts_with("screenshots/")) {
+                return Err(format!("bad screenshots for {}", e.id));
+            }
             if e.sha256.len() != 64 || !e.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
                 return Err(format!("bad checksum for {}", e.id));
             }
@@ -120,11 +127,21 @@ pub fn build(dir: &Path, key: Option<&SigningKey>, trust_dir: Option<&Path>) -> 
         if let Some((rel, data)) = &icon {
             fs::write(dir.join(rel), data).map_err(|e| e.to_string())?;
         }
+        let mut shots = Vec::new();
+        for (i, s) in m.screenshots.iter().enumerate() {
+            if let Some(data) = v.files.get(s) {
+                let ext = if s.ends_with(".jpg") { "jpg" } else { "png" };
+                let rel = format!("screenshots/{}-{}.{ext}", m.id, i + 1);
+                fs::create_dir_all(dir.join("screenshots")).map_err(|e| e.to_string())?;
+                fs::write(dir.join(&rel), data).map_err(|e| e.to_string())?;
+                shots.push(rel);
+            }
+        }
         let entry = Entry {
             id: m.id.clone(), name: m.name.clone(), version: m.version.clone(), description: m.description.clone(),
             categories: m.categories.clone(), permissions: m.permissions.clone(), depends: m.depends.clone(),
             terminal: m.terminal, publisher: v.trust.publisher().map(str::to_string), size: bytes.len() as u64,
-            sha256: sign::sha256_hex(&bytes), package: format!("packages/{name}"), icon: icon.map(|(rel, _)| rel),
+            sha256: sign::sha256_hex(&bytes), package: format!("packages/{name}"), icon: icon.map(|(rel, _)| rel), screenshots: shots,
         };
         match newest.get(&m.id) {
             Some(old) if !newer(&entry.version, &old.version) => {}
@@ -185,7 +202,7 @@ mod tests {
             format: crate::manifest::FORMAT, id: id.into(), name: format!("App {id}"), version: version.into(),
             description: "A test app".into(), categories: "Utility;".into(), icon: Some("icon.svg".into()),
             arch: crate::manifest::ARCH.into(), abi: crate::manifest::ABI.into(), depends: vec![],
-            permissions: vec!["network".into()], terminal: false, files: BTreeMap::new(),
+            permissions: vec!["network".into()], terminal: false, screenshots: vec![], files: BTreeMap::new(),
         };
         let mut files = BTreeMap::new();
         files.insert(format!("bin/{id}"), b"#!/bin/sh\n".to_vec());

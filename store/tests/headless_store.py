@@ -225,11 +225,63 @@ page_buttons()["Remove"].clicked()
 check("Remove asks, then removes through the broker", wait(lambda: ("uninstall_app", {"id": "clock"}) in asked and not win.busy, 15), str(asked[-1:]))
 check("...and it's gone from Installed", wait(lambda: "clock" not in [a["id"] for a in win.installed], 10))
 
+# Search looks through everything, whatever page is open: every word.
+side("installed")
+win.search.set_text("draw layers")
+pump(0.4)
+check("search: every word, across the whole catalogue", card_names() == ["Sketch"] and "Results for" in win.page_title.get_text(),
+      f"{card_names()} {win.page_title.get_text()}")
+win.search.set_text("")
+pump(0.3)
+
+# Screenshots on the app page, and bigger.
+win._open_app("sketch")
+pump(0.5)
+check("the app page shows its screenshots", getattr(win, "shot_count", 0) == 2, str(win.current.get("screenshots")))
+shot("store-screenshots.png")
+viewer = win._view_shot(win.current, win.current["screenshots"], 0)
+pump(0.4)
+check("a screenshot opens bigger, the others with the arrow keys", viewer.get_visible() and viewer.get_title().endswith("1 of 2"), viewer.get_title())
+viewer.destroy()
+
+# Two updates waiting, and an installed app's permission switches.
+reg = os.path.join(W, "registry")
+with open(os.path.join(reg, "sketch.json"), "w") as f:
+    json.dump({"id": "sketch", "version": "2.0.0", "trust": "trusted", "permissions": ["files.pictures"], "paths": []}, f)
+with open(os.path.join(reg, "chat.json"), "w") as f:
+    json.dump({"id": "chat", "version": "0.9.0", "trust": "trusted", "permissions": ["network", "microphone", "notifications"], "paths": []}, f)
+win.reload()
+check("two updates waiting", wait(lambda: not win.busy and sum(a.get("state") == "update" for a in win.installed) == 2, 20))
+win._open_app("chat")
+pump(0.4)
+check("an installed app's page has a switch for each permission", sorted(win.perm_switches) == ["microphone", "network", "notifications"],
+      str(sorted(getattr(win, "perm_switches", {}))))
+win.perm_switches["network"].set_active(False)
+pump(0.2)
+from nexa_common import privacy  # noqa: E402
+check("switching one off keeps the app from it (nexa-run reads this)", privacy.load_prefs().get("chat") == {"denied": ["network"]},
+      str(privacy.load_prefs()))
+check("...and says so", "can't use the internet" in win.status.get_text(), win.status.get_text())
+check("permissions NexaOS can't enforce yet are marked", any("can't enforce" in t for t in page_texts()))
+win.perm_switches["network"].set_active(True)
+pump(0.2)
+check("switching it back on", "chat" not in privacy.load_prefs())
+side("updates")
+check("Update All, when more than one waits", win.update_all_btn.get_visible() and win.update_all_btn.get_label() == "Update All (2)",
+      win.update_all_btn.get_label())
+shot("store-updates.png")
+n = len(asked)
+win.update_all_btn.clicked()
+check("Update All installs every update, one after the other",
+      wait(lambda: sum(1 for a, _ in asked[n:] if a == "install_app") == 2 and not win.busy, 40), str(asked[n:]))
+check("...says what it did, and Updates is empty", wait(lambda: not any(a.get("state") == "update" for a in win.installed), 15)
+      and "Updated" in win.status.get_text(), win.status.get_text())
+
 # The broker isn't running: a plain message, nothing crashes.
 os.environ["NEXA_BROKER_SOCKET"] = "/nonexistent.sock"
 from nexa_common import broker  # noqa: E402
 broker.SOCKET = "/nonexistent.sock"
-win._open_app("sketch")
+win._open_app("video-player")
 pump(0.4)
 page_buttons()["Install"].clicked()
 check("no broker: says the system service isn't running", wait(lambda: not win.busy and "system service" in win.status.get_text(), 30), win.status.get_text())

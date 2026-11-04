@@ -212,7 +212,7 @@ mod tests {
         let hashes = files.iter().map(|(p, d)| (p.clone(), sign::sha256_hex(d))).collect();
         let m = Manifest {
             format: FORMAT, id: "hello".into(), name: "Hello".into(), version: "1.0".into(),
-            description: "test".into(), categories: "Utility;".into(), icon: None,
+            description: "test".into(), categories: "Utility;".into(), icon: None, screenshots: vec![],
             arch: ARCH.into(), abi: ABI.into(), depends: vec![], permissions: vec![],
             terminal: false, files: hashes,
         };

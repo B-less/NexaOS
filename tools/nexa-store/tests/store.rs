@@ -32,11 +32,17 @@ impl World {
         let mut files = BTreeMap::new();
         files.insert(format!("bin/{id}"), format!("#!/bin/sh\necho {id} {version}\n").into_bytes());
         files.insert("icon.svg".to_string(), b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec());
+        let shots = if id == "notes" {
+            files.insert("screenshots/1.png".to_string(), b"\x89PNG\r\n\x1a\n a picture".to_vec());
+            vec!["screenshots/1.png".to_string()]
+        } else {
+            vec![]
+        };
         let m = Manifest {
             format: FORMAT, id: id.into(), name: name.into(), version: version.into(),
             description: format!("{name} does useful things"), categories: categories.into(),
             icon: Some("icon.svg".into()), arch: ARCH.into(), abi: ABI.into(), depends: vec![],
-            permissions: perms.iter().map(|s| s.to_string()).collect(), terminal: false,
+            permissions: perms.iter().map(|s| s.to_string()).collect(), terminal: false, screenshots: shots,
             files: files.iter().map(|(p, d)| (p.clone(), sign::sha256_hex(d))).collect(),
         };
         let bytes = package::write(&m, &files, key.map(|k| &k.0)).unwrap();
@@ -161,6 +167,9 @@ fn signatures_and_trust() {
     assert_eq!(r["catalogues"][0]["ok"], false);
     assert!(r["catalogues"][0]["error"].as_str().unwrap().contains("changed after signing"), "{r}");
     // ...and the copy already in the cache, tampered: dropped when read.
+    let shots = by_id(&list, "notes")["screenshots"].as_array().unwrap().clone();
+    assert_eq!(shots.len(), 1, "the screenshot came with the catalogue");
+    assert!(fs::read(shots[0].as_str().unwrap()).unwrap().starts_with(b"\x89PNG"));
     let cached = PathBuf::from(by_id(&list, "notes")["icon"].as_str().unwrap()).parent().unwrap().parent().unwrap().join("index.json");
     let t = fs::read_to_string(&cached).unwrap().replace("Notes", "Notez");
     fs::write(&cached, t).unwrap();

@@ -31,6 +31,13 @@ mkapp() { # id name version categories perms catalogue signed description
     cp /src/assets/icons/$9 $d/icon.svg
     printf "[package]\nid = \"%s\"\nname = \"%s\"\nversion = \"%s\"\ndescription = \"%s\"\ncategories = \"%s\"\nicon = \"icon.svg\"\n\n[build]\ncommand = \"true\"\nbinary = \"build/%s\"\n\n[requires]\ndepends = []\npermissions = [%s]\n" \
         "$1" "$2" "$3" "$8" "$4" "$1" "$5" > $d/nexa.toml
+    if [ "$1" = sketch ]; then  # two screenshots in its package
+        python3 -c "
+import gi; gi.require_version(\"GdkPixbuf\", \"2.0\"); from gi.repository import GdkPixbuf
+for i, c in ((1, 0x4da3ffff), (2, 0xff8844ff)):
+    p = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 800, 500); p.fill(c); p.savev(\"$d/shot%d.png\" % i, \"png\", [], [])"
+        awk "{print} /^icon = /{print \"screenshots = [\\\"shot1.png\\\", \\\"shot2.png\\\"]\"}" $d/nexa.toml > $d/t && mv $d/t $d/nexa.toml
+    fi
     key=""; [ "$7" = signed ] && key="--key $W/tester.key"
     (cd $d && $P build $key >/dev/null) && cp $d/dist/*.nexa $W/$6/packages/
 }

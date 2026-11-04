@@ -1,6 +1,6 @@
 //! nexa.toml projects: build them and gather what goes into the package.
 //!
-//! [package]   id, name, version, description, categories, icon, terminal
+//! [package]   id, name, version, description, categories, icon, screenshots, terminal
 //! [build]     command (run with sh -c in the project), binary (-> bin/<id>),
 //!             lib (optional folder -> lib/)
 //! [requires]  depends (Alpine packages), permissions
@@ -33,6 +33,9 @@ pub struct PackageSection {
     #[serde(default = "utility")]
     pub categories: String,
     pub icon: Option<String>,
+    /// Pictures of the app for the Store (PNG or JPEG, up to 6).
+    #[serde(default)]
+    pub screenshots: Vec<String>,
     #[serde(default)]
     pub terminal: bool,
 }
@@ -115,6 +118,22 @@ pub fn gather(dir: &Path, p: &Project) -> Result<(Manifest, BTreeMap<String, Vec
         }
         None => None,
     };
+    let mut screenshots = Vec::new();
+    for (i, s) in pk.screenshots.iter().enumerate() {
+        let ext = Path::new(s).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        let ext = match ext.as_str() {
+            "png" => "png",
+            "jpg" | "jpeg" => "jpg",
+            _ => return Err(format!("screenshot {s}: use a .png or .jpg")),
+        };
+        let data = read_file(&dir.join(s))?;
+        if data.len() > crate::manifest::MAX_SCREENSHOT_BYTES {
+            return Err(format!("screenshot {s} is over {} MB", crate::manifest::MAX_SCREENSHOT_BYTES >> 20));
+        }
+        let name = format!("screenshots/{}.{ext}", i + 1);
+        files.insert(name.clone(), data);
+        screenshots.push(name);
+    }
     let manifest = Manifest {
         format: FORMAT,
         id: pk.id.clone(),
@@ -128,6 +147,7 @@ pub fn gather(dir: &Path, p: &Project) -> Result<(Manifest, BTreeMap<String, Vec
         depends: p.requires.depends.clone(),
         permissions: p.requires.permissions.clone(),
         terminal: pk.terminal,
+        screenshots,
         files: files.iter().map(|(k, v)| (k.clone(), sign::sha256_hex(v))).collect(),
     };
     manifest.validate()?;

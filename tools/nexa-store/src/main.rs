@@ -35,6 +35,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_INDEX: u64 = 8 << 20;
 const MAX_ICON: u64 = 1 << 20;
+const MAX_SHOT: u64 = 3 << 20;
 
 #[derive(Deserialize, Clone)]
 struct Catalogue {
@@ -212,12 +213,13 @@ fn describe(l: &Loaded, e: &Entry, registry: &Path) -> Value {
         Some(_) => "installed",
     };
     let icon = e.icon.as_ref().map(|i| l.dir.join(i)).filter(|p| p.is_file());
+    let shots: Vec<PathBuf> = e.screenshots.iter().map(|s| l.dir.join(s)).filter(|p| p.is_file()).collect();
     json!({
         "id": e.id, "name": e.name, "version": e.version, "description": e.description,
         "categories": e.categories, "permissions": e.permissions, "depends": e.depends, "terminal": e.terminal,
         "publisher": e.publisher, "size": e.size, "catalogue": l.cat.name,
         "verified": matches!(l.trust, Trust::Trusted(_)), "trust": l.trust.label(),
-        "icon": icon, "installed": installed, "state": state,
+        "icon": icon, "screenshots": shots, "installed": installed, "state": state,
     })
 }
 
@@ -267,7 +269,7 @@ fn installed(loaded: &[Loaded], registry: &Path) -> Vec<Value> {
         });
         if let Some((l, entry)) = apps.get(&id) {
             let c = describe(l, entry, registry);
-            for k in ["name", "description", "categories", "size", "depends", "catalogue", "state"] {
+            for k in ["name", "description", "categories", "size", "depends", "catalogue", "state", "screenshots"] {
                 v[k] = c[k].clone();
             }
             v["version"] = c["version"].clone();
@@ -290,6 +292,7 @@ fn refresh(conf: &Conf, keys: &Path) -> Value {
             let tmp = dir.with_extension("new");
             let _ = fs::remove_dir_all(&tmp);
             fs::create_dir_all(tmp.join("icons")).map_err(|e| e.to_string())?;
+            fs::create_dir_all(tmp.join("screenshots")).map_err(|e| e.to_string())?;
             fetch(&join(&src, "index.json"), &tmp.join("index.json"), MAX_INDEX, None)?;
             let _ = fetch(&join(&src, "index.sig"), &tmp.join("index.sig"), 4096, None); // unsigned: allowed, flagged
             let bytes = fs::read(tmp.join("index.json")).map_err(|e| e.to_string())?;
@@ -298,6 +301,10 @@ fn refresh(conf: &Conf, keys: &Path) -> Value {
             for e in &index.apps {
                 if let Some(icon) = &e.icon {
                     let _ = fetch(&join(&src, icon), &tmp.join(icon), MAX_ICON, None);
+                }
+                // Pictures of the app: one that doesn't come is left out.
+                for s in &e.screenshots {
+                    let _ = fetch(&join(&src, s), &tmp.join(s), MAX_SHOT, None);
                 }
             }
             let _ = fs::remove_dir_all(&dir);

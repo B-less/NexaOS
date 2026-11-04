@@ -10,10 +10,10 @@ import time
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 
 from . import engine
-from nexa_common import askpass, broker, design, titlebar
+from nexa_common import askpass, broker, design, privacy, titlebar
 from nexa_common.titlebar import attach_titlebar
 
 R = design.RADIUS
@@ -55,12 +55,17 @@ CSS = f"""
 #status {{ color: @nexa_muted; }}
 #status.error {{ color: @nexa_crit; }}
 #empty {{ color: @nexa_muted; font-size: 11pt; }}
+#shot {{ background-image: none; background-color: @nexa_surface; border: 1px solid @nexa_border; border-radius: {R['medium']}px; padding: 4px; box-shadow: none; }}
+#shot:hover {{ border-color: @nexa_accent; }}
+#viewer {{ background-color: @nexa_bg_deep; }}
+#perm-note {{ color: @nexa_muted; font-size: 8.5pt; }}
 progressbar trough {{ min-height: 6px; border-radius: 3px; background-color: @nexa_hover; }}
 progressbar progress {{ min-height: 6px; border-radius: 3px; background-color: @nexa_accent; }}
 """
 
 REFRESH_AFTER = 6 * 3600   # catalogues older than this are fetched again on start
 CARD_ICON = 48
+SHOT_HEIGHT = 220
 PAGE_ICON = 88
 
 
@@ -201,8 +206,16 @@ class StoreWindow(Gtk.Window):
         # The list of apps.
         list_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         list_page.set_border_width(16)
+        head = Gtk.Box(spacing=12)
         self.page_title = _label("", "page-title")
-        list_page.pack_start(self.page_title, False, False, 0)
+        head.pack_start(self.page_title, False, False, 0)
+        self.update_all_btn = Gtk.Button(label="Update All")
+        self.update_all_btn.set_name("primary")
+        self.update_all_btn.set_tooltip_text("Download and install every update")
+        self.update_all_btn.set_no_show_all(True)
+        self.update_all_btn.connect("clicked", lambda _b: self._update_all())
+        head.pack_end(self.update_all_btn, False, False, 0)
+        list_page.pack_start(head, False, False, 0)
         self.grid = Gtk.FlowBox()
         self.grid.set_selection_mode(Gtk.SelectionMode.NONE)
         self.grid.set_homogeneous(True)
@@ -272,7 +285,8 @@ class StoreWindow(Gtk.Window):
             return
         self.busy = True
         self.refresh_btn.set_sensitive(False)
-        self._status("Checking the catalogues…" if refresh else "Loading…")
+        if not getattr(self, "_keep_status", None):
+            self._status("Checking the catalogues…" if refresh else "Loading…")
 
         def work():
             error = note = None
@@ -314,7 +328,8 @@ class StoreWindow(Gtk.Window):
                 self._show_list()
         else:
             self._show_list()
-        self._status(error or note or "", error=bool(error))
+        kept, self._keep_status = getattr(self, "_keep_status", None), None
+        self._status(error or note or kept or "", error=bool(error))
         return False
 
     def _find(self, app_id):
@@ -348,6 +363,19 @@ class StoreWindow(Gtk.Window):
 
     def _visible_apps(self):
         q = self.search.get_text().strip().lower()
+        if q:
+            # A search looks through everything, whatever page is open:
+            # every word in the name, description, id, category or catalogue.
+            seen, apps = set(), []
+            for a in self.apps + self.installed:
+                if a["id"] in seen:
+                    continue
+                seen.add(a["id"])
+                text = " ".join(str(a.get(k) or "") for k in ("name", "description", "id", "categories", "catalogue")).lower()
+                text += " " + engine.category_of(a).lower()
+                if all(w in text for w in q.split()):
+                    apps.append(self._find(a["id"]) or a)
+            return sorted(apps, key=lambda a: a.get("name", "").lower())
         if self.view == "installed":
             apps = list(self.installed)
         elif self.view == "updates":
@@ -356,14 +384,17 @@ class StoreWindow(Gtk.Window):
             apps = list(self.apps)
         else:
             apps = [a for a in self.apps if engine.category_of(a) == self.view]
-        if q:
-            apps = [a for a in apps if q in f"{a.get('name', '')} {a.get('description', '')} {a['id']}".lower()]
         return sorted(apps, key=lambda a: a.get("name", "").lower())
 
     def _show_list(self):
         self.current = None
         titles = {"discover": "Discover", "updates": "Updates", "installed": "Installed"}
-        self.page_title.set_text(titles.get(self.view, self.view))
+        q = self.search.get_text().strip()
+        self.page_title.set_text(f"Results for “{q}”" if q else titles.get(self.view, self.view))
+        n_updates = sum(1 for a in self.installed if a.get("state") == "update" and a.get("catalogue"))
+        self.update_all_btn.set_label(f"Update All ({n_updates})")
+        self.update_all_btn.set_visible(self.view == "updates" and not q and n_updates > 1)
+        self.update_all_btn.set_sensitive(not self.busy)
         for child in self.grid.get_children():
             self.grid.remove(child)
         apps = self._visible_apps()
@@ -478,25 +509,151 @@ class StoreWindow(Gtk.Window):
         if app.get("description"):
             page.pack_start(_label(app["description"], "app-desc", wrap=True), False, False, 0)
 
-        page.pack_start(_label("This app can", "section"), False, False, 8)
+        shots = [s for s in app.get("screenshots") or [] if isinstance(s, str)]
+        if shots:
+            page.pack_start(self._gallery(app, shots), False, False, 0)
+
+        installed = state in ("installed", "update")
+        page.pack_start(_label("What it may use" if installed else "This app can", "section"), False, False, 8)
         perms = app.get("permissions") or []
+        denied = set(((privacy.load_prefs().get(app["id"]) or {}).get("denied") or [])) if installed else set()
         grid = Gtk.Grid(row_spacing=8, column_spacing=12)
+        self.perm_switches = {}
         for i, p in enumerate(perms):
             icon, words = engine.PERMISSIONS.get(p, ("dialog-question-symbolic", p))
             grid.attach(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.MENU), 0, i, 1, 1)
-            grid.attach(_label(words, "perm", wrap=True), 1, i, 1, 1)
+            label = _label(words, "perm", wrap=True)
+            label.set_hexpand(True)
+            grid.attach(label, 1, i, 1, 1)
+            if installed:
+                sw = Gtk.Switch(active=p not in denied, valign=Gtk.Align.CENTER)
+                sw.set_tooltip_text(f"Let {app.get('name') or app['id']} {words[0].lower() + words[1:]}")
+                sw.connect("notify::active", lambda w, _p, perm=p: self._set_permission(app, perm, w.get_active()))
+                grid.attach(sw, 2, i, 1, 1)
+                self.perm_switches[p] = sw
+                if not privacy.PERMISSIONS.get(p, ("", False))[1]:
+                    grid.attach(_label("NexaOS can't enforce this one yet", "perm-note"), 3, i, 1, 1)
         if not perms:
             grid.attach(_label("Use only its own window and settings - no files, internet or devices.", "perm", wrap=True), 0, 0, 2, 1)
         page.pack_start(grid, False, False, 0)
-        note = _label("NexaOS enforces this: without a permission the app simply can't, and you can switch "
-                      "permissions off later in Settings > Privacy.", "app-meta", wrap=True)
+        note = _label("Switch any of these off: the app can only use what's on, from the next time it starts. "
+                      "(Settings > Privacy has the same switches.)" if installed and perms else
+                      "NexaOS enforces this: without a permission the app simply can't, and you can switch "
+                      "permissions off after installing it.", "app-meta", wrap=True)
         page.pack_start(note, False, False, 0)
 
         self.app_scroll.add(page)
         self.app_scroll.show_all()
         self.pages.set_visible_child_name("app")
 
+    def _gallery(self, app, shots):
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        row = Gtk.Box(spacing=12)
+        shown = 0
+        for i, path in enumerate(shots):
+            try:
+                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, -1, SHOT_HEIGHT, True)
+            except GLib.Error:
+                continue  # a picture that doesn't decode is left out
+            b = Gtk.Button()
+            b.set_name("shot")
+            b.set_tooltip_text("See it bigger")
+            b.add(Gtk.Image.new_from_pixbuf(pix))
+            b.connect("clicked", lambda _b, i=i: self._view_shot(app, shots, i))
+            row.pack_start(b, False, False, 0)
+            shown += 1
+        scroll.add(row)
+        scroll.set_size_request(-1, SHOT_HEIGHT + 24)
+        self.shot_count = shown
+        return scroll
+
+    def _view_shot(self, app, shots, index):
+        """A screenshot as big as the screen allows; Left/Right for the others, Esc closes."""
+        win = Gtk.Window(title=f"{app.get('name') or app['id']} — screenshot")
+        win.set_name("viewer")
+        win.set_transient_for(self)
+        win.set_modal(True)
+        geo = self.get_screen().get_monitor_geometry(self.get_screen().get_monitor_at_window(self.get_window())) if self.get_window() else None
+        maxw, maxh = (int(geo.width * 0.85), int(geo.height * 0.85)) if geo else (1200, 800)
+        img = Gtk.Image()
+        win.add(img)
+        state = {"i": index}
+
+        def show():
+            try:
+                img.set_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_scale(shots[state["i"]], maxw, maxh, True))
+            except GLib.Error:
+                img.set_from_icon_name("image-missing", Gtk.IconSize.DIALOG)
+            win.set_title(f"{app.get('name') or app['id']} — {state['i'] + 1} of {len(shots)}")
+
+        def key(_w, e):
+            if e.keyval == Gdk.KEY_Escape:
+                win.destroy()
+            elif e.keyval in (Gdk.KEY_Right, Gdk.KEY_space):
+                state["i"] = (state["i"] + 1) % len(shots)
+                show()
+            elif e.keyval == Gdk.KEY_Left:
+                state["i"] = (state["i"] - 1) % len(shots)
+                show()
+            return True
+        win.connect("key-press-event", key)
+        win.connect("button-press-event", lambda *_: win.destroy())
+        win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        show()
+        win.show_all()
+        self.shot_viewer = win
+        return win
+
+    def _set_permission(self, app, perm, allowed):
+        try:
+            privacy.set_allowed(app["id"], perm, allowed)
+        except OSError as e:
+            self._status(f"That wasn't saved: {e}", error=True)
+            return
+        name = app.get("name") or app["id"]
+        words = engine.PERMISSIONS.get(perm, ("", perm))[1]
+        self._status(f"{name} may {words[0].lower() + words[1:]} again." if allowed else
+                     f"{name} can't {words[0].lower() + words[1:]} any more, from the next time it starts.")
+
     # ---- actions ---------------------------------------------------------
+
+    def _update_all(self):
+        """Every update, one after the other; an unverified one is left for you to decide on its page."""
+        apps = [self._find(a["id"]) for a in self.installed if a.get("state") == "update" and a.get("catalogue")]
+        apps = [a for a in apps if a]
+        if not apps:
+            return
+        self._set_busy(True)
+        self.update_all_btn.set_sensitive(False)
+
+        def work():
+            done, waiting, failed = [], [], []
+            for n, app in enumerate(apps, 1):
+                name = app.get("name") or app["id"]
+                GLib.idle_add(self._status, f"Updating {name} ({n} of {len(apps)})…")
+                GLib.idle_add(self.progress.set_fraction, (n - 1) / len(apps))
+                try:
+                    got = engine.download(app["id"])
+                    engine.install(got["path"], False, self._ask_password)
+                    done.append(name)
+                except broker.Unverified:
+                    waiting.append(name)
+                except (engine.StoreError, broker.BrokerError) as e:
+                    if str(e) == "cancelled":
+                        failed.append(f"{name} (cancelled)")
+                        break
+                    failed.append(f"{name}: {e}")
+            parts = []
+            if done:
+                parts.append(f"Updated {', '.join(done)}.")
+            if waiting:
+                parts.append(f"{', '.join(waiting)}: its publisher isn't verified - open its page to decide.")
+            if failed:
+                parts.append("Not updated: " + "; ".join(failed) + ".")
+            GLib.idle_add(self._action_done, " ".join(parts), None if done or waiting else " ".join(parts), None)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _ask_password(self, what, error):
         # From the worker thread; askpass shows its dialog on the main thread.
@@ -552,6 +709,7 @@ class StoreWindow(Gtk.Window):
             self._status(error, error=True)
             return False
         self._status(done)
+        self._keep_status = done  # still there after the reload below
         self.reload()
         return False
 

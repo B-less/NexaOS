@@ -34,10 +34,18 @@ pub struct Manifest {
     pub permissions: Vec<String>,
     #[serde(default)]
     pub terminal: bool,
+    /// Pictures of the app for the Store, inside the package
+    /// (screenshots/N.png or .jpg). Left out of the manifest when there are
+    /// none, so older packages stay byte-for-byte the same.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub screenshots: Vec<String>,
     /// Every file in the package except manifest.json and SIGNATURE, with
     /// its SHA-256 (hex). Sorted, so the manifest is byte-for-byte stable.
     pub files: BTreeMap<String, String>,
 }
+
+pub const MAX_SCREENSHOTS: usize = 6;
+pub const MAX_SCREENSHOT_BYTES: usize = 3 << 20;
 
 fn default_categories() -> String {
     "Utility;".into()
@@ -114,6 +122,15 @@ impl Manifest {
                 return Err(format!("icon '{icon}' must be an .svg or .png inside the package"));
             }
         }
+        if self.screenshots.len() > MAX_SCREENSHOTS {
+            return Err(format!("at most {MAX_SCREENSHOTS} screenshots"));
+        }
+        for s in &self.screenshots {
+            let pic = s.ends_with(".png") || s.ends_with(".jpg");
+            if !self.files.contains_key(s) || !s.starts_with("screenshots/") || !pic {
+                return Err(format!("screenshot '{s}' must be a .png or .jpg in screenshots/ inside the package"));
+            }
+        }
         for (path, hash) in &self.files {
             if !is_safe_path(path) || path == "manifest.json" || path == "SIGNATURE" {
                 return Err(format!("unsafe or reserved path '{path}'"));
@@ -142,7 +159,7 @@ mod tests {
         files.insert("bin/hello".into(), "a".repeat(64));
         Manifest {
             format: FORMAT, id: "hello".into(), name: "Hello".into(), version: "1.0.0".into(),
-            description: String::new(), categories: "Utility;".into(), icon: None,
+            description: String::new(), categories: "Utility;".into(), icon: None, screenshots: vec![],
             arch: ARCH.into(), abi: ABI.into(), depends: vec!["gtk+3.0".into()],
             permissions: vec!["network".into()], terminal: false, files,
         }

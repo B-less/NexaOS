@@ -41,6 +41,7 @@ version = "1.0.0"        # must: semantic version; bump it on every release
 description = "One plain sentence about what it does"
 categories = "Utility;"  # freedesktop categories
 icon = "icon.svg"        # should be SVG; Hexa style (section 4)
+screenshots = ["shots/main.png"]  # optional: up to 6 PNG/JPEG pictures for the Store page (3 MB each)
 
 [build]
 command = "make"
