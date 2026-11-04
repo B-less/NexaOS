@@ -38,9 +38,9 @@ signed HTTPS repositories.
 
 | Part | What it is |
 |---|---|
-| Bar | waybar, with the start button, clock, Control Centre, tray |
+| Bar | waybar, with the start button, clock, Deck, tray |
 | `nexa-start` | Start menu: search, pinned apps, power (Super+D) |
-| `nexa-control` | Control Centre: Wi-Fi, volume, brightness, Do Not Disturb (Super+N) |
+| `nexa-deck` | Deck (C, tools-c/nexa-deck): quick settings as cards on the right: Wi-Fi, Bluetooth, sound, brightness, VPN, Quiet, now playing, notifications (Super+N; `nexa-deck wifi` opens on a card) |
 | `nexa-orbit` | Orbit (C, tools-c/nexa-orbit): the app rail on the left edge; hexagon frames show running, CPU activity, in front, waiting, starting; Super+O for the keyboard |
 | `nexa-launchpad` | Full-screen app grid with type-to-search (Super+Space) |
 | `nexa-lock` | Lock screen: starts `nexa-locker` (C, ext-session-lock), swaylock as fallback; idle lock/blank set in Settings > Power |

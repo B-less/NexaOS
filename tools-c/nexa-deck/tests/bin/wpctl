@@ -1,0 +1,9 @@
+#!/bin/sh
+# Stand-in for wpctl (Deck's test): the volume lives in /tmp/volume ("45 0").
+read v m < /tmp/volume
+echo "wpctl $*" >> /tmp/fakes.log
+case "$1" in
+get-volume) if [ "$m" = 1 ]; then echo "Volume: $(awk "BEGIN{printf \"%.2f\", $v/100}") [MUTED]"; else echo "Volume: $(awk "BEGIN{printf \"%.2f\", $v/100}")"; fi ;;
+set-volume) echo "${3%\%} $m" > /tmp/volume ;;
+set-mute) echo "$v $((1 - m))" > /tmp/volume ;;
+esac

@@ -26,9 +26,9 @@ shapes come from docs/ROADMAP.md section 1 (Hexa).
       its real activity (CPU and network), a dashed ring when it waits on
       you; folds to a thin line of light when idle. C (GTK3 +
       gtk-layer-shell, cairo). Design: section "Orbit" below.
-- [ ] **Deck** replaces quick settings: cards that slide out one after
+- [x] **Deck** replaces quick settings (2026-11-04; first real use with the next ISO): cards that slide out one after
       another from the bar's right edge (Wi-Fi, sound, VPN, Quiet, now
-      playing), each opens in place.
+      playing), each opens in place. Design: section "Deck" below.
 - [ ] **Signals** replaces mako: notification capsules that dock into the
       bar's edge, stacked per app, actions inline. Own notification service
       (Rust, org.freedesktop.Notifications).
@@ -135,3 +135,73 @@ followed too. Apps it starts are watched and abnormal ends written to
       real mouse and HiDPI screens; the GTK menu's look in the real theme
 - [ ] Later: drag to reorder, "Pin to Orbit" in Nexus, a Settings page
       (pinned apps, fold), network activity per app
+
+## Deck
+
+`tools-c/nexa-deck` (C: GTK3 + gtk-layer-shell, GIO D-Bus). It replaces
+the Python Control Centre (`shell/nexa_shell/control.py`, removed) and keeps
+everything it did: Wi-Fi, Do Not Disturb, volume, brightness, battery, the
+notification list with Clear all, Settings, Lock, Power.
+
+**Shape.** A column of cards on the right, under the bar. Every card is
+half a hexagon: straight against the screen edge, chamfered on the side
+facing the screen (the same cut as Orbit's pointed ends), not a grid of
+rounded tiles. Opening, the cards slide in from the edge one after
+another (40 ms apart); closing, they slide back faster. A card whose
+thing is on has its chamfered edge lit in the accent. Reduced motion: no
+sliding.
+
+**Cards, top to bottom** (a card only appears when its thing exists):
+
+| Card | Compact | Opened in place |
+|---|---|---|
+| Now | time, date, battery (and time left when the battery says) | Settings, Lock, Power |
+| Wi-Fi | switch, connected network | nearby networks by signal; a known one connects here, a new one opens Settings > Wi-Fi |
+| Bluetooth | switch, connected devices | paired devices, connect / disconnect |
+| Sound | volume slider, mute | link to Settings > Sound |
+| Brightness | slider (laptops) | - |
+| VPN | switch for the tunnel in use (or the first) | every imported tunnel |
+| Quiet | switch: notifications wait (mako's do-not-disturb, until the Quiet modes) | - |
+| Playing | title, artist, back / play-pause / next (any MPRIS player) | - |
+| Signals | count and the newest | up to 20, Clear all |
+
+**Use.** `nexa-deck` toggles it (Super+N, the bar's buttons); `nexa-deck
+wifi` (bluetooth, sound, vpn, signals, ...) opens with that card opened,
+so the bar's Wi-Fi icon opens Deck on Wi-Fi. A click outside the cards or
+Escape closes it; Tab moves through every control. One instance
+(GtkApplication): running it again closes it.
+
+**Data.** Read when it opens and every 2 s while open, all asynchronous
+(nothing blocks the window): iwd and BlueZ over the system bus, MPRIS over
+the session bus, `wpctl`, `makoctl`, `/sys/class/power_supply` and
+`/sys/class/backlight`. Changes: iwd / BlueZ properties and methods, wpctl,
+makoctl; brightness and VPN through the broker (`set_brightness`,
+`vpn_up`, `vpn_down`: no password; tunnel names checked before they are
+sent). The process ends when Deck closes: nothing runs while it's away.
+
+- [x] Engine pieces with unit tests (wpctl, makoctl history, battery and
+      time left, backlight, broker request and reply, tunnel names,
+      signal strength, UTF-8-safe cuts): `make test-deck`. The shared JSON
+      reader (tools-c/nexa-living/json.c) now turns \u escapes into UTF-8
+      instead of '?'
+- [x] Cards, opening in place, staggered slide, keyboard, theme
+- [x] Bar buttons and Super+N open Deck (the bar's Wi-Fi, sound,
+      brightness, battery and bell open it on their card; right click on
+      Wi-Fi still opens the Network app); Control Centre and its Python
+      parsers removed; `nexa-control` kept as a name for Deck
+- [x] Headless test (`make test-deck`: 37 unit checks, 28 in a headless
+      Sway with a real pointer, screenshots in dist/deck-test) against fake
+      iwd, BlueZ, MPRIS, broker, wpctl and makoctl: every card shows with
+      the right reading, Wi-Fi opens in place and a saved network connects,
+      the Bluetooth, VPN (vpn_up through the broker) and Quiet switches,
+      both sliders, Play, Clear all; `nexa-deck signals` opens that card in
+      the running Deck and scrolls it into view; running it again or a
+      click outside closes it and the process ends
+- [ ] Measured: 26.9 MB PSS while open in the headless test (nothing else
+      shares its libraries there); nothing while closed (the process ends)
+- [ ] Not yet tested: Hyprland, real iwd / BlueZ / mako / PipeWire, a
+      touchpad, the keyboard path (Tab, Escape: no virtual keyboard in the
+      test yet)
+- [ ] Later: Bluetooth pairing and Wi-Fi passwords inside Deck (today they
+      open Settings), sound output devices, Quiet modes, Signals (Phase 1)
+      taking over from mako

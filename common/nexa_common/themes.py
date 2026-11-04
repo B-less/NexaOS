@@ -1,6 +1,6 @@
 """NexaOS themes: one palette restyles the top bar (waybar), notifications
 (mako), the terminal (foot), window borders (sway) and the shell panels
-(start menu, Control Centre), with adjustable transparency.
+(Nexus and the panels), with adjustable transparency.
 
 The choice lives in ~/.config/nexa/theme.json; `apply()` renders every
 target's config into ~/.config and reloads whatever is running. Used by
@@ -564,7 +564,7 @@ gtk-enable-animations={'false' if a['reduce_motion'] else 'true'}
 
 
 def panel_css(t, opacity):
-    """GTK CSS for the start menu and Control Centre."""
+    """GTK CSS for Nexus and the pop-up panels."""
     hover = "rgba(255, 255, 255, 0.08)" if t["dark"] else "rgba(0, 0, 0, 0.05)"
     field = "rgba(255, 255, 255, 0.07)" if t["dark"] else "rgba(0, 0, 0, 0.05)"
     panel_alpha = max(opacity, 0.80)

@@ -1,12 +1,11 @@
 """Run with: python3 common/tests/test_shell.py
 
-Themes engine, app search, and the Control Centre's parsers."""
+Themes engine and app search. (Deck's parsers are C: tools-c/nexa-deck.)"""
 import json, os, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "shell"))
 from nexa_common import desktopapps, themes
-from nexa_shell import sysinfo
 
 failures = []
 def check(label, cond, detail=""):
@@ -125,34 +124,5 @@ check("search: settings pages by what they contain", r[0] == {"kind": "setting",
 r = nsearch.search(apps_, "why is my laptop slow")
 check("search: anything else goes to Nexa", r[-1]["kind"] == "ask" and r[-1]["command"] == ["nexa-ai-gui", "--ask", "why is my laptop slow"], str(r))
 check("search: sums don't offer Nexa", [x["kind"] for x in nsearch.search(apps_, "7*6")] == ["calc"])
-
-# ---- Control Centre parsers
-check("volume", sysinfo.parse_volume("Volume: 0.40") == (40, False))
-check("muted volume", sysinfo.parse_volume("Volume: 0.75 [MUTED]") == (75, True))
-check("no audio -> None", sysinfo.parse_volume("") is None)
-check("brightness from brightnessctl -m", sysinfo.parse_brightness("intel_backlight,backlight,12000,50%,24000") == 50)
-check("LEDs are not the screen", sysinfo.parse_brightness("input3::capslock,leds,0,0%,1") is None)
-hist = json.dumps({"type": "aa{sv}", "data": [[
-    {"app-name": {"type": "s", "data": "Network"}, "summary": {"type": "s", "data": "Connected"},
-     "body": {"type": "s", "data": "HomeWiFi"}, "id": {"type": "u", "data": 3}},
-    {"app-name": {"type": "s", "data": "Battery"}, "summary": {"type": "s", "data": "Low"},
-     "body": {"type": "s", "data": ""}, "id": {"type": "u", "data": 7}},
-]]})
-items = sysinfo.parse_mako_history(hist)
-check("notification history, newest first", [n["id"] for n in items] == [7, 3] and items[1]["body"] == "HomeWiFi", str(items))
-check("cleared notifications stay hidden", [n["id"] for n in sysinfo.parse_mako_history(hist, cleared_up_to=3)] == [7])
-showing = json.dumps({"type": "aa{sv}", "data": [[
-    {"app-name": {"type": "s", "data": "Mail"}, "summary": {"type": "s", "data": "New message"},
-     "body": {"type": "s", "data": ""}, "id": {"type": "u", "data": 9}},
-    {"app-name": {"type": "s", "data": "Battery"}, "summary": {"type": "s", "data": "Low"},
-     "body": {"type": "s", "data": ""}, "id": {"type": "u", "data": 7}}]]})
-both = sysinfo.notifications(showing, hist)
-check("showing + past notifications, merged without duplicates", [n["id"] for n in both] == [9, 7, 3], str(both))
-check("bad history JSON -> empty", sysinfo.parse_mako_history("not json") == [])
-check("do-not-disturb detection", sysinfo.dnd_on("default\ndo-not-disturb\n") and not sysinfo.dnd_on("default\n"))
-bat = tempfile.mkdtemp(); os.makedirs(os.path.join(bat, "BAT0"))
-open(os.path.join(bat, "BAT0/capacity"), "w").write("64\n"); open(os.path.join(bat, "BAT0/status"), "w").write("Discharging\n")
-check("battery", sysinfo.battery(bat) == (64, "Discharging"))
-check("no battery on a desktop", sysinfo.battery(tempfile.mkdtemp()) is None)
 
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)

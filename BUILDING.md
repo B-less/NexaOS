@@ -119,7 +119,7 @@ common/nexa_common/       shared Python: themes, titlebar, compositor, Wi-Fi, Bl
                           privilege elevation, installer, VPN file checks
 common/tests/             unit tests (make test)
 tools/                    Rust workspace: nexa-sys, nexa-pack, nexa-mindd, nexa-tools
-shell/                    bar panels: start menu, Control Centre, Dock, Launchpad
+shell/                    desktop parts in Python: Nexus, For you card, drives, Nexa Link pop-ups (Orbit and Deck are C, in tools-c)
 <app>/nexa_<app>/         one directory per app (browser, settings-app, pulse, ...)
 assets/                   icons, wallpapers
 legacy/                   early one-off scripts, kept for history (not used)

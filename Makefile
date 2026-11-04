@@ -346,6 +346,10 @@ iconset:
 test-orbit:
 	@sh scripts/test-orbit.sh
 
+# Deck, quick settings (C): unit tests, then a headless Sway against fakes.
+test-deck:
+	@sh scripts/test-deck.sh
+
 # USB drives on the desktop (nexa_shell drives) in a headless Sway.
 test-desktop-drives:
 	@sh scripts/test-desktop-drives.sh

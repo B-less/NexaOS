@@ -72,7 +72,7 @@ run volume       volume-mixer    nexa_volume
 for page in overview personalization bluetooth vpn system users updates startup time power privacy assistant about; do
     run settings-$page settings-app nexa_settings $page
 done
-for panel in nexus control foryou drives; do
+for panel in nexus foryou drives; do
     run shell-$panel shell nexa_shell $panel
 done
 '

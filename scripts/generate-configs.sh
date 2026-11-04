@@ -1169,7 +1169,7 @@ exec nexa-later 'nexa-battery-watch' 'nexa-kerneld focus-watch' 'nexa-patternd s
 bindsym $mod+Return exec $term
 bindsym $mod+d exec $menu
 bindsym $mod+space exec nexa-nexus
-bindsym $mod+n exec nexa-control
+bindsym $mod+n exec nexa-deck
 bindsym $mod+o exec pkill -USR1 -u "$(id -u)" -x nexa-orbit
 bindsym $mod+a exec $assistant
 bindsym $mod+e exec $files
@@ -1378,12 +1378,12 @@ windowrule = center on, match:class .*
 # themselves, so Hyprland's own layer animation is off for them.
 layerrule = blur on, match:namespace ^(waybar|nexa-.*)$
 layerrule = ignore_alpha 0.1, match:namespace ^(waybar|nexa-.*)$
-layerrule = no_anim on, match:namespace ^(nexa-panel|waybar|barhide-ghost)$
+layerrule = no_anim on, match:namespace ^(nexa-panel|nexa-deck|waybar|barhide-ghost)$
 
 bind = SUPER, Return, exec, foot
 bind = SUPER, D, exec, nexa-start
 bind = SUPER, Space, exec, nexa-nexus
-bind = SUPER, N, exec, nexa-control
+bind = SUPER, N, exec, nexa-deck
 bind = SUPER, O, exec, pkill -USR1 -u "$(id -u)" -x nexa-orbit
 bind = SUPER, A, exec, nexa-ai-gui
 bind = SUPER, E, exec, nexa-files
@@ -1526,7 +1526,7 @@ DESKTOP_SESSION_EOF
         "format": "{:%a %d %b   %H:%M}",
         "tooltip-format": "{:%A %d %B %Y}",
         "interval": 30,
-        "on-click": "nexa-control"
+        "on-click": "nexa-deck now"
     },
 
     "network": {
@@ -1534,21 +1534,22 @@ DESKTOP_SESSION_EOF
         "format-ethernet": "  Wired",
         "format-disconnected": "  Offline",
         "tooltip-format-wifi": "{essid} · {signalStrength}%",
-        "on-click": "nexa-network"
+        "on-click": "nexa-deck wifi",
+        "on-click-right": "nexa-network"
     },
 
     "backlight": {
         "format": "  {percent}%",
         "on-scroll-up": "brightnessctl set 5%+",
         "on-scroll-down": "brightnessctl set 5%-",
-        "on-click": "nexa-control"
+        "on-click": "nexa-deck brightness"
     },
 
     "pulseaudio": {
         "format": "{icon}  {volume}%",
         "format-muted": "  Muted",
         "format-icons": {"default": ["", ""]},
-        "on-click": "nexa-control",
+        "on-click": "nexa-deck sound",
         "on-click-right": "nexa-volume"
     },
 
@@ -1559,20 +1560,20 @@ DESKTOP_SESSION_EOF
         "format-plugged": "  {capacity}%",
         "format-icons": ["", "", "", "", ""],
         "tooltip-format": "{timeTo}",
-        "on-click": "nexa-control"
+        "on-click": "nexa-deck now"
     },
 
     "custom/notify": {
         "exec": "nexa-bar-notify",
         "return-type": "json",
         "interval": 3,
-        "on-click": "nexa-control"
+        "on-click": "nexa-deck signals"
     },
 
     "custom/control": {
         "format": "",
-        "tooltip-format": "Control Centre (Super+N)",
-        "on-click": "nexa-control"
+        "tooltip-format": "Deck (Super+N)",
+        "on-click": "nexa-deck"
     }
 }
 WAYBAR_CONFIG_EOF

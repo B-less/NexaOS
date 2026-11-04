@@ -28,7 +28,7 @@ wallpapers: shapes nobody else uses.
 |---|---|---|
 | App launcher | Start menu + Launchpad (two things) | **Nexus**: one full-screen launcher. Apps in a hexagonal honeycomb grid; search bar is also the assistant ("open my photos from Friday", "2+2", "turn on VPN") |
 | Dock | macOS-style magnifying dock | **Orbit** (done 2026-11-04, tools-c/nexa-orbit): a rail on the left edge; app icons sit in hex frames, running apps get a ring that traces their CPU use; no magnification |
-| Quick settings | "Control Centre" panel | **Deck**: stacked cards that slide out from the bar's right edge (Wi-Fi, Bluetooth, VPN, focus, brightness, volume, now playing) |
+| Quick settings | "Control Centre" panel | **Deck** (done 2026-11-04, tools-c/nexa-deck): half-hexagon cards that slide out from the right edge one after another (Wi-Fi, Bluetooth, sound, brightness, VPN, Quiet, now playing, Signals) |
 | Window overview | none | **Constellation**: all windows as nodes on a star map, grouped by app, with lines between windows of the same project/workspace |
 | Window buttons | Windows-style boxes | **Hexa buttons**: hexagon outlines with a small symbol (maximise is a hexagon in a hexagon), filled with the accent on hover, red for close (done in 3.3) |
 | Notifications | mako popups | **Signals**: notification capsules that dock into the bar's edge; grouped by app; actions inline |

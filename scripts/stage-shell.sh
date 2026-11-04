@@ -1,7 +1,8 @@
 #!/bin/sh
-# Stage the NexaOS shell: start menu (nexa-start), Control Centre
-# (nexa-control), the theme engine CLI (nexa-theme) and the bar's
-# notification bell script.
+# Stage the NexaOS shell's Python parts: Nexus (nexa-nexus, also nexa-start
+# and nexa-launchpad, the old names), the desktop parts (nexa-parts), the
+# theme engine CLI (nexa-theme) and the bar's notification bell script.
+# Orbit and Deck are C (tools-c), staged with the native tools.
 set -eu
 
 rootfs=${1:-rootfs}
@@ -14,7 +15,7 @@ find "$rootfs/usr/local/lib/nexa-shell/nexa_shell" -name '__pycache__' -exec rm 
 
 # ("foryou" is the desktop card; nexa-desktop is the session launcher, see
 # generate-configs.sh - never reuse that name.)
-for panel in nexus start control dock launchpad foryou drives linknotify parts; do
+for panel in nexus start launchpad foryou drives linknotify parts; do
     printf '%s\n' \
         '#!/bin/sh' \
         '. /usr/local/lib/nexa-wayland-env.sh' \
@@ -22,6 +23,14 @@ for panel in nexus start control dock launchpad foryou drives linknotify parts; 
         > "$rootfs/usr/local/bin/nexa-$panel"
     chmod +x "$rootfs/usr/local/bin/nexa-$panel"
 done
+
+# The Dock and the Control Centre were Python panels; Orbit and Deck (C)
+# replaced them. nexa-control stays as a name for Deck (older bar configs,
+# muscle memory); the rootfs is reused by "make refresh", so the Dock's
+# launcher is removed here.
+rm -f "$rootfs/usr/local/bin/nexa-dock"
+printf '%s\n' '#!/bin/sh' 'exec nexa-deck "$@"' > "$rootfs/usr/local/bin/nexa-control"
+chmod +x "$rootfs/usr/local/bin/nexa-control"
 
 mkdir -p "$rootfs/usr/share/applications"
 # An entry from older builds (Nexus replaced it, and the name was Apple's):

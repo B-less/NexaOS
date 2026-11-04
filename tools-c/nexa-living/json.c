@@ -1,5 +1,5 @@
-/* See json.h. Enough JSON for the compositor's and our own files: no
- * \u escapes beyond ASCII (they become '?'), depth limited. */
+/* See json.h. Enough JSON for the compositor's and our own files, depth
+ * limited; \u escapes become UTF-8 (a broken one becomes '?'). */
 #include "json.h"
 
 #include <ctype.h>
@@ -30,6 +30,39 @@ static void ws(struct st *s)
     while (*s->p && isspace((unsigned char)*s->p)) s->p++;
 }
 
+static int hex4(const char *p, unsigned *v)
+{
+    *v = 0;
+    for (int i = 0; i < 4; i++) {
+        char c = p[i];
+        int d = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+        if (d < 0) return -1;
+        *v = *v * 16 + (unsigned)d;
+    }
+    return 0;
+}
+
+/* One code point as UTF-8; never longer than the escape it came from. */
+static char *put_utf8(char *w, unsigned c)
+{
+    if (c < 0x80) {
+        *w++ = (char)c;
+    } else if (c < 0x800) {
+        *w++ = (char)(0xc0 | (c >> 6));
+        *w++ = (char)(0x80 | (c & 0x3f));
+    } else if (c < 0x10000) {
+        *w++ = (char)(0xe0 | (c >> 12));
+        *w++ = (char)(0x80 | ((c >> 6) & 0x3f));
+        *w++ = (char)(0x80 | (c & 0x3f));
+    } else {
+        *w++ = (char)(0xf0 | (c >> 18));
+        *w++ = (char)(0x80 | ((c >> 12) & 0x3f));
+        *w++ = (char)(0x80 | ((c >> 6) & 0x3f));
+        *w++ = (char)(0x80 | (c & 0x3f));
+    }
+    return w;
+}
+
 /* Reads a string at s->p (after the quote), NUL-terminates it in place. */
 static char *string(struct st *s)
 {
@@ -41,9 +74,24 @@ static char *string(struct st *s)
             if (c == 'n') *w++ = '\n';
             else if (c == 't') *w++ = '\t';
             else if (c == 'u') {
-                *w++ = '?';
-                for (int i = 0; i < 4 && s->p[1]; i++) s->p++;
-            } else *w++ = c;
+                unsigned u, lo;
+                if (hex4(s->p + 1, &u) < 0) {
+                    *w++ = '?';
+                } else {
+                    s->p += 4;
+                    if (u >= 0xd800 && u < 0xdc00 && s->p[1] == '\\' && s->p[2] == 'u' && hex4(s->p + 3, &lo) == 0 &&
+                        lo >= 0xdc00 && lo < 0xe000) {
+                        u = 0x10000 + ((u - 0xd800) << 10) + (lo - 0xdc00);
+                        s->p += 6;
+                    } else if (u >= 0xd800 && u < 0xe000) {
+                        u = '?';  /* half a pair */
+                    }
+                    w = u ? put_utf8(w, u) : (*w++ = '?', w);  /* no NUL inside a string */
+                }
+            } else if (c == 'r') *w++ = '\r';
+            else if (c == 'b') *w++ = '\b';
+            else if (c == 'f') *w++ = '\f';
+            else *w++ = c;
             s->p++;
         } else {
             *w++ = *s->p++;

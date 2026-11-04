@@ -517,7 +517,7 @@ class NotificationsPage(_Page):
         super().__init__(win)
         self.p = notifyconf.load()
         self.dnd = _switch(notifyconf.dnd_on(), self._dnd)
-        self.add(_row("Do not disturb", self.dnd, "Pop-ups are kept quiet; they're still in the Control Centre"))
+        self.add(_row("Do not disturb", self.dnd, "Pop-ups are kept quiet; they're still in Deck's Signals card"))
         times = [(0, "Until I close them"), (3, "3 seconds"), (6, "6 seconds"), (10, "10 seconds"), (20, "20 seconds")]
         if self.p["timeout"] not in dict(times):
             times.append((self.p["timeout"], f"{self.p['timeout']} seconds"))

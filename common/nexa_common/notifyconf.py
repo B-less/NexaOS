@@ -2,7 +2,7 @@
 stay, where they appear, and apps whose pop-ups are hidden. Kept in
 ~/.config/nexa/notifications.json; themes.mako_config() adds them to the
 mako config it writes, and write_mako() rewrites it at once. Do not
-disturb is mako's "do-not-disturb" mode (also in the Control Centre)."""
+disturb is mako's "do-not-disturb" mode (also in Deck: the Quiet card)."""
 import json
 import os
 import re

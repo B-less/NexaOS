@@ -1,0 +1,12 @@
+#!/bin/sh
+# Stand-in for makoctl (Deck's test): modes in /tmp/modes, notifications in /tmp/history.json.
+echo "makoctl $*" >> /tmp/fakes.log
+case "$1" in
+mode)
+    [ "$2" = -a ] && echo "$3" >> /tmp/modes
+    [ "$2" = -r ] && { grep -vx "$3" /tmp/modes > /tmp/modes.new; mv /tmp/modes.new /tmp/modes; }
+    cat /tmp/modes ;;
+list) echo '{"type": "aa{sv}", "data": [[]]}' ;;
+history) cat /tmp/history.json ;;
+dismiss) echo '{"type": "aa{sv}", "data": [[]]}' > /tmp/history.json ;;
+esac
