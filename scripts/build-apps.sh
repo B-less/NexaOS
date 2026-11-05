@@ -12,9 +12,9 @@ keys="$HOME/.config/nexaos-keys"
 # The Rust builder plus the headers apps commonly need beyond GTK, saved
 # once (nexa-rust-apps) instead of downloaded on every build.
 apps_image=nexa-rust-apps:${version%.*}
-if ! docker image inspect "$apps_image" >/dev/null 2>&1; then
-    printf 'FROM nexa-rust:%s\nRUN apk add --no-cache gstreamer-dev gst-plugins-base-dev\n' "${version%.*}" \
-        | docker build -q -t "$apps_image" - >/dev/null
+# (scripts/build-c-tools.sh makes the full one: with curl-dev and openssl-dev for Mail)
+if ! docker run --rm "$apps_image" sh -c 'apk info -e curl-dev && apk info -e openssl-dev' >/dev/null 2>&1; then
+    sh "$repo/scripts/build-c-tools.sh" >/dev/null
 fi
 docker run --rm -v "$repo:/src" -v "$keys:/keys:ro" -e OWNER="$(id -u):$(id -g)" "$apps_image" sh -c '
 set -e

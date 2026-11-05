@@ -1,4 +1,4 @@
-//! nexa-intent-train: make the sentences, train the model, measure it,
+//! nexa-intent-train (cargo run --release --example nexa-intent-train): make the sentences, train the model, measure it,
 //! write model/nexa-intent.bin.
 //!
 //!   nexa-intent-train            train and write the model
@@ -11,7 +11,7 @@
 //! on (seed 2), and tests/heldout.tsv, written by hand.
 
 use nexa_intent::data::{generate, INTENTS};
-use nexa_intent::model::{takes_arg, Model, SURE};
+use nexa_intent::model::{takes_arg, Model};
 use std::path::PathBuf;
 use std::time::Instant;
 

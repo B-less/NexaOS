@@ -10,8 +10,10 @@ description = "NexaOS's tiny command model: what a typed or spoken command asks 
 # which makes that file.
 builtin = []
 
-[[bin]]
+# The trainer is an example (cargo run --release --example nexa-intent-train):
+# a tool for making the model, not part of the system.
+[[example]]
 name = "nexa-intent-train"
-path = "src/bin/train.rs"
+path = "examples/nexa-intent-train.rs"
 
 [dependencies]

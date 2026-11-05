@@ -396,7 +396,7 @@ test-microbrain: native
 # it must give the same bytes as model/nexa-intent.bin, and its scores.
 test-intent:
 	@docker run --rm -v "$(CURDIR):/src" -v /var/tmp/nexa-cargo:/root/.cargo/registry -w /src/tools nexa-rust:$(shell echo $(ALPINE_VERSION) | cut -d. -f1,2) \
-	    sh -c 'cargo test -q -p nexa-intent && cargo run -q --release -p nexa-intent --bin nexa-intent-train -- --check'
+	    sh -c 'cargo test -q -p nexa-intent && cargo run -q --release -p nexa-intent --example nexa-intent-train -- --check'
 
 # Nexa Link between three machines (a PC, a phone, a stranger) on a private
 # Docker network: pairing, Nexa-only signals, files, Nexa Drop, Forget.
