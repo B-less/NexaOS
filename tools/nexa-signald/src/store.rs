@@ -93,6 +93,8 @@ pub struct Store {
     pub quiet: bool,
     pub held: bool,
     pub prefs: Prefs,
+    /// the mood of the layer on screen (Layer moods): set before each Notify
+    pub mood: crate::layer::Mood,
     next: u32,
 }
 
@@ -137,7 +139,8 @@ impl Store {
         };
         let replacing = n.replaces != 0 && self.active.iter().any(|s| s.id == n.replaces);
         let id = if replacing { n.replaces } else { self.allocate() };
-        let popup = critical || (!self.quiet && !self.prefs.muted.iter().any(|m| *m == app));
+        let popup = critical
+            || (!self.quiet && !self.prefs.muted.iter().any(|m| *m == app) && !self.mood.quiet && !self.mood.mutes(&app));
         let held = self.held && popup;
         let sig = Signal {
             id,
@@ -317,6 +320,27 @@ mod tests {
         h.hold(true, t);
         h.notify(n("A", "arrives while held"), t);
         assert!(h.expire(t + Duration::from_secs(30)).is_empty());
+    }
+
+    #[test]
+    fn layer_moods_hold_back() {
+        use crate::layer::Mood;
+        let t = Instant::now();
+        let mut s = Store::new(Prefs::default());
+        s.mood = Mood { layer: 3, name: "Work".into(), quiet: true, muted: vec![] };
+        s.notify(n("Chat", "lunch?"), t);
+        s.notify(Incoming { urgency: 2, ..n("Battery", "5% left") }, t);
+        let shown: Vec<String> = s.state(t)["signals"].as_array().unwrap().iter().map(|x| x["app"].as_str().unwrap().to_string()).collect();
+        assert_eq!(shown, vec!["Battery"], "a quiet layer: only the important one pops up");
+        assert_eq!(s.history.len(), 2, "the other is kept in the history");
+        s.mood = Mood { layer: 2, muted: vec!["chat".into()], ..Default::default() };
+        s.notify(n("Chat", "again"), t);
+        s.notify(n("Files", "copied"), t);
+        let shown: Vec<String> = s.state(t)["signals"].as_array().unwrap().iter().map(|x| x["app"].as_str().unwrap().to_string()).collect();
+        assert!(shown.contains(&"Files".to_string()) && !shown.contains(&"Chat".to_string()), "an app muted on this layer: {shown:?}");
+        s.mood = Mood::default();
+        s.notify(n("Chat", "on layer 1"), t);
+        assert!(s.state(t)["signals"].as_array().unwrap().iter().any(|x| x["summary"] == "on layer 1"), "another layer: as before");
     }
 
     #[test]

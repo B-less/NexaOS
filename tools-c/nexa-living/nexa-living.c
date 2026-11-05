@@ -79,6 +79,8 @@ struct config {
     int napps;
     char wallpaper[512];
     double strata_tint;  /* strata.conf: tint; 0 = off */
+    int layer_style[STRATA_LAYERS];   /* Layer moods: -2 = as desktop_style */
+    double layer_dim[STRATA_LAYERS];
 };
 
 struct win {
@@ -116,6 +118,7 @@ struct output {
     int ws;
     rgb tint_from, tint_to;
     double tint_from_a, tint_to_a, tint_at;
+    double dim_from, dim_to;  /* Layer moods: the background darkened */
 };
 
 struct ripple { char app[48]; double x, y, t0; int desk; struct output *o; };
@@ -263,6 +266,11 @@ static void load_config(void)
         strata_conf_parse(&sc, st);
         free(st);
         c.strata_tint = sc.tint;
+        for (int i = 0; i < STRATA_LAYERS; i++) {
+            const char *st = sc.mood[i].style;
+            c.layer_style[i] = !*st ? -2 : !strcmp(st, "none") ? -1 : style_by_name(st) >= 0 ? style_by_name(st) : -2;
+            c.layer_dim[i] = sc.mood[i].dim;
+        }
     }
     /* keep the live levels across a reload */
     for (int i = 0; i < c.napps; i++)
@@ -684,6 +692,19 @@ static double tint_k(const struct output *o)
     return fmin(1, fmax(0, (now() - o->tint_at) / 0.4));
 }
 
+static double dim_now(const struct output *o)
+{
+    double k = tint_k(o);
+    return o->dim_from + (o->dim_to - o->dim_from) * k;
+}
+
+/* The desktop style on this output: its layer's, or the one for every layer. */
+static int desk_style(const struct output *o)
+{
+    if (o->ws >= 1 && o->ws <= STRATA_LAYERS && L.cfg.layer_style[o->ws - 1] != -2) return L.cfg.layer_style[o->ws - 1];
+    return L.cfg.desktop_style;
+}
+
 static void tint_now(const struct output *o, rgb *c, double *a)
 {
     double k = tint_k(o);
@@ -697,19 +718,21 @@ static void tint_target(struct output *o, rgb fallback)
     int on = o->ws >= 1 && o->ws <= STRATA_LAYERS;
     o->tint_to = on ? tint_of(o->ws) : fallback;
     o->tint_to_a = on ? L.cfg.strata_tint : 0;  /* not a layer (a named workspace): no tint */
+    o->dim_to = on ? L.cfg.layer_dim[o->ws - 1] : 0;
 }
 
 static void set_layer(struct output *o, int n)
 {
     if (n == o->ws && o->tint_at > 0) return;
     rgb c;
-    double a;
+    double a, dim = dim_now(o);
     tint_now(o, &c, &a);
     int first = o->tint_at <= 0;
     o->ws = n;
     tint_target(o, c);
     o->tint_from = first ? o->tint_to : c;  /* at start: no fade */
     o->tint_from_a = first ? o->tint_to_a : a;
+    o->dim_from = first ? o->dim_to : dim;
     o->tint_at = now();
     o->full = 1;
 }
@@ -722,6 +745,7 @@ static void retint(void)
         tint_target(o, o->tint_to);
         o->tint_from = o->tint_to;
         o->tint_from_a = o->tint_to_a;
+        o->dim_from = o->dim_to;
         o->full = 1;
     }
 }
@@ -877,7 +901,8 @@ static void render(struct output *o)
     }
     pixman_region32_subtract(&desk, &desk, &windows);
     /* the desktop is slow and calm: 15 frames a second at most */
-    int desk_moves = L.cfg.desktop_style >= 0 && L.quality >= 0 && !fullscreen && t - o->desk_at >= 1.0 / 15 - 0.004;
+    int ds = desk_style(o);
+    int desk_moves = ds >= 0 && L.quality >= 0 && !fullscreen && t - o->desk_at >= 1.0 / 15 - 0.004;
     if (desk_moves) o->desk_at = t;
     if (desk_moves) pixman_region32_union(&moving, &moving, &desk);
     if (ripples_live(t)) pixman_region32_union(&moving, &moving, &desk);
@@ -914,20 +939,25 @@ static void render(struct output *o)
             cairo_set_source_rgba(cr, tc.r, tc.g, tc.b, ta);
             cairo_paint(cr);
         }
+        double dim = dim_now(o);  /* Layer moods: a darker background ("Night") */
+        if (dim > 0.002) {
+            cairo_set_source_rgba(cr, 0, 0, 0, dim);
+            cairo_paint(cr);
+        }
     }
     cairo_scale(cr, s, s);
     double p1 = now();
 
     /* the desktop, around the windows */
-    if (L.cfg.desktop_style >= 0 && !fullscreen) {
+    if (ds >= 0 && !fullscreen) {
         cairo_save(cr);
         int nd;
         pixman_box32_t *db = pixman_region32_rectangles(&desk, &nd);
         cairo_new_path(cr);
         for (int i = 0; i < nd; i++) cairo_rectangle(cr, db[i].x1, db[i].y1, db[i].x2 - db[i].x1, db[i].y2 - db[i].y1);
         cairo_clip(cr);
-        region_prepare(&o->desk, L.cfg.desktop_style, o->w, o->h, L.cfg.density * (L.quality == Q_LOW ? 0.7 : 1), 3);
-        struct params p = params_for(L.quality < 0 ? 4.0 : t, 0.75, 0);
+        region_prepare(&o->desk, ds, o->w, o->h, L.cfg.density * (L.quality == Q_LOW ? 0.7 : 1), 3);
+        struct params p = params_for(L.quality < 0 ? 4.0 : t, 0.75 * (1 - dim_now(o)), 0);
         if (L.ptr_out == o) { p.px = L.px; p.py = L.py; }
         style_draw(cr, &o->desk, &p);
         draw_ripples(cr, o, NULL, t);
@@ -1008,7 +1038,7 @@ static int animating(struct output *o)
 {
     if (tint_k(o) < 1) return 1;
     if (L.quality < 0) return ripples_live(now() - L.t0);
-    if (L.cfg.desktop_style >= 0) return 1;
+    if (desk_style(o) >= 0) return 1;
     for (int i = 0; i < L.nwin; i++) if (on_output(&L.win[i], o) && win_animates(&L.win[i])) return 1;
     return ripples_live(now() - L.t0);
 }
@@ -1052,11 +1082,12 @@ static void write_stats(void)
         fprintf(f, "{\"quality\": \"%s\", \"cap\": \"%s\", \"fps\": %.1f, \"frame_ms\": %.2f, \"rss_kb\": %ld, \"windows\": %d, \"styled\": %d, "
                    "\"on_battery\": %d, \"brain_low\": %d, \"low_memory\": %d, \"enabled\": %d, "
                    "\"base_ms\": %.2f, \"desktop_ms\": %.2f, \"windows_ms\": %.2f, "
-                   "\"layer\": %d, \"tint\": \"#%02x%02x%02x\", \"tint_alpha\": %.3f}\n",
+                   "\"layer\": %d, \"tint\": \"#%02x%02x%02x\", \"tint_alpha\": %.3f, \"dim\": %.3f, \"desk_style\": %d}\n",
                 qn[L.quality + 1], qn[L.cap_quality + 1], L.frames / span, L.ms_n ? L.ms_sum / L.ms_n : 0.0,
                 rss * (sysconf(_SC_PAGESIZE) / 1024), L.nwin, styled, L.on_battery, L.brain_low, L.low_memory, L.cfg.enabled,
                 L.ms_n ? L.base_ms / L.ms_n : 0.0, L.ms_n ? L.desk_ms / L.ms_n : 0.0, L.ms_n ? L.win_ms / L.ms_n : 0.0,
-                L.nout ? L.out[0].ws : 0, (int)lround(tc.r * 255), (int)lround(tc.g * 255), (int)lround(tc.b * 255), ta);
+                L.nout ? L.out[0].ws : 0, (int)lround(tc.r * 255), (int)lround(tc.g * 255), (int)lround(tc.b * 255), ta,
+                L.nout ? dim_now(&L.out[0]) : 0.0, L.nout ? desk_style(&L.out[0]) : -1);
         fclose(f);
     }
     L.frames = 0;

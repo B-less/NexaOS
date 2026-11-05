@@ -4,6 +4,11 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+
+#include "json.h"
 
 #define HUD_W 300
 #define HUD_H 240
@@ -29,6 +34,8 @@ static struct {
     int animations, current, known;
     double from, to, glide_at, shown_at, changed_at;
     guint tick;
+    char power[16];         /* the governor a layer's mood set; "" = none */
+    char power_before[16];  /* what it was before (the broker says), put back after */
 } H = {.animations = 1, .c = {{0.03, 0.05, 0.12}, {0.08, 0.11, 0.23}, {0.9, 0.93, 1}, {0.56, 0.61, 0.77}, {0.3, 0.64, 1}, 0.78}};
 
 static double now_s(void) { return g_get_monotonic_time() / 1e6; }
@@ -64,17 +71,21 @@ static void write_state(void)
     if (!path) return;
     double t = now_s();
     GString *s = g_string_new(NULL);
-    g_string_append_printf(s, "{\"shown\": %d, \"current\": %d, \"pos\": %.2f, \"show\": %d, \"tint\": %.2f, \"animations\": %d",
+    g_string_append_printf(s, "{\"shown\": %d, \"current\": %d, \"pos\": %.2f, \"show\": %d, \"tint\": %.2f, \"animations\": %d, "
+                              "\"power\": \"%s\", \"power_before\": \"%s\"",
                            H.win != NULL, H.current, H.win ? pos_now(t) + 1 : (double)H.current, H.conf.show, H.conf.tint,
-                           H.animations);
+                           H.animations, H.power, H.power_before);
     if (H.win)
         g_string_append_printf(s, ", \"surface\": [%d, %d]", gtk_widget_get_allocated_width(H.area),
                                gtk_widget_get_allocated_height(H.area));
     g_string_append(s, ", \"layers\": [");
     for (int i = 0; i < STRATA_LAYERS; i++) {
         strata_rgb c = strata_tint(H.c.accent, i + 1);
-        g_string_append_printf(s, "%s{\"windows\": %d, \"icons\": %d, \"tint\": \"#%02x%02x%02x\"}", i ? ", " : "", H.layer[i].windows,
-                               H.layer[i].nicons, (int)lround(c.r * 255), (int)lround(c.g * 255), (int)lround(c.b * 255));
+        char *nm = g_strescape(H.conf.mood[i].name, NULL);
+        g_string_append_printf(s, "%s{\"windows\": %d, \"icons\": %d, \"tint\": \"#%02x%02x%02x\", \"name\": \"%s\"}", i ? ", " : "",
+                               H.layer[i].windows, H.layer[i].nicons, (int)lround(c.r * 255), (int)lround(c.g * 255),
+                               (int)lround(c.b * 255), nm);
+        g_free(nm);
     }
     g_string_append(s, "]}\n");
     char *tmp = g_strconcat(path, ".tmp", NULL);
@@ -147,6 +158,26 @@ static void draw_sheet(cairo_t *cr, int i, struct strata_sheet s, double a, doub
     set_rgb(cr, H.c.text, a);
     text_at(cr, num, 11 * s.scale, 1, bx, ly, 1);
 
+    const char *name = H.conf.mood[i].name;
+    if (*name) {  /* its name (Layer moods), at the far side of the sheet */
+        cairo_save(cr);
+        PangoLayout *l = pango_cairo_create_layout(cr);
+        PangoFontDescription *fd = pango_font_description_from_string("Sans Bold");
+        pango_font_description_set_absolute_size(fd, 10 * s.scale * PANGO_SCALE);
+        pango_layout_set_font_description(l, fd);
+        pango_layout_set_text(l, name, -1);
+        pango_layout_set_width(l, (int)(bw * 0.38 * PANGO_SCALE));
+        pango_layout_set_ellipsize(l, PANGO_ELLIPSIZE_END);
+        pango_layout_set_alignment(l, PANGO_ALIGN_RIGHT);
+        int tw, th;
+        pango_layout_get_pixel_size(l, &tw, &th);
+        set_rgb(cr, weight > 0.5 ? H.c.text : H.c.muted, a);
+        cairo_move_to(cr, cx + bw / 2 - 14 * s.scale - bw * 0.38, ly - th / 2.0);
+        pango_cairo_show_layout(cr, l);
+        pango_font_description_free(fd);
+        g_object_unref(l);
+        cairo_restore(cr);
+    }
     if (a < 0.3) return;
     /* its windows' apps */
     const struct hud_layer *L = &H.layer[i];
@@ -271,6 +302,84 @@ static void show(void)
     gtk_widget_queue_draw(H.area);
 }
 
+/* ---------- Layer moods: power ---------- */
+
+typedef struct {
+    char req[128];
+    char *reply;
+    int first;  /* the first change: the reply's "previous" is what to put back */
+} PowerJob;
+
+static gboolean power_done(gpointer data)
+{
+    PowerJob *j = data;
+    struct jdoc d = {0};
+    if (j->reply && json_parse(&d, j->reply) == 0 && json_num(&d, 0, "ok", 0)) {
+        int r = json_get(&d, 0, "result");
+        const char *prev = json_str(&d, r >= 0 ? r : 0, "previous", "");
+        if (j->first && *prev && strlen(prev) < sizeof H.power_before && strspn(prev, "abcdefghijklmnopqrstuvwxyz") == strlen(prev))
+            snprintf(H.power_before, sizeof H.power_before, "%s", prev);
+    }
+    json_free(&d);
+    g_free(j->reply);
+    g_free(j);
+    write_state();
+    return G_SOURCE_REMOVE;
+}
+
+static gpointer power_thread(gpointer data)
+{
+    PowerJob *j = data;
+    const char *path = g_getenv("NEXA_BROKER_SOCKET");
+    if (!path || !*path) path = "/run/nexa-broker.sock";
+    struct sockaddr_un a = {.sun_family = AF_UNIX};
+    int fd = strlen(path) < sizeof a.sun_path ? socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0) : -1;
+    GString *reply = g_string_new(NULL);
+    if (fd >= 0) {
+        memcpy(a.sun_path, path, strlen(path) + 1);
+        struct timeval tv = {10, 0};
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+        if (connect(fd, (struct sockaddr *)&a, sizeof a) == 0 && write(fd, j->req, strlen(j->req)) == (ssize_t)strlen(j->req)) {
+            char buf[2048];
+            ssize_t r;
+            while (reply->len < 65536 && (r = read(fd, buf, sizeof buf)) > 0) {
+                g_string_append_len(reply, buf, r);
+                if (memchr(buf, '\n', (size_t)r)) break;
+            }
+        }
+        close(fd);
+    }
+    j->reply = g_string_free(reply, FALSE);
+    g_idle_add(power_done, j);
+    return NULL;
+}
+
+static void set_governor(const char *g, int first)
+{
+    PowerJob *j = g_new0(PowerJob, 1);
+    snprintf(j->req, sizeof j->req, "{\"action\": \"set_governor\", \"args\": {\"governor\": \"%s\"}}\n", g);
+    j->first = first;
+    g_thread_unref(g_thread_new("strata-power", power_thread, j));
+}
+
+/* On a layer whose mood sets power: that governor. Leaving it for one that
+ * doesn't: what it was before. */
+static void apply_power(int ws)
+{
+    const char *want = ws >= 1 && ws <= STRATA_LAYERS ? H.conf.mood[ws - 1].power : "";
+    if (*want) {
+        if (strcmp(want, H.power)) {
+            int first = !H.power[0];
+            if (first) H.power_before[0] = 0;
+            snprintf(H.power, sizeof H.power, "%s", want);
+            set_governor(want, first);
+        }
+    } else if (H.power[0]) {
+        H.power[0] = 0;
+        if (H.power_before[0]) set_governor(H.power_before, 0);
+    }
+}
+
 /* ---------- from Orbit ---------- */
 
 void hud_reload_conf(void)
@@ -280,6 +389,7 @@ void hud_reload_conf(void)
     strata_conf_parse(&H.conf, text);
     g_free(text);
     if (!H.conf.show && H.win) hide();
+    if (H.known) apply_power(H.current);  /* the mood of this layer changed */
     write_state();
 }
 
@@ -321,10 +431,12 @@ void hud_set_current(int ws)
     if (!H.known) {
         H.known = 1;
         H.from = H.to = ws >= 1 && ws <= STRATA_LAYERS ? ws - 1 : 0;
+        apply_power(ws);  /* started on a layer whose mood sets power */
         write_state();
         return;
     }
     if (ws == was) return;
+    apply_power(ws);
     if (ws < 1 || ws > STRATA_LAYERS || !H.conf.show) {
         if (H.win) hide();
         write_state();

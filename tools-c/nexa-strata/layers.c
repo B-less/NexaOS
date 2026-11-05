@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 int strata_target(int cur, int step)
 {
@@ -53,8 +54,56 @@ strata_rgb strata_tint(strata_rgb a, int n)
     return (strata_rgb){hue_part(p, q, h + 1.0 / 3), hue_part(p, q, h), hue_part(p, q, h - 1.0 / 3)};
 }
 
+/* Printable text only, whole UTF-8 characters, trimmed (a name or an app
+ * list from the file). */
+static void clean_copy(char *dst, size_t cap, const char *v)
+{
+    size_t k = 0;
+    const unsigned char *c = (const unsigned char *)v;
+    while (*c) {
+        size_t len = *c < 0x80 ? 1 : (*c & 0xe0) == 0xc0 ? 2 : (*c & 0xf0) == 0xe0 ? 3 : (*c & 0xf8) == 0xf0 ? 4 : 0;
+        int ok = len > 0 && (len > 1 || (*c >= 32 && *c != 127));
+        for (size_t i = 1; ok && i < len; i++) ok = (c[i] & 0xc0) == 0x80;
+        if (!ok) {  /* a control character or a broken byte: dropped */
+            c++;
+            continue;
+        }
+        if (k + len + 1 > cap) break;
+        memcpy(dst + k, c, len);
+        k += len;
+        c += len;
+    }
+    while (k && dst[k - 1] == ' ') k--;
+    dst[k] = 0;
+    size_t s = 0;
+    while (dst[s] == ' ') s++;
+    if (s) memmove(dst, dst + s, k - s + 1);
+}
+
+static void mood_key(struct strata_mood *m, const char *k, const char *v)
+{
+    if (!strcmp(k, "name")) {
+        clean_copy(m->name, sizeof m->name, v);
+    } else if (!strcmp(k, "signals")) {
+        m->quiet = !strcmp(v, "quiet");
+    } else if (!strcmp(k, "mute")) {
+        clean_copy(m->mute, sizeof m->mute, v);
+    } else if (!strcmp(k, "style")) {
+        int ok = strlen(v) < sizeof m->style;
+        for (const char *c = v; *c && ok; c++) ok = islower((unsigned char)*c) || *c == '-';
+        if (ok) strcpy(m->style, v);
+    } else if (!strcmp(k, "dim")) {
+        char *e;
+        double d = strtod(v, &e);
+        if (e != v && isfinite(d)) m->dim = fmin(STRATA_DIM_MAX, fmax(0, d));
+    } else if (!strcmp(k, "power")) {
+        if (!strcmp(v, "powersave") || !strcmp(v, "performance") || !*v) strcpy(m->power, v);
+    }
+}
+
 void strata_conf_parse(struct strata_conf *c, const char *text)
 {
+    memset(c, 0, sizeof *c);
     c->show = 1;
     c->tint = STRATA_TINT;
     if (!text) return;
@@ -62,7 +111,7 @@ void strata_conf_parse(struct strata_conf *c, const char *text)
     while (*line) {
         const char *end = strchr(line, '\n');
         size_t n = end ? (size_t)(end - line) : strlen(line);
-        char buf[128];
+        char buf[512];
         if (n < sizeof buf && *line != '#') {
             memcpy(buf, line, n);
             buf[n] = 0;
@@ -76,12 +125,30 @@ void strata_conf_parse(struct strata_conf *c, const char *text)
                     char *e;
                     double t = strtod(v, &e);
                     if (e != v && isfinite(t)) c->tint = fmin(STRATA_TINT_MAX, fmax(0, t));
+                } else if (!strncmp(k, "layer.", 6) && k[6] >= '1' && k[6] <= '0' + STRATA_LAYERS && k[7] == '.') {
+                    mood_key(&c->mood[k[6] - '1'], k + 8, v);
                 }
             }
         }
         if (!end) break;
         line = end + 1;
     }
+}
+
+int strata_mood_mutes(const struct strata_mood *m, const char *app)
+{
+    if (!app || !*app) return 0;
+    size_t n = strlen(app);
+    for (const char *p = m->mute; *p;) {
+        while (*p == ' ' || *p == ',') p++;
+        const char *e = strchr(p, ',');
+        size_t len = e ? (size_t)(e - p) : strlen(p);
+        while (len && p[len - 1] == ' ') len--;
+        if (len == n && !strncasecmp(p, app, n)) return 1;
+        if (!e) break;
+        p = e + 1;
+    }
+    return 0;
 }
 
 struct strata_sheet strata_sheet_at(int i, double pos)

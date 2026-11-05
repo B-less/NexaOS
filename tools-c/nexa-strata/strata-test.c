@@ -1,6 +1,7 @@
 /* Unit tests for Strata's layer maths (make test). */
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "layers.h"
 
@@ -58,6 +59,26 @@ int main(void)
     check(near(c.tint, 0), "a negative tint is off");
     strata_conf_parse(&c, "tint=nan\ntint=abc\n");
     check(near(c.tint, STRATA_TINT), "a tint that isn't a number is ignored");
+
+    strata_conf_parse(&c, "layer.3.name=Work\nlayer.3.signals=quiet\nlayer.3.mute=Chat, Mail ,Télé\n"
+                          "layer.5.name=Night\nlayer.5.dim=0.45\nlayer.5.power=powersave\nlayer.5.style=nebula\n"
+                          "layer.2.style=none\nlayer.1.power=turbo\nlayer.4.dim=9\nlayer.6.name=x\nlayer.0.name=y\n"
+                          "layer.4.style=../x\nlayer.2.name=\x01Pl\x7f" "ay  \n");
+    check(!strcmp(c.mood[2].name, "Work") && c.mood[2].quiet && !c.mood[0].quiet, "a layer's name and quiet notifications");
+    check(strata_mood_mutes(&c.mood[2], "chat") && strata_mood_mutes(&c.mood[2], "Mail") && strata_mood_mutes(&c.mood[2], "Télé") &&
+              !strata_mood_mutes(&c.mood[2], "Files") && !strata_mood_mutes(&c.mood[2], "Ch") && !strata_mood_mutes(&c.mood[0], "Chat"),
+          "apps muted on a layer (whole names, any case)");
+    check(!strcmp(c.mood[4].name, "Night") && near(c.mood[4].dim, 0.45) && !strcmp(c.mood[4].power, "powersave") &&
+              !strcmp(c.mood[4].style, "nebula") && !strcmp(c.mood[1].style, "none"),
+          "dim, power and background style");
+    check(!c.mood[0].power[0] && near(c.mood[3].dim, STRATA_DIM_MAX) && !c.mood[3].style[0], "bad power, dim and style refused");
+    check(!strcmp(c.mood[1].name, "Play"), "control characters dropped from a name");
+    char longname[200] = "layer.1.name=";
+    for (int i = 0; i < 40; i++) strcat(longname, "é");
+    strata_conf_parse(&c, longname);
+    check(strlen(c.mood[0].name) == 30 && !strncmp(c.mood[0].name, "éééé", 8), "a long name is cut between whole characters");
+    strata_conf_parse(&c, "show=no\n");
+    check(!c.mood[2].name[0] && !c.mood[2].quiet && c.mood[4].dim == 0, "no moods: every layer as before");
 
     struct strata_sheet cur = strata_sheet_at(2, 2), deep = strata_sheet_at(4, 2), past = strata_sheet_at(1, 2),
                         gone = strata_sheet_at(0, 2);

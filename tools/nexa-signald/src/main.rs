@@ -102,7 +102,12 @@ fn serve_dbus(shared: Arc<Shared>, wake_r: std::os::unix::io::RawFd) -> Result<(
                     urgency: hint_u64(&hints, "urgency").unwrap_or(1).min(2) as u8,
                     desktop: hint_str(&hints, "desktop-entry").unwrap_or_default(),
                 };
-                let (id, gone) = sh.store.lock().unwrap().notify(n, Instant::now());
+                let mood = nexa_signald::layer::now();  /* asked outside the lock: the compositor may be slow */
+                let (id, gone) = {
+                    let mut st = sh.store.lock().unwrap();
+                    st.mood = mood;
+                    st.notify(n, Instant::now())
+                };
                 sh.emit_closed(&gone);
                 sh.broadcast();
                 Ok((id,))

@@ -12,9 +12,23 @@
 
 typedef struct { double r, g, b; } strata_rgb;
 
+#define STRATA_DIM_MAX 0.6
+
+/* A layer's mood (Layer moods, TODOnexa_identity.md phase 5): set in
+ * Settings > Layers, applied when that layer is on screen. */
+struct strata_mood {
+    char name[32];    /* "Work"; "" = just its number */
+    int quiet;        /* notifications: only important ones pop up (Signals) */
+    char mute[256];   /* apps whose notifications don't pop up here, comma-separated */
+    char style[24];   /* Living's background: "" = as Magic Layer, "none", or a style name */
+    double dim;       /* darkens the background, 0..STRATA_DIM_MAX */
+    char power[16];   /* "" = unchanged, "powersave" or "performance" (CPU governor) */
+};
+
 struct strata_conf {
     int show;      /* the layer stack when the layer changes */
     double tint;   /* 0 = off */
+    struct strata_mood mood[STRATA_LAYERS];
 };
 
 /* The layer a move of `step` from `cur` lands on, kept within 1..LAYERS.
@@ -28,8 +42,14 @@ int strata_step(const char *s);
 /* Layer n's colour: the accent turned (n-1) * HUE_STEP degrees. */
 strata_rgb strata_tint(strata_rgb accent, int n);
 
-/* strata.conf: show=yes|no, tint=0..0.3. Unknown lines are ignored. */
+/* strata.conf: show=yes|no, tint=0..0.3, and per layer N (1..5):
+ * layer.N.name, layer.N.signals=all|quiet, layer.N.mute=App,App,
+ * layer.N.style, layer.N.dim=0..0.6, layer.N.power=powersave|performance.
+ * Unknown lines and bad values are ignored. */
 void strata_conf_parse(struct strata_conf *c, const char *text);
+
+/* Does layer mood m keep app's notifications from popping up? */
+int strata_mood_mutes(const struct strata_mood *m, const char *app);
 
 /* Where sheet i (0 = layer 1) is drawn when the view is at depth `pos`
  * (0 = layer 1, may be between layers while gliding). */

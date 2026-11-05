@@ -3,6 +3,7 @@
 //! (C, tools-c) draws it; `nexa-signalctl` is the CLI for Deck, the bar and
 //! Settings. Design: TODOnexa_identity.md, section "Signals".
 
+pub mod layer;
 pub mod store;
 pub mod text;
 

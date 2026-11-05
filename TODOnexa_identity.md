@@ -69,11 +69,17 @@ from the keyboard, measured. Suggested order: Layer moods, Edge glow, Chalk;
 then Lantern and the pointer set; then Glyphs and Hex Ring; Then after
 Backup.
 
-- [ ] **Layer moods** (Strata): each layer has its own mood: which Signals
+- [x] **Layer moods** (Strata, 2026-11-05; `make test-strata`, first real use with the next ISO): each layer has its own mood: which Signals
       get through, a Quiet mode, a Living style, a power profile. Diving
       to layer 3 ("Work") silences chat; layer 5 ("Night") dims. The place
       sets the mood, not the clock. Build: `strata.conf` per-layer keys,
       nexa-signald learns the current layer, a Settings page. Small.
+      Built: Settings > Layers (name, Work/Night/Play presets, notifications
+      all or only important, apps kept quiet per layer, background style,
+      darker background, power Unchanged/Saving/Fast through the broker's
+      set_governor and put back on leaving); nexa-signald asks the
+      compositor for the layer on each notification; Living fades the dim
+      and switches style per layer; the stack shows the names.
 - [ ] **Edge glow** (Signals + Living): a window that finished something or
       needs you glows softly at its own edge, in the accent, instead of a
       box in a corner; it fades once the window is looked at. Living

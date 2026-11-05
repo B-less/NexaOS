@@ -17,6 +17,7 @@ from .link_page import LinkPage
 from .magic_page import MagicPage
 from .privacy_page import PrivacyPage
 from .system_pages import StartupPage, UpdatesPage, UsersPage, ask_broker
+from .layers_page import LayersPage
 from .device_pages import (AccessibilityPage, DefaultAppsPage, DisplayPage, InputPage, NotificationsPage, SoundPage,
                            WifiPage)
 from nexa_common import actionui, compositor, mind, persist, sysconf, themes
@@ -64,7 +65,7 @@ def _clock_format():
     except OSError:
         return "24h"
 AI_CONFIG_PATH = "/etc/nexa-ai/config.json"
-PAGES = ("Overview", "Personalization", "Display", "Sound", "Mouse & Touchpad", "Wi-Fi", "Bluetooth", "Nexa Link", "VPN",
+PAGES = ("Overview", "Personalization", "Layers", "Display", "Sound", "Mouse & Touchpad", "Wi-Fi", "Bluetooth", "Nexa Link", "VPN",
          "Notifications", "Default Apps", "Magic Layer", "System", "Users", "Updates", "Startup", "Time & Keyboard", "Power",
          "Privacy", "Accessibility", "Assistant", "About")
 
@@ -142,6 +143,8 @@ class SettingsWindow(Gtk.Window):
             page = cls(self)
             self.device_pages[cls.title] = page
             self.stack.add_named(self._scrolled(page.page), cls.title)
+        self.layers_page = LayersPage(self)
+        self.stack.add_named(self._scrolled(self.layers_page.page), "Layers")
         self.magic_page = MagicPage(self)
         self.stack.add_named(self._scrolled(self.magic_page.page), "Magic Layer")
         self.bluetooth_page = BluetoothPage(self)
