@@ -1,6 +1,6 @@
 #!/bin/sh
 # Deck (tools-c/nexa-deck): unit tests, then Deck in a headless Sway against
-# fake iwd, BlueZ, MPRIS, broker, wpctl and makoctl, clicked with a real
+# fake iwd, BlueZ, MPRIS, broker, wpctl and nexa-signalctl, clicked with a real
 # pointer. Screenshots: OUT_DIR.
 # Usage: sh scripts/test-deck.sh [OUT_DIR]   (default dist/deck-test)
 set -eu

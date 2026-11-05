@@ -105,7 +105,7 @@ impl<'de> serde::Deserialize<'de> for agents::Decision {
 }
 
 fn notify(n: &Notice) {
-    // mako shows it; nothing happens if there's no notification service.
+    // Signals shows it; nothing happens if there's no notification service.
     let _ = std::process::Command::new("notify-send")
         .args(["-a", "Nexa MicroBrain", "-i", "nexa-pulse", &n.title, &n.body])
         .stdout(std::process::Stdio::null())

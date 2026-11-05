@@ -1043,7 +1043,7 @@ static void vpn_read(const char *reply, gpointer d)
 
 static void vpn_list(void) { broker("vpn_list", NULL, -1, vpn_read, NULL); }
 
-/* ---------- Quiet (mako's do-not-disturb, until the Quiet modes) ---------- */
+/* ---------- Quiet (Signals' do-not-disturb, until the Quiet modes) ---------- */
 
 static void quiet_read(const char *out, gpointer d)
 {
@@ -1061,12 +1061,12 @@ static void quiet_read(const char *out, gpointer d)
     write_state();
 }
 
-static void after_quiet(const char *out, gpointer d) { run_cmd((const char *[]){"makoctl", "mode", NULL}, quiet_read, NULL); }
+static void after_quiet(const char *out, gpointer d) { run_cmd((const char *[]){"nexa-signalctl", "mode", NULL}, quiet_read, NULL); }
 
 static void on_quiet_switch(GObject *sw, GParamSpec *p, gpointer d)
 {
     int on = gtk_switch_get_active(GTK_SWITCH(sw));
-    run_cmd((const char *[]){"makoctl", "mode", on ? "-a" : "-r", "do-not-disturb", NULL}, after_quiet, NULL);
+    run_cmd((const char *[]){"nexa-signalctl", "mode", on ? "-a" : "-r", "do-not-disturb", NULL}, after_quiet, NULL);
 }
 
 /* ---------- Playing (MPRIS) ---------- */
@@ -1161,7 +1161,7 @@ static void build_playing(void)
     gtk_widget_show_all(c->extra);
 }
 
-/* ---------- Signals (mako's notifications) ---------- */
+/* ---------- Signals (nexa-signalctl, the shape makoctl printed) ---------- */
 
 static char *cleared_path(void)
 {
@@ -1228,10 +1228,10 @@ static void signals_list(const char *out, gpointer d)
 {
     D.sig.cleared = read_cleared();
     D.sig.n = parse_mako(out, D.sig.cleared, D.sig.notes, 0, MAX_NOTES);
-    run_cmd((const char *[]){"makoctl", "history", NULL}, signals_history, NULL);
+    run_cmd((const char *[]){"nexa-signalctl", "history", NULL}, signals_history, NULL);
 }
 
-static void read_signals(void) { run_cmd((const char *[]){"makoctl", "list", NULL}, signals_list, NULL); }
+static void read_signals(void) { run_cmd((const char *[]){"nexa-signalctl", "list", NULL}, signals_list, NULL); }
 
 static void after_clear(const char *out, gpointer d) { read_signals(); }
 
@@ -1246,7 +1246,7 @@ static void on_clear(GtkButton *b, gpointer d)
     g_file_set_contents(p, num, -1, NULL);
     g_free(dir);
     g_free(p);
-    run_cmd((const char *[]){"makoctl", "dismiss", "--all", NULL}, after_clear, NULL);
+    run_cmd((const char *[]){"nexa-signalctl", "dismiss", "--all", NULL}, after_clear, NULL);
 }
 
 static void notify_settings(GtkButton *b, gpointer d) { open_and_close((const char *[]){"nexa-settings", "notifications", NULL}); }
@@ -1280,7 +1280,7 @@ static void refresh(void)
     run_cmd((const char *[]){"wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@", NULL}, sound_read, NULL);
     update_bright();
     vpn_list();
-    run_cmd((const char *[]){"makoctl", "mode", NULL}, quiet_read, NULL);
+    run_cmd((const char *[]){"nexa-signalctl", "mode", NULL}, quiet_read, NULL);
     read_signals();
     write_state();
 }

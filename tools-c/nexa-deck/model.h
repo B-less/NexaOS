@@ -11,7 +11,7 @@ struct note {
     int id;
     char app[64], summary[160], body[320];
 };
-/* `makoctl list` / `makoctl history` (JSON) added to notes[] (skipping ids
+/* `nexa-signalctl list` / `history` (makoctl's JSON shape) added to notes[] (skipping ids
  * already there and ids at or below cleared_up_to), newest first. Returns
  * the new count. */
 int parse_mako(const char *json, int cleared_up_to, struct note *notes, int count, int max);

@@ -94,10 +94,8 @@ check("notification settings checked", n == {"timeout": 6, "position": "top-righ
 os.makedirs(os.path.join(HOME, ".config", "nexa"), exist_ok=True)
 with open(notifyconf.prefs_path(), "w") as f:
     json.dump({"timeout": 0, "position": "bottom-left", "muted_apps": ["Chat"]}, f)
-mako = themes.mako_config(themes.THEMES["horizon"], 0.8)
-check("mako gets position, 'until closed', and hides muted apps' pop-ups",
-      "anchor=bottom-left" in mako and "default-timeout=0" in mako and '[app-name="Chat"]\ninvisible=1' in mako
-      and "[mode=do-not-disturb]" in mako, mako)
+check("the saved choices load back for Signals (timeout 0 = until dismissed)",
+      notifyconf.load() == {"timeout": 0, "position": "bottom-left", "muted_apps": ["Chat"]}, str(notifyconf.load()))
 
 # ---- Accessibility ----
 a = accessconf.clean({"text_scale": 1.3, "cursor_size": 48, "reduce_motion": True, "high_contrast": "yes"})

@@ -44,7 +44,7 @@ signed HTTPS repositories.
 | `nexa-orbit` | Orbit (C, tools-c/nexa-orbit): the app rail on the left edge; hexagon frames show running, CPU activity, in front, waiting, starting; Super+O for the keyboard |
 | `nexa-launchpad` | Full-screen app grid with type-to-search (Super+Space) |
 | `nexa-lock` | Lock screen: starts `nexa-locker` (C, ext-session-lock), swaylock as fallback; idle lock/blank set in Settings > Power |
-| mako | Notifications |
+| `nexa-signald` + `nexa-signals` | Signals, the notifications: the service (Rust: org.freedesktop.Notifications, Quiet, muted apps, history in memory) and the tabs hanging from the bar (C); `nexa-signalctl` for Deck, the bar and Settings |
 
 The shell panels are GTK layer-shell surfaces (namespaces `nexa-*`, which
 Hyprland blurs). `common/nexa_common/compositor.py` hides the
@@ -52,7 +52,7 @@ Hyprland/Sway differences (window list, focus, minimize, wallpaper, keyboard
 layout).
 
 **Themes.** `themes.py` holds five themes (Horizon, Nebula, Aurora, Eclipse,
-Daybreak) and renders them into waybar, mako, foot, Sway, Hyprland and GTK
+Daybreak) and renders them into waybar, the C parts (nexa/lock.conf), foot, Sway, Hyprland and GTK
 settings, plus a palette of `@nexa_*` colours that every Nexa app's
 stylesheet uses. Apps watch `~/.config/nexa/theme.json` and restyle live.
 "Glass windows" makes app windows partly see-through (84% solid and blurred

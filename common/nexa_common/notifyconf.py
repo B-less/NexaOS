@@ -1,8 +1,8 @@
-"""Notification settings for Settings > Notifications: how long pop-ups
-stay, where they appear, and apps whose pop-ups are hidden. Kept in
-~/.config/nexa/notifications.json; themes.mako_config() adds them to the
-mako config it writes, and write_mako() rewrites it at once. Do not
-disturb is mako's "do-not-disturb" mode (also in Deck: the Quiet card)."""
+"""Notification settings for Settings > Notifications: how long Signals
+stay, where they appear, and apps whose Signals don't pop up. Kept in
+~/.config/nexa/notifications.json, read by nexa-signald (how long, muted
+apps) and nexa-signals (where); save() tells them at once. Do not disturb
+is Signals' Quiet (also in Deck: the Quiet card)."""
 import json
 import os
 import re
@@ -44,46 +44,42 @@ def load(home=None):
         return clean({})
 
 
-def mako_extra(p):
-    """Lines for the top of mako's config, and sections for muted apps."""
-    top = f"anchor={p['position']}\ndefault-timeout={p['timeout'] * 1000}\n"
-    sections = "".join(f'\n[app-name="{a}"]\ninvisible=1\n' for a in p["muted_apps"])
-    return top, sections
-
-
 def save(prefs):
     p = clean(prefs)
     os.makedirs(os.path.dirname(prefs_path()), exist_ok=True)
     with open(prefs_path(), "w") as f:
         json.dump(p, f, indent=1)
-    write_mako()
+    tell_signals()
     return p
 
 
-def write_mako():
-    from . import themes
-    s = themes.load_settings()
-    t = themes.THEMES.get(s["theme"]) or next(iter(themes.THEMES.values()))
-    themes._write(os.path.join(_config_dir(), "mako", "config"), themes.mako_config(t, s["opacity"]))
-    themes._quiet(["makoctl", "reload"])
+def tell_signals():
+    """Nexa Signals reads the file again (nexa-signalctl reload)."""
+    try:
+        subprocess.run(["nexa-signalctl", "reload"], capture_output=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def dnd_on():
     try:
-        out = subprocess.run(["makoctl", "mode"], capture_output=True, text=True, timeout=3).stdout
+        out = subprocess.run(["nexa-signalctl", "mode"], capture_output=True, text=True, timeout=3).stdout
     except (OSError, subprocess.SubprocessError):
         return False
     return "do-not-disturb" in out.split()
 
 
 def set_dnd(on):
-    subprocess.run(["makoctl", "mode", "-a" if on else "-r", "do-not-disturb"], capture_output=True, timeout=3)
+    try:
+        subprocess.run(["nexa-signalctl", "mode", "-a" if on else "-r", "do-not-disturb"], capture_output=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def recent_apps():
-    """Apps that sent notifications lately (mako's history), for the list."""
+    """Apps that sent notifications lately (Signals' history), for the list."""
     try:
-        out = subprocess.run(["makoctl", "history"], capture_output=True, text=True, timeout=3).stdout
+        out = subprocess.run(["nexa-signalctl", "history"], capture_output=True, text=True, timeout=3).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     apps = set()

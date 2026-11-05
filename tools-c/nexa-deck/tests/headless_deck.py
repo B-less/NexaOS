@@ -1,5 +1,5 @@
 """Deck (nexa-deck) in a headless Sway against fake iwd, BlueZ, MPRIS,
-broker, wpctl and makoctl, clicked with a real pointer (nexa-vpointer).
+broker, wpctl and nexa-signalctl, clicked with a real pointer (nexa-vpointer).
 Run by scripts/test-deck.sh; screenshots go to $OUT."""
 import json
 import os
@@ -110,7 +110,7 @@ check(r[0] + r[2] >= W - 12 and r[1] <= 12, "the cards sit at the right edge, at
 if os.environ.get("DECK_DEBUG"):
     print(open(STATE).read()[:400])
     print(subprocess.run(["sh", "-c", "ps -o pid,args | grep -v grep | grep -i deck"], capture_output=True, text=True).stdout)
-check(card("now")["sub"] == "" and wait(lambda: state()[0]["notes"] == 2), "two notifications read from mako", str(state()[0]))
+check(card("now")["sub"] == "" and wait(lambda: state()[0]["notes"] == 2), "two notifications read from Signals", str(state()[0]))
 check(card("wifi")["sub"] == "Not connected" and state()[0]["networks"] == 4, "Wi-Fi: not connected, 4 networks", str(card("wifi")))
 check(card("bluetooth")["sub"] == "Off" and not card("bluetooth")["lit"], "Bluetooth: off")
 check(card("sound")["sub"] == "45 %", "volume 45 %", card("sound").get("sub", ""))
@@ -146,7 +146,7 @@ check(card("vpn")["lit"] == 1, "VPN card lit while connected")
 
 # Quiet
 click("quiet", "switch")
-check(wait(lambda: logged("makoctl mode -a do-not-disturb") and state()[0]["quiet"] == 1 and card("quiet")["lit"], 4), "Quiet switch: mako's do-not-disturb")
+check(wait(lambda: logged("nexa-signalctl mode -a do-not-disturb") and state()[0]["quiet"] == 1 and card("quiet")["lit"], 4), "Quiet switch: Signals' do-not-disturb")
 
 # Volume slider: a click at a quarter of its width.
 settle()
@@ -175,7 +175,7 @@ time.sleep(0.6)
 shot("deck-3-busy.png")
 rect = card("signals")["rect"]
 click("signals", "clear")
-check(wait(lambda: logged("makoctl dismiss --all") and state()[0]["notes"] == 0, 4), "Clear all empties Signals",
+check(wait(lambda: logged("nexa-signalctl dismiss --all") and state()[0]["notes"] == 0, 4), "Clear all empties Signals",
       str(state()[0].get("notes")))
 check(card("signals")["sub"] == "You're all caught up", "and says so")
 

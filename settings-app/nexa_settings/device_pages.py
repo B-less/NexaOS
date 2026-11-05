@@ -1,6 +1,6 @@
 """Settings > Display, Sound, Mouse & Touchpad, Wi-Fi, Notifications,
 Default Apps and Accessibility. Each page is a thin view: the work is done
-by nexa-display (C), PipeWire (pactl), the compositor, iwd, mako, GIO and
+by nexa-display (C), PipeWire (pactl), the compositor, iwd, Nexa Signals, GIO and
 nexa_common's *conf modules. Slow calls run off the GTK thread."""
 import os
 import threading

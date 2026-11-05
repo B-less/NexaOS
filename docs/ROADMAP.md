@@ -31,7 +31,7 @@ wallpapers: shapes nobody else uses.
 | Quick settings | "Control Centre" panel | **Deck** (done 2026-11-04, tools-c/nexa-deck): half-hexagon cards that slide out from the right edge one after another (Wi-Fi, Bluetooth, sound, brightness, VPN, Quiet, now playing, Signals) |
 | Window overview | none | **Constellation**: all windows as nodes on a star map, grouped by app, with lines between windows of the same project/workspace |
 | Window buttons | Windows-style boxes | **Hexa buttons**: hexagon outlines with a small symbol (maximise is a hexagon in a hexagon), filled with the accent on hover, red for close (done in 3.3) |
-| Notifications | mako popups | **Signals**: notification capsules that dock into the bar's edge; grouped by app; actions inline |
+| Notifications | mako popups | **Signals** (done 2026-11-05, tools/nexa-signald + tools-c/nexa-signals): tabs hanging from the bar's edge, one per app with a count, actions inline, a timer line that waits under the pointer |
 | Lock screen | swaylock | **Nexa Lock** (own design: hexagon clock face, time arc, battery and notifications count; still a secure session-lock client underneath) |
 | Typography | system default | **Inter** for UI, **JetBrains Mono** for code (both OFL-licensed) with a defined type scale |
 | Icons | own SVGs | Complete own icon set in the hex-tile style, including the settings pages |

@@ -73,7 +73,9 @@ fn parts() -> Vec<Part> {
         // nexa-bar picks the bar's config (always shown, or hidden until
         // the pointer touches the top edge) for either session.
         part("the top bar", &["waybar"], &["nexa-bar"], ""),
-        part("notifications", &["mako"], &["mako"], ""),
+        // Signals: the notification service (Rust) and its tabs (C).
+        part("notifications", &["nexa-signald"], &["nexa-signald"], ""),
+        part("the notification tabs", &["nexa-signals"], &["nexa-signals"], ""),
         // The For you card, drives and Nexa Link's pop-ups: one process.
         part("the desktop parts", &["nexa_shell", "parts"], &["nexa-parts"], ""),
         part("Orbit", &["nexa-orbit"], &["nexa-orbit"], ""),

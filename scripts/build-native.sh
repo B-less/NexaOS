@@ -27,8 +27,11 @@ if [ "$MODE" = test ]; then
 else
     # An explicit --target keeps the static flag off build-time macro crates.
     RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --workspace -q --target "$target"
-    for main in */src/main.rs; do
-        name=${main%%/*}
+    # Each crate'"'"'s main binary, plus any extra ones (src/bin/*.rs, such as
+    # nexa-signalctl beside nexa-signald).
+    for main in */src/main.rs */src/bin/*.rs; do
+        [ -e "$main" ] || continue
+        case $main in */src/bin/*) name=$(basename "$main" .rs) ;; *) name=${main%%/*} ;; esac
         install -m 0755 "target/$target/release/$name" /src/build/native/$name
         echo "built $name: $(stat -c %s /src/build/native/$name) bytes"
     done

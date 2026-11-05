@@ -29,9 +29,9 @@ shapes come from docs/ROADMAP.md section 1 (Hexa).
 - [x] **Deck** replaces quick settings (2026-11-04; first real use with the next ISO): cards that slide out one after
       another from the bar's right edge (Wi-Fi, sound, VPN, Quiet, now
       playing), each opens in place. Design: section "Deck" below.
-- [ ] **Signals** replaces mako: notification capsules that dock into the
+- [x] **Signals** replaces mako (2026-11-05; first real use with the next ISO): notification capsules that dock into the
       bar's edge, stacked per app, actions inline. Own notification service
-      (Rust, org.freedesktop.Notifications).
+      (Rust, org.freedesktop.Notifications). Design: section "Signals" below.
 - [ ] Rename leftovers: "Launchpad" becomes Nexus everywhere; no "Control
       Centre" wording.
 
@@ -205,3 +205,68 @@ sent). The process ends when Deck closes: nothing runs while it's away.
 - [ ] Later: Bluetooth pairing and Wi-Fi passwords inside Deck (today they
       open Settings), sound output devices, Quiet modes, Signals (Phase 1)
       taking over from mako
+
+## Signals
+
+Two programs, so the part that reads what any app sends is Rust and the
+part on the screen edge is C:
+
+- **`nexa-signald`** (Rust, `tools/nexa-signald`, the `dbus` crate over
+  libdbus): owns `org.freedesktop.Notifications` on the session bus
+  (Notify, CloseNotification, GetCapabilities, GetServerInformation;
+  NotificationClosed and ActionInvoked signals). Cleans what it is sent
+  (markup tags removed, entities decoded, control characters dropped,
+  app 64 / summary 200 / body 600 characters, at most 4 actions), keeps
+  the last 50 in memory only (never on disk), and decides what shows:
+  Quiet holds pop-ups back (they still reach the list), muted apps
+  (Settings > Notifications) never pop up, critical ones always do and
+  stay until dismissed; the timeout is the sender's, or Settings' (0 =
+  until dismissed). A pointer on a Signal holds its timer.
+- **`nexa-signals`** (C, `tools-c/nexa-signals`, GTK3 + gtk-layer-shell):
+  draws them. Each Signal is a tab hanging from the bar's bottom edge on
+  the right: flat where it meets the bar, chamfered at the bottom like
+  Deck's cards, sliding down out of the bar and back up into it. Not a box
+  floating in a corner. One tab per app: the newest, with "+2" when that app
+  has more (a click on the count shows them all); at most 4 apps, then a
+  "+N more" tab that opens Deck on Signals. A thin line along the bottom
+  shrinks as the timeout runs. Click: the default action (or just
+  dismiss); the actions as pills; × dismisses. Critical: the warning
+  colour on the chamfer.
+- **`nexa-signalctl`** (Rust, the same crate): `list`, `history`,
+  `dismiss --all | ID`, `mode [-a|-r|-t do-not-disturb]`, `reload`, with
+  the output Deck and the bar already read from makoctl, so they switch
+  with one word.
+
+They talk over `$XDG_RUNTIME_DIR/nexa-signals.sock` (0600, peer uid
+checked, JSON lines, 64 KB line limit): `subscribe` streams the whole
+visible state on every change; `hold`, `invoke`, `dismiss`, `dismiss_all`,
+`list`, `history`, `mode`, `set_quiet`, `reload`.
+
+- [x] Store with unit tests: ids and replaces_id, cleaning, timeouts and
+      holds, Quiet, muted apps, critical, history cap, closed reasons
+- [x] D-Bus service and control socket; nexa-signalctl. The D-Bus loop
+      sleeps in its own poll on the bus socket and a wake pipe, so signals
+      sent from the socket threads go out at once (0 CPU ticks idle).
+      libdbus is built in (the `dbus` crate's vendored feature): Alpine has
+      no static libdbus and every tool links statically. The native build
+      now also installs src/bin/*.rs binaries (nexa-signalctl)
+- [x] Tabs on the bar's edge: per-app stacking, actions, timeout line,
+      hover hold, slide, theme; Settings' position choice honoured (the
+      bottom ones the other way up)
+- [x] Sessions run nexa-signald and nexa-signals instead of mako; Deck,
+      the bar's bell, Settings > Notifications, Nexa Doctor and the theme
+      engine switched (mako's config no longer written; the package stays
+      installed, unused)
+- [x] Headless test (`make test-signals`: 7 unit checks, 24 end to end with
+      real D-Bus calls, the real service and a real pointer, screenshots in
+      dist/signals-test): tab at the top right, one per app with a count,
+      an action reaches the sender (ActionInvoked, then closed), the count
+      shows all, x and clicks close with the right reason, a click sends
+      the default action, a pointer holds the timer, Quiet, critical in
+      Quiet, dismiss --all, four apps then "+2 more", muted apps, bottom-left,
+      history for Deck, the tabs reconnect when the service restarts
+- [ ] Measured: nexa-signald 1.3 to 1.4 MB PSS, nexa-signals 13 to 22 MB (three headless runs; nothing else shares its libraries there)
+- [ ] Not yet tested: Hyprland, real apps' notifications (Firefox-style
+      images, sounds), a real bar above the tabs
+- [ ] Later: keyboard access to the tabs, inline reply, images in the body,
+      Quiet modes

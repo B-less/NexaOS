@@ -120,9 +120,9 @@ win._on_nav(None, "Notifications")
 nt = win.device_pages["Notifications"]
 nt.set(position="bottom-right", timeout=10)
 nt.mute("Chat", True)
-mako = conf("mako", "config")
-check("notifications: position, time and a muted app go to mako", "anchor=bottom-right" in mako
-      and "default-timeout=10000" in mako and '[app-name="Chat"]' in mako, mako[:300])
+saved = json.loads(conf("nexa", "notifications.json"))
+check("notifications: position, time and a muted app are saved for Signals",
+      saved == {"timeout": 10, "position": "bottom-right", "muted_apps": ["Chat"]}, str(saved))
 pump(0.3)
 shot("settings-notifications")
 

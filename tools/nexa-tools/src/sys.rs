@@ -164,7 +164,7 @@ pub fn top_processes(args: &Value) -> Value {
 }
 
 /// Never stopped by the assistant: the desktop itself.
-const PROTECTED: &[&str] = &["sway", "Hyprland", "waybar", "mako", "swaybg", "swayidle", "nexa-session", "nexa-desktop",
+const PROTECTED: &[&str] = &["sway", "Hyprland", "waybar", "mako", "nexa-signald", "nexa-signals", "swaybg", "swayidle", "nexa-session", "nexa-desktop",
     "dbus-daemon", "pipewire", "wireplumber", "seatd", "nexa_shell", "nexa-tools", "nexa_ai", "nexa-ai-gui", "sh", "bash", "login"];
 
 pub fn stop_process(args: &Value) -> Result<Value, String> {

@@ -17,7 +17,7 @@ home = tempfile.mkdtemp()
 check("defaults with no saved settings", themes.load_settings(home) == {"theme": "horizon", "opacity": themes.DEFAULT_OPACITY, "glass": True, "icon_style": "colour", "glass_tint": "tinted"})
 applied = themes.apply("nebula", 0.5, home=home, reload=False)
 check("apply returns what it applied", applied == {"theme": "nebula", "opacity": 0.5, "glass": True, "icon_style": "colour", "glass_tint": "tinted"}, str(applied))
-for rel in ("waybar/style.css", "mako/config", "foot/foot.ini", "sway/config.d/20-nexa-theme.conf",
+for rel in ("waybar/style.css", "foot/foot.ini", "sway/config.d/20-nexa-theme.conf",
             "gtk-3.0/settings.ini", "hypr/nexa-theme.conf", "swaylock/config", "nexa/theme.json"):
     check(f"apply writes ~/.config/{rel}", os.path.isfile(os.path.join(home, ".config", rel)))
 lock = dict(l.split("=", 1) for l in open(os.path.join(home, ".config/nexa/lock.conf")).read().splitlines() if "=" in l)
@@ -50,9 +50,8 @@ themes.apply("daybreak", 0.8, home=home, reload=False)
 check("light theme -> GTK light mode",
       "prefer-dark-theme=false" in open(os.path.join(home, ".config/gtk-3.0/settings.ini")).read())
 themes.apply("nebula", 1.0, home=home, reload=False)
-check("mako has a do-not-disturb mode", "[mode=do-not-disturb]" in open(os.path.join(home, ".config/mako/config")).read())
 for key, t in themes.THEMES.items():
-    for fn in (lambda: themes.waybar_css(t, .7), lambda: themes.mako_config(t, .7), lambda: themes.foot_ini(t, .7),
+    for fn in (lambda: themes.waybar_css(t, .7), lambda: themes.foot_ini(t, .7),
                lambda: themes.sway_conf(t), lambda: themes.panel_css(t, .7)):
         try: fn(); ok = True
         except Exception as e: ok = False

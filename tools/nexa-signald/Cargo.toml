@@ -1,0 +1,22 @@
+[package]
+name = "nexa-signald"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "NexaOS's notification service (org.freedesktop.Notifications) and its control CLI"
+
+[[bin]]
+name = "nexa-signald"
+path = "src/main.rs"
+
+[[bin]]
+name = "nexa-signalctl"
+path = "src/bin/nexa-signalctl.rs"
+
+[dependencies]
+dbus = { version = "0.9", features = ["vendored"] }  # libdbus built in: every tool links statically
+dbus-crossroads = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+nexa-sys = { path = "../nexa-sys" }

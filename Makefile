@@ -350,6 +350,11 @@ test-orbit:
 test-deck:
 	@sh scripts/test-deck.sh
 
+# Signals, notifications (Rust service + C tabs): unit tests, then D-Bus
+# notifications in a headless Sway with a real pointer.
+test-signals:
+	@sh scripts/test-signals.sh
+
 # USB drives on the desktop (nexa_shell drives) in a headless Sway.
 test-desktop-drives:
 	@sh scripts/test-desktop-drives.sh

@@ -1145,7 +1145,11 @@ exec wireplumber
 # again here with a `swaymsg reload` only restarted the wallpaper (decoded
 # twice; it flashed before the lock screen).
 exec nexa-bar
-exec mako
+# Signals: notifications. nexa-signald (Rust) owns the notification service
+# and nexa-signals (C) draws them as tabs under the bar. (mako stays
+# installed but no longer runs.)
+exec nexa-signald
+exec nexa-signals
 # The For you card, drives on the desktop and Nexa Link's pop-ups, in one
 # process (nexa_shell parts): about 65 MB less than three.
 exec nexa-parts
@@ -1281,7 +1285,8 @@ exec-once = pipewire-pulse
 exec-once = wireplumber
 exec-once = swaybg -i /usr/share/backgrounds/nexaos/wallpaper.png -m fill
 exec-once = nexa-bar
-exec-once = mako
+exec-once = nexa-signald
+exec-once = nexa-signals
 exec-once = nexa-parts
 exec-once = nexa-orbit
 exec-once = nexa-living
@@ -1378,7 +1383,7 @@ windowrule = center on, match:class .*
 # themselves, so Hyprland's own layer animation is off for them.
 layerrule = blur on, match:namespace ^(waybar|nexa-.*)$
 layerrule = ignore_alpha 0.1, match:namespace ^(waybar|nexa-.*)$
-layerrule = no_anim on, match:namespace ^(nexa-panel|nexa-deck|waybar|barhide-ghost)$
+layerrule = no_anim on, match:namespace ^(nexa-panel|nexa-deck|nexa-signals|waybar|barhide-ghost)$
 
 bind = SUPER, Return, exec, foot
 bind = SUPER, D, exec, nexa-start
@@ -1614,28 +1619,6 @@ exec waybar -c "$base"
 NEXABAR_EOF
     chmod +x "$MNT_DIR/usr/local/bin/nexa-bar"
 
-    echo "[*] Generating Mako (notification daemon) configuration..."
-    mkdir -p "$MNT_DIR/etc/xdg/mako"
-    cat > "$MNT_DIR/etc/xdg/mako/config" << 'MAKO_CONFIG_EOF'
-background-color=#232323ee
-text-color=#e0e0e0
-border-color=#7aa2f7
-border-size=2
-border-radius=10
-padding=12
-margin=10
-default-timeout=6000
-max-visible=5
-font=monospace 10
-anchor=top-right
-
-[urgency=low]
-border-color=#3a3a3a
-
-[urgency=critical]
-border-color=#f7768e
-default-timeout=0
-MAKO_CONFIG_EOF
 
 fi
 
