@@ -59,7 +59,7 @@ permissions = []         # see below
   offline. Anything else makes installing need the internet.
 - `permissions` **must** be the fewest the app needs, from this list only:
   `network`, `files.home`, `files.documents`, `files.pictures`,
-  `files.music`, `files.videos`, `camera`, `microphone`, `location`,
+  `files.music`, `files.videos`, `files.drives`, `camera`, `microphone`, `location`,
   `notifications`, `background`. Anything else makes the package invalid.
 - **Permissions are enforced.** An installed app is started by `nexa-run`,
   which confines it with Landlock to what it declared (and the person
@@ -67,6 +67,7 @@ permissions = []         # see below
   | Always | the system read-only; screen, sound and GPU; `/tmp`; its own `~/.local/share/<id>`, `~/.config/<id>`, `~/.cache/<id>`; the theme and fonts |
   |---|---|
   | `files.videos` (etc.) | that one folder, read and write |
+  | `files.drives` | USB sticks and other removable drives (`/media`), read and write |
   | `files.home` | the whole home folder (ask for this only if you must) |
   | `network` | TCP connections; without it every TCP connect is refused |
   | `camera` | `/dev/video*` |

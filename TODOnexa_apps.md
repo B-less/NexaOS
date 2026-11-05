@@ -124,7 +124,7 @@ permissions, install/remove/open through the broker.
       writes and nexa-run reads), marked when NexaOS can't enforce it yet.
 - [ ] More apps in the catalogue (see TODO.md: Photos, Backup, Mail).
   - [x] Photos (2026-11-05): `apps/photos`, see its section below.
-  - [ ] Backup
+  - [x] Backup (2026-11-05): `apps/backup`, see its section below.
   - [ ] Mail
 
 ## Text Editor (text-editor, engine nexa-textio)
@@ -230,3 +230,30 @@ verified and run from the package).
 - [ ] Later: import from a USB stick or camera (installed apps can't read
       /media yet: needs a nexa-run rule or a broker action)
 - [ ] Later: editing (crop, light, colour), a map of the places
+
+## Backup (apps/backup, .nexa in C)
+
+Built 2026-11-05 (`make test-backup-app`: 28 engine checks, the window
+through nexa-run with real tmpfs drives, the package built twice
+byte-identical, verified, run from the package). Needed a new permission,
+`files.drives` (USB drives under /media, read and write), now in nexa-run,
+nexa-pack, the Store, Settings > Privacy, the installer and the docs.
+
+- [x] Each file's contents stored once on the drive, named by SHA-256; a
+      backup is a list written last (a stopped one never shows); the next
+      backup copies only what's new or changed
+- [x] Drives under /media with free space and their backups; read-only
+      ones noticed; one not open yet opened through the broker; too small:
+      said before starting
+- [x] What to Back Up: a switch per folder (with sizes) and one for
+      settings and app data; always left out: caches, Trash, secret keys
+      and passwords, browser profiles, NexaOS's private data, other drives
+- [x] Put Back: browse or search a backup, tick, put back where they were
+      (a changed file kept, the old one beside it) or into a new folder;
+      checked against the hash on the way
+- [x] Check (re-reads every copy), Delete a backup (only what nothing
+      else needs goes), old backups thinned (all of 2 days, then a day, a
+      week, a month)
+- [ ] Later: encrypted backups (needs a crypto library NexaOS ships to C
+      apps), backing up by itself when the drive is plugged in (needs the
+      background permission enforced)

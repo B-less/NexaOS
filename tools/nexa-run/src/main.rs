@@ -27,7 +27,7 @@ const LIBEXEC: &str = "/usr/local/libexec/nexa-apps";
 const LIB: &str = "/usr/local/lib";
 
 /// Permissions this launcher knows how to enforce.
-pub const ENFORCED: &[&str] = &["files.home", "files.documents", "files.pictures", "files.music", "files.videos", "network", "camera"];
+pub const ENFORCED: &[&str] = &["files.home", "files.documents", "files.pictures", "files.music", "files.videos", "files.drives", "network", "camera"];
 
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().next().map_or(false, |c| c.is_ascii_lowercase())
@@ -41,6 +41,8 @@ pub struct Env {
     /// XDG user folders (Documents, Pictures, ...) from user-dirs.dirs.
     pub xdg: Vec<(String, PathBuf)>,
     pub cameras: Vec<PathBuf>,
+    /// Where the system broker mounts removable drives (/media).
+    pub media: PathBuf,
 }
 
 #[derive(Debug, PartialEq)]
@@ -96,6 +98,8 @@ pub fn plan(id: &str, lib: &Path, program: &Path, permissions: &[String], env: &
             "files.pictures" => Some(xdg_dir(env, "XDG_PICTURES_DIR", "Pictures")),
             "files.music" => Some(xdg_dir(env, "XDG_MUSIC_DIR", "Music")),
             "files.videos" => Some(xdg_dir(env, "XDG_VIDEOS_DIR", "Videos")),
+            // USB sticks and other removable drives, as the broker mounts them.
+            "files.drives" => Some(env.media.clone()),
             _ => None,
         };
         if let Some(f) = folder {
@@ -174,7 +178,8 @@ fn main() {
     let cameras = std::fs::read_dir("/dev").into_iter().flatten().flatten().map(|e| e.path())
         .filter(|p| p.file_name().map_or(false, |n| n.to_string_lossy().starts_with("video"))).collect();
     // SAFETY: getuid can't fail.
-    let env = Env { home: home.clone(), uid: unsafe { libc::getuid() }, xdg: read_user_dirs(&home), cameras };
+    let env = Env { home: home.clone(), uid: unsafe { libc::getuid() }, xdg: read_user_dirs(&home), cameras,
+                    media: env_path("NEXA_RUN_MEDIA", "/media") };
     let files: Vec<PathBuf> = app_args.iter().filter(|a| !a.starts_with('-'))
         .filter_map(|a| std::fs::canonicalize(a).ok()).filter(|p| p.is_file()).collect();
     let p = plan(&id, &lib, &program, &perms, &env, &files);
@@ -227,7 +232,7 @@ mod tests {
 
     fn env() -> Env {
         Env { home: "/home/ama".into(), uid: 1000, xdg: vec![("XDG_VIDEOS_DIR".into(), "/home/ama/Films".into())],
-              cameras: vec!["/dev/video0".into()] }
+              cameras: vec!["/dev/video0".into()], media: "/media".into() }
     }
 
     fn paths(p: &Plan) -> Vec<String> {
@@ -254,6 +259,8 @@ mod tests {
         assert!(!ps.contains(&"/home/ama".into()));
         assert!(p.any_network && ps.contains(&"/dev/video0".into()));
         assert_eq!(p.not_enforced, vec!["microphone"]);
+        let drives = plan("bk", Path::new("/l"), Path::new("/x/bk"), &["files.drives".into()], &env(), &[]);
+        assert!(paths(&drives).contains(&"/media".into()) && !paths(&drives).contains(&"/home/ama".into()), "drives: /media only");
         let all = plan("fm", Path::new("/l"), Path::new("/x/fm"), &["files.home".into()], &env(), &[]);
         assert!(paths(&all).contains(&"/home/ama".into()));
     }

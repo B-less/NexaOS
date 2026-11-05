@@ -1,0 +1,18 @@
+[package]
+id = "backup"
+name = "Backup"
+version = "1.0.0"
+description = "Copies your home folder to a USB drive, only what changed each time, and puts any of it back"
+categories = "Utility;Archiving;System;"
+icon = "icon.svg"
+screenshots = ["shots/backup.png", "shots/choice.png", "shots/putback.png"]
+
+[build]
+command = "make"
+binary = "build/backup"
+
+[requires]
+# Already part of NexaOS, so installing needs no internet.
+depends = ["gtk+3.0"]
+# Your home folder (to back up and put back) and USB drives (to back up to).
+permissions = ["files.home", "files.drives"]

@@ -17,6 +17,7 @@ PERMISSIONS = {
     "files.pictures": ("folder-pictures-symbolic", "Read and change your Pictures folder"),
     "files.music": ("folder-music-symbolic", "Read and change your Music folder"),
     "files.videos": ("folder-videos-symbolic", "Read and change your Videos folder"),
+    "files.drives": ("drive-removable-media-symbolic", "Read and change USB sticks and other drives"),
     "camera": ("camera-web-symbolic", "Use the camera"),
     "microphone": ("audio-input-microphone-symbolic", "Use the microphone"),
     "location": ("find-location-symbolic", "Know where you are"),

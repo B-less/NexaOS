@@ -9,7 +9,7 @@ pub const ABI: &str = "musl";
 /// What an app may ask for; shown before install, enforced later by the
 /// Privacy Center. Anything else makes the package invalid.
 pub const PERMISSIONS: &[&str] = &[
-    "network", "files.home", "files.documents", "files.pictures", "files.music", "files.videos",
+    "network", "files.home", "files.documents", "files.pictures", "files.music", "files.videos", "files.drives",
     "camera", "microphone", "location", "notifications", "background",
 ];
 

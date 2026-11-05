@@ -41,7 +41,7 @@ permissions = ["network"]
 ```
 
 Permissions: `network`, `files.home`, `files.documents`, `files.pictures`,
-`files.music`, `files.videos`, `camera`, `microphone`, `location`,
+`files.music`, `files.videos`, `files.drives`, `camera`, `microphone`, `location`,
 `notifications`, `background`.
 
 ## The package (format 2)

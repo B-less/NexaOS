@@ -20,6 +20,8 @@ try own_write 'echo hi > "$HOME/.local/share/probe/note"'
 try home_write 'echo hi > "$HOME/new.txt"'
 try opened 'cat "$OPENED"'
 try net 'nc -w 2 127.0.0.1 $PROBE_PORT </dev/null'
+try drive_read 'cat "$NEXA_RUN_MEDIA/STICK/old.txt"'
+try drive_write 'echo hi > "$NEXA_RUN_MEDIA/STICK/new.txt"'
 "#;
 
 struct World {
@@ -38,6 +40,8 @@ fn world(name: &str, permissions: &str, denied: Option<&str>) -> World {
     fs::write(home.join("notes.txt"), "private notes").unwrap();
     fs::write(home.join("Videos/clip.txt"), "a video").unwrap();
     fs::write(home.join("Elsewhere/opened.txt"), "chosen").unwrap();
+    fs::create_dir_all(root.join("media/STICK")).unwrap();
+    fs::write(root.join("media/STICK/old.txt"), "on the stick").unwrap();
     if let Some(d) = denied {
         fs::write(home.join(".config/nexa/app-permissions.json"), format!(r#"{{"probe": {{"denied": [{d}]}}}}"#)).unwrap();
     }
@@ -54,7 +58,7 @@ fn run(w: &World, port: u16) -> String {
         .arg("probe").arg(w.home.join("Elsewhere/opened.txt"))
         .env("HOME", &w.home).env("NEXA_RUN_REGISTRY", w.root.join("registry"))
         .env("NEXA_RUN_LIBEXEC", w.root.join("libexec")).env("NEXA_RUN_LIB", w.root.join("lib"))
-        .env("PROBE_PORT", port.to_string())
+        .env("PROBE_PORT", port.to_string()).env("NEXA_RUN_MEDIA", w.root.join("media"))
         .output().unwrap();
     String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr)
 }
@@ -74,7 +78,7 @@ fn listener() -> u16 {
 fn an_app_with_no_permissions_gets_only_its_own_folder() {
     let w = world("none", "", None);
     let out = run(&w, listener());
-    for want in ["secret:no", "home_read:no", "videos:no", "own_write:yes", "home_write:no", "opened:yes"] {
+    for want in ["secret:no", "home_read:no", "videos:no", "own_write:yes", "home_write:no", "opened:yes", "drive_read:no", "drive_write:no"] {
         assert!(out.contains(want), "{want} in:\n{out}");
     }
     if nexa_sys::sandbox::abi() >= 4 {
@@ -82,6 +86,16 @@ fn an_app_with_no_permissions_gets_only_its_own_folder() {
     }
     assert!(!w.home.join("new.txt").exists());
     assert_eq!(fs::read_to_string(w.home.join(".local/share/probe/note")).unwrap(), "hi\n");
+}
+
+#[test]
+fn files_drives_opens_the_drives_and_nothing_else() {
+    let w = world("drives", r#""files.drives""#, None);
+    let out = run(&w, listener());
+    for want in ["drive_read:yes", "drive_write:yes", "secret:no", "home_read:no", "videos:no", "home_write:no"] {
+        assert!(out.contains(want), "{want} in:\n{out}");
+    }
+    assert_eq!(fs::read_to_string(w.root.join("media/STICK/new.txt")).unwrap(), "hi\n");
 }
 
 #[test]

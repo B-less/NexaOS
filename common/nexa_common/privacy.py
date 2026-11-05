@@ -18,6 +18,7 @@ PERMISSIONS = {
     "files.pictures": ("Your Pictures folder", True),
     "files.music": ("Your Music folder", True),
     "files.videos": ("Your Videos folder", True),
+    "files.drives": ("USB sticks and other drives", True),
     "network": ("The internet", True),
     "camera": ("The camera", True),
     "microphone": ("The microphone", False),

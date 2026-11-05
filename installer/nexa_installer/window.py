@@ -33,6 +33,7 @@ KEYS_DIR = "/etc/nexa/keys"
 PERMISSION_TEXT = {
     "network": "the internet", "files.home": "your home folder", "files.documents": "Documents",
     "files.pictures": "Pictures", "files.music": "Music", "files.videos": "Videos",
+    "files.drives": "USB sticks and other drives",
     "camera": "the camera", "microphone": "the microphone", "location": "your location",
     "notifications": "notifications", "background": "running in the background",
 }
