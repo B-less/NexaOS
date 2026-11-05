@@ -6,13 +6,13 @@ XDG = $(shell pkg-config --variable=pkgdatadir wayland-protocols)/stable/xdg-she
 GEN ?= /tmp/nexa-living-gen
 CFLAGS ?= -O2 -g0
 CFLAGS += -std=gnu11 -Wall -Wextra -Wno-unused-parameter -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE \
-          -I$(GEN) $(shell pkg-config --cflags $(PKGS))
+          -I$(GEN) -I../nexa-strata $(shell pkg-config --cflags $(PKGS))
 LDFLAGS += -pie -Wl,-z,relro,-z,now
 LDLIBS = $(shell pkg-config --libs $(PKGS)) -lm
 CODE = $(GEN)/layer-shell.c $(GEN)/xdg-shell.c
 
-nexa-living: nexa-living.c styles.c styles.h json.c json.h $(GEN)/layer-shell.h $(CODE)
-	$(CC) $(CFLAGS) -o $@ nexa-living.c styles.c json.c $(CODE) $(LDFLAGS) $(LDLIBS)
+nexa-living: nexa-living.c styles.c styles.h json.c json.h ../nexa-strata/layers.c ../nexa-strata/layers.h $(GEN)/layer-shell.h $(CODE)
+	$(CC) $(CFLAGS) -o $@ nexa-living.c styles.c json.c ../nexa-strata/layers.c $(CODE) $(LDFLAGS) $(LDLIBS)
 
 nexa-living-preview: preview.c styles.c styles.h
 	$(CC) $(CFLAGS) -o $@ preview.c styles.c $(LDFLAGS) $(LDLIBS)

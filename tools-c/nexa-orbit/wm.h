@@ -12,6 +12,7 @@ struct wm_win {
     int pid;
     int minimized, focused, urgent;
     int rank;           /* 0 = most recently in front */
+    int ws;             /* its workspace number (Strata's layer); 0 if none */
 };
 
 enum { WM_NONE, WM_SWAY, WM_HYPRLAND };
@@ -26,6 +27,13 @@ int wm_close(const struct wm_win *w);
 /* A socket that becomes readable when windows change; -1 if none. */
 int wm_event_fd(void);
 /* Reads what's waiting (Hyprland: notes urgent windows). 1 if windows may
- * have changed, 0 if not, -1 when the socket closed. */
+ * have changed, 2 if the workspace on screen may have too, -1 when the
+ * socket closed. */
 int wm_event_read(int fd);
+/* Strata: the focused workspace's number (0 if it has none, -1 if the
+ * compositor didn't answer); go to a workspace by number; take the window
+ * in front there and follow it. 0 on success. */
+int wm_workspace(void);
+int wm_workspace_go(int num);
+int wm_workspace_carry(int num);
 #endif

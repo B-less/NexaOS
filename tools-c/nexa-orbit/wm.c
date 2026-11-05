@@ -87,9 +87,11 @@ static void lower_copy(char *dst, size_t cap, const char *src)
     dst[i] = 0;
 }
 
-static void sway_walk(const struct jdoc *d, int n, int in_scratch, struct wm_win *out, int max, int *count)
+static void sway_walk(const struct jdoc *d, int n, int in_scratch, int ws, struct wm_win *out, int max, int *count)
 {
     in_scratch = in_scratch || !strcmp(json_str(d, n, "name", ""), "__i3_scratch");
+    if (!strcmp(json_str(d, n, "type", ""), "workspace")) ws = (int)json_num(d, n, "num", 0);
+    if (in_scratch || ws < 0) ws = 0;
     const char *app = json_str(d, n, "app_id", NULL);
     if (!app || !*app) app = json_str(d, json_get(d, n, "window_properties"), "class", NULL);
     int pid = (int)json_num(d, n, "pid", 0);
@@ -103,12 +105,13 @@ static void sway_walk(const struct jdoc *d, int n, int in_scratch, struct wm_win
         w->focused = (int)json_num(d, n, "focused", 0);
         w->urgent = (int)json_num(d, n, "urgent", 0);
         w->rank = w->focused ? 0 : 1;
+        w->ws = ws;
     }
     static const char *const kids[2] = {"nodes", "floating_nodes"};
     for (int k = 0; k < 2; k++) {
         int a = json_get(d, n, kids[k]);
         if (a < 0) continue;
-        for (int c = d->n[a].child; c >= 0; c = d->n[c].next) sway_walk(d, c, in_scratch, out, max, count);
+        for (int c = d->n[a].child; c >= 0; c = d->n[c].next) sway_walk(d, c, in_scratch, ws, out, max, count);
     }
 }
 
@@ -190,6 +193,8 @@ static int hypr_windows(struct wm_win *out, int max)
             w->id = strtoul(json_str(&d, c, "address", "0x0"), NULL, 16);
             w->pid = pid;
             w->minimized = !strcmp(json_str(&d, json_get(&d, c, "workspace"), "name", ""), MINIMIZED);
+            int ws = (int)json_num(&d, json_get(&d, c, "workspace"), "id", 0);
+            w->ws = ws > 0 ? ws : 0;
             w->rank = (int)json_num(&d, c, "focusHistoryID", 99);
             w->focused = w->rank == 0;
             w->urgent = is_urgent(w->id);
@@ -211,7 +216,7 @@ int wm_windows(struct wm_win *out, int max)
     int count = -1;
     if (tree && json_parse(&d, tree) == 0) {
         count = 0;
-        sway_walk(&d, 0, 0, out, max, &count);
+        sway_walk(&d, 0, 0, 0, out, max, &count);
     }
     json_free(&d);
     free(tree);
@@ -292,19 +297,57 @@ int wm_event_fd(void)
 
 static char linebuf[1024];
 static size_t linelen;
+static int saw_workspace;
 
 static void hypr_line(const char *l)
 {
     if (!strncmp(l, "urgent>>", 8)) urgent_set(strtoul(l + 8, NULL, 16), 1);
     else if (!strncmp(l, "activewindowv2>>", 16)) urgent_set(strtoul(l + 16, NULL, 16), 0);
     else if (!strncmp(l, "closewindow>>", 13)) urgent_set(strtoul(l + 13, NULL, 16), 0);
+    else if (!strncmp(l, "workspace>>", 11) || !strncmp(l, "workspacev2>>", 13) || !strncmp(l, "focusedmon>>", 12) ||
+             !strncmp(l, "focusedmonv2>>", 14))
+        saw_workspace = 1;
+}
+
+/* Sway's stream is i3-ipc frames: "i3-ipc", length, type, payload. Only
+ * the type matters here (0x80000000: a workspace event). */
+static unsigned char sw_hdr[14];
+static size_t sw_hlen;
+static uint32_t sw_left;
+
+static void sway_bytes(const unsigned char *p, size_t n)
+{
+    while (n) {
+        if (sw_left) {
+            size_t k = n < sw_left ? n : sw_left;
+            sw_left -= (uint32_t)k;
+            p += k;
+            n -= k;
+            continue;
+        }
+        sw_hdr[sw_hlen++] = *p++;
+        n--;
+        if (sw_hlen == sizeof sw_hdr) {
+            uint32_t len, type;
+            memcpy(&len, sw_hdr + 6, 4);
+            memcpy(&type, sw_hdr + 10, 4);
+            if (type == 0x80000000u) saw_workspace = 1;
+            sw_left = len;
+            sw_hlen = 0;
+        }
+    }
 }
 
 int wm_event_read(int fd)
 {
     char tmp[8192];
     ssize_t r = read(fd, tmp, sizeof tmp);
-    if (r <= 0) return -1;
+    if (r <= 0) {
+        sw_hlen = sw_left = 0;
+        linelen = 0;
+        return -1;
+    }
+    saw_workspace = 0;
     if (wm_kind() == WM_HYPRLAND) {
         for (ssize_t i = 0; i < r; i++) {
             if (tmp[i] == '\n') {
@@ -315,6 +358,75 @@ int wm_event_read(int fd)
                 linebuf[linelen++] = tmp[i];
             }
         }
+    } else {
+        sway_bytes((const unsigned char *)tmp, (size_t)r);
     }
-    return 1;
+    return saw_workspace ? 2 : 1;
+}
+
+/* ---------- Strata ---------- */
+
+int wm_workspace(void)
+{
+    int num = 0, answered = 0;
+    struct jdoc d = {0};
+    if (wm_kind() == WM_SWAY) {
+        char *r = sway_request(1, "");
+        if (r && json_parse(&d, r) == 0 && d.n[0].type == J_ARR) {
+            answered = 1;
+            for (int c = d.n[0].child; c >= 0; c = d.n[c].next)
+                if (json_num(&d, c, "focused", 0)) num = (int)json_num(&d, c, "num", 0);
+        }
+        free(r);
+    } else if (wm_kind() == WM_HYPRLAND) {
+        char *r = hypr_request("j/activeworkspace");
+        if (r && json_parse(&d, r) == 0 && d.n[0].type == J_OBJ) {
+            answered = 1;
+            num = (int)json_num(&d, 0, "id", 0);
+        }
+        free(r);
+    }
+    json_free(&d);
+    if (!answered) return -1;
+    return num > 0 ? num : 0;  /* Sway's named workspaces are -1, Hyprland's special ones negative */
+}
+
+static int sway_ok(const char *cmd)
+{
+    char *r = sway_request(0, cmd);
+    int ok = r && strstr(r, "\"success\": true");
+    free(r);
+    return ok ? 0 : -1;
+}
+
+int wm_workspace_go(int num)
+{
+    char cmd[64];
+    if (num < 1 || num > 99) return -1;
+    if (wm_kind() == WM_SWAY) {
+        snprintf(cmd, sizeof cmd, "workspace number %d", num);
+        return sway_ok(cmd);
+    }
+    if (wm_kind() == WM_HYPRLAND) {
+        snprintf(cmd, sizeof cmd, "dispatch workspace %d", num);
+        return hypr_ok(cmd);
+    }
+    return -1;
+}
+
+int wm_workspace_carry(int num)
+{
+    char cmd[96];
+    if (num < 1 || num > 99) return -1;
+    if (wm_kind() == WM_SWAY) {
+        /* No window in front (an empty layer): just go. */
+        snprintf(cmd, sizeof cmd, "move container to workspace number %d", num);
+        sway_ok(cmd);
+        return wm_workspace_go(num);
+    }
+    if (wm_kind() == WM_HYPRLAND) {
+        snprintf(cmd, sizeof cmd, "dispatch movetoworkspace %d", num);  /* follows the window */
+        return hypr_ok(cmd);
+    }
+    return -1;
 }

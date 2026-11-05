@@ -23,6 +23,10 @@
  *   level APP 0.0-1.0  real activity (load, playback, copying) for 5 s
  *   reload             read the settings again (also on file change)
  *
+ * Strata (TODOnexa_identity.md): each workspace 1 to 5 is a layer with its
+ * own colour; the wallpaper takes the colour of the layer on its screen,
+ * faintly (strata.conf: tint), cross-fading in 0.4 s when it changes.
+ *
  * Settings: "living" in ~/.config/nexa/magic.json (nexa_common.magic).
  *
  *   nexa-living            run
@@ -54,6 +58,7 @@
 
 #include "json.h"
 #include "layer-shell.h"
+#include "layers.h"
 #include "styles.h"
 
 #define MAX_OUT 8
@@ -73,6 +78,7 @@ struct config {
     struct app_style apps[MAX_APPS];
     int napps;
     char wallpaper[512];
+    double strata_tint;  /* strata.conf: tint; 0 = off */
 };
 
 struct win {
@@ -106,6 +112,10 @@ struct output {
     cairo_surface_t *base;
     struct region desk;
     double desk_at;
+    /* Strata: the layer on this screen and its tint, fading from..to */
+    int ws;
+    rgb tint_from, tint_to;
+    double tint_from_a, tint_to_a, tint_at;
 };
 
 struct ripple { char app[48]; double x, y, t0; int desk; struct output *o; };
@@ -130,7 +140,7 @@ static struct {
     char ev_buf[65536];
     size_t ev_len;
     int app_fd, ino_fd, timer_fd;
-    char cfg_path[512], sock_path[512], stats_path[512], run[256];
+    char cfg_path[512], strata_path[512], sock_path[512], stats_path[512], run[256];
     /* quality */
     int quality, cap_quality, perf_quality;
     double slow_since, fast_since, last_policy, last_frame, last_stats;
@@ -247,6 +257,13 @@ static void load_config(void)
     json_free(&d);
     free(t);
     c.reduced |= dna_reduced_motion();
+    {
+        char *st = read_file(L.strata_path, 4096);
+        struct strata_conf sc;
+        strata_conf_parse(&sc, st);
+        free(st);
+        c.strata_tint = sc.tint;
+    }
     /* keep the live levels across a reload */
     for (int i = 0; i < c.napps; i++)
         for (int j = 0; j < L.cfg.napps; j++)
@@ -437,6 +454,15 @@ static void note_window(long id, const char *app, int x, int y, int w, int h, in
     wn->seen = 1;
 }
 
+static void set_layer(struct output *o, int n);
+
+static struct output *output_named(const char *name)
+{
+    for (int i = 0; i < L.nout; i++)
+        if (!strcmp(L.out[i].name, name)) return &L.out[i];
+    return NULL;
+}
+
 static void sway_walk(const struct jdoc *d, int n, const char *output)
 {
     const char *type = json_str(d, n, "type", "");
@@ -495,6 +521,11 @@ static void hypr_windows(void)
     char *mon = hypr_request("j/monitors"), *cl = hypr_request("j/clients");
     struct jdoc dm = {0}, dc = {0};
     if (mon && cl && json_parse(&dm, mon) == 0 && json_parse(&dc, cl) == 0) {
+        for (int m = dm.n[0].child; m >= 0; m = dm.n[m].next) {
+            struct output *o = output_named(json_str(&dm, m, "name", ""));
+            int ws = (int)json_num(&dm, json_get(&dm, m, "activeWorkspace"), "id", 0);
+            if (o) set_layer(o, ws > 0 ? ws : 0);
+        }
         for (int c = dc.n[0].child; c >= 0; c = dc.n[c].next) {
             int ws = json_get(&dc, c, "workspace"), at = json_get(&dc, c, "at"), sz = json_get(&dc, c, "size");
             if (at < 0 || sz < 0 || dc.n[at].child < 0 || dc.n[sz].child < 0) continue;
@@ -547,6 +578,16 @@ static void refresh_windows(void)
         if (tree && json_parse(&d, tree) == 0) sway_walk(&d, 0, "");
         json_free(&d);
         free(tree);
+        char *ws = sway_request(1, "");
+        struct jdoc dw = {0};
+        if (ws && json_parse(&dw, ws) == 0 && dw.n[0].type == J_ARR)
+            for (int c = dw.n[0].child; c >= 0; c = dw.n[c].next) {
+                struct output *o = output_named(json_str(&dw, c, "output", ""));
+                int num = (int)json_num(&dw, c, "num", 0);
+                if (o && json_num(&dw, c, "visible", 0)) set_layer(o, num > 0 ? num : 0);
+            }
+        json_free(&dw);
+        free(ws);
     } else if (L.ipc_kind == 2) {
         hypr_windows();
     }
@@ -626,6 +667,63 @@ static void load_colours(void)
         else if (!strncmp(line, "text=", 5)) A3 = hexcol(line + 5, A3);
     }
     fclose(f);
+}
+
+/* ---------- Strata's tint ---------- */
+
+static rgb tint_of(int n)
+{
+    strata_rgb t = strata_tint((strata_rgb){A1.r, A1.g, A1.b}, n);
+    return (rgb){t.r, t.g, t.b};
+}
+
+/* How far the fade to the new layer's tint is: 0..1. */
+static double tint_k(const struct output *o)
+{
+    if (L.cfg.reduced || o->tint_at <= 0) return 1;
+    return fmin(1, fmax(0, (now() - o->tint_at) / 0.4));
+}
+
+static void tint_now(const struct output *o, rgb *c, double *a)
+{
+    double k = tint_k(o);
+    *c = (rgb){o->tint_from.r + (o->tint_to.r - o->tint_from.r) * k, o->tint_from.g + (o->tint_to.g - o->tint_from.g) * k,
+               o->tint_from.b + (o->tint_to.b - o->tint_from.b) * k};
+    *a = o->tint_from_a + (o->tint_to_a - o->tint_from_a) * k;
+}
+
+static void tint_target(struct output *o, rgb fallback)
+{
+    int on = o->ws >= 1 && o->ws <= STRATA_LAYERS;
+    o->tint_to = on ? tint_of(o->ws) : fallback;
+    o->tint_to_a = on ? L.cfg.strata_tint : 0;  /* not a layer (a named workspace): no tint */
+}
+
+static void set_layer(struct output *o, int n)
+{
+    if (n == o->ws && o->tint_at > 0) return;
+    rgb c;
+    double a;
+    tint_now(o, &c, &a);
+    int first = o->tint_at <= 0;
+    o->ws = n;
+    tint_target(o, c);
+    o->tint_from = first ? o->tint_to : c;  /* at start: no fade */
+    o->tint_from_a = first ? o->tint_to_a : a;
+    o->tint_at = now();
+    o->full = 1;
+}
+
+/* New colours or strength: straight to them, no fade. */
+static void retint(void)
+{
+    for (int i = 0; i < L.nout; i++) {
+        struct output *o = &L.out[i];
+        tint_target(o, o->tint_to);
+        o->tint_from = o->tint_to;
+        o->tint_from_a = o->tint_to_a;
+        o->full = 1;
+    }
 }
 
 static cairo_surface_t *make_base(int BW, int BH)
@@ -808,6 +906,15 @@ static void render(struct output *o)
     cairo_set_source_surface(cr, o->base, 0, 0);
     cairo_paint(cr);
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    {  /* Strata: the layer's colour over the wallpaper, under every style */
+        rgb tc;
+        double ta;
+        tint_now(o, &tc, &ta);
+        if (ta > 0.002) {
+            cairo_set_source_rgba(cr, tc.r, tc.g, tc.b, ta);
+            cairo_paint(cr);
+        }
+    }
     cairo_scale(cr, s, s);
     double p1 = now();
 
@@ -874,7 +981,7 @@ static void render(struct output *o)
     /* Full redraws (start, a window moved, new colours: caches being made)
      * aren't what a frame normally costs: they don't count against it. */
     if (!o->full) adapt(ms, now());
-    o->full = 0;
+    o->full = tint_k(o) < 1;  /* while the tint fades, the whole screen changes */
     pixman_region32_fini(&moving); pixman_region32_fini(&windows); pixman_region32_fini(&desk);
     pixman_region32_fini(&damage); pixman_region32_fini(&todo);
 }
@@ -899,6 +1006,7 @@ static void frame_done(void *data, struct wl_callback *cb, uint32_t t)
 /* Is anything on this output moving right now? */
 static int animating(struct output *o)
 {
+    if (tint_k(o) < 1) return 1;
     if (L.quality < 0) return ripples_live(now() - L.t0);
     if (L.cfg.desktop_style >= 0) return 1;
     for (int i = 0; i < L.nwin; i++) if (on_output(&L.win[i], o) && win_animates(&L.win[i])) return 1;
@@ -936,14 +1044,19 @@ static void write_stats(void)
     static const char *qn[4] = {"static", "low", "balanced", "high"};
     int styled = 0;
     for (int i = 0; i < L.nwin; i++) styled += win_style(&L.win[i]) >= 0;
+    rgb tc = {0, 0, 0};
+    double ta = 0;
+    if (L.nout) tint_now(&L.out[0], &tc, &ta);
     FILE *f = fopen(L.stats_path, "w");
     if (f) {
         fprintf(f, "{\"quality\": \"%s\", \"cap\": \"%s\", \"fps\": %.1f, \"frame_ms\": %.2f, \"rss_kb\": %ld, \"windows\": %d, \"styled\": %d, "
                    "\"on_battery\": %d, \"brain_low\": %d, \"low_memory\": %d, \"enabled\": %d, "
-                   "\"base_ms\": %.2f, \"desktop_ms\": %.2f, \"windows_ms\": %.2f}\n",
+                   "\"base_ms\": %.2f, \"desktop_ms\": %.2f, \"windows_ms\": %.2f, "
+                   "\"layer\": %d, \"tint\": \"#%02x%02x%02x\", \"tint_alpha\": %.3f}\n",
                 qn[L.quality + 1], qn[L.cap_quality + 1], L.frames / span, L.ms_n ? L.ms_sum / L.ms_n : 0.0,
                 rss * (sysconf(_SC_PAGESIZE) / 1024), L.nwin, styled, L.on_battery, L.brain_low, L.low_memory, L.cfg.enabled,
-                L.ms_n ? L.base_ms / L.ms_n : 0.0, L.ms_n ? L.desk_ms / L.ms_n : 0.0, L.ms_n ? L.win_ms / L.ms_n : 0.0);
+                L.ms_n ? L.base_ms / L.ms_n : 0.0, L.ms_n ? L.desk_ms / L.ms_n : 0.0, L.ms_n ? L.win_ms / L.ms_n : 0.0,
+                L.nout ? L.out[0].ws : 0, (int)lround(tc.r * 255), (int)lround(tc.g * 255), (int)lround(tc.b * 255), ta);
         fclose(f);
     }
     L.frames = 0;
@@ -959,6 +1072,7 @@ static void restyle(void)
     rgb o1 = A1, o2 = A2, o3 = A3, ob = BG;
     load_colours();
     load_config();
+    retint();
     L.last_policy = 0;
     int recolour = memcmp(&o1, &A1, sizeof A1) || memcmp(&o2, &A2, sizeof A2) || memcmp(&o3, &A3, sizeof A3) || memcmp(&ob, &BG, sizeof BG);
     for (int i = 0; i < L.nout; i++) {
@@ -1138,6 +1252,8 @@ static void setup_paths(void)
     snprintf(L.run, sizeof L.run, "%s", run ? run : "/tmp");
     if (cfg && *cfg) snprintf(L.cfg_path, sizeof L.cfg_path, "%s/nexa/magic.json", cfg);
     else snprintf(L.cfg_path, sizeof L.cfg_path, "%s/.config/nexa/magic.json", home ? home : "/");
+    if (cfg && *cfg) snprintf(L.strata_path, sizeof L.strata_path, "%s/nexa/strata.conf", cfg);
+    else snprintf(L.strata_path, sizeof L.strata_path, "%s/.config/nexa/strata.conf", home ? home : "/");
     snprintf(L.sock_path, sizeof L.sock_path, "%s/nexa-living.sock", L.run);
     snprintf(L.stats_path, sizeof L.stats_path, "%s/nexa-living.stats", L.run);
 }
@@ -1163,6 +1279,11 @@ static void watch_config(void)
     snprintf(dir, sizeof dir, "%s", L.cfg_path);
     char *slash = strrchr(dir, '/');
     if (slash) *slash = 0;
+    mkdir(dir, 0700);
+    inotify_add_watch(L.ino_fd, dir, IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
+    /* interface/global.json holds reduced motion ("motion": "none"). */
+    size_t len = strlen(dir);
+    snprintf(dir + len, sizeof dir - len, "/interface");
     mkdir(dir, 0700);
     inotify_add_watch(L.ino_fd, dir, IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
 }

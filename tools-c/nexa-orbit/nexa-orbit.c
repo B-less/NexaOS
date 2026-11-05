@@ -8,6 +8,9 @@
  * starting, minimised. Window changes come from the compositor's event
  * socket; activity from /proc every 2 s while apps run.
  *
+ * It also hosts Strata's layer stack (tools-c/nexa-strata/hud.c), which
+ * needs the same windows, icons and theme.
+ *
  *   nexa-orbit            run (one per session)
  *   pkill -USR1 nexa-orbit   Super+O: take the keyboard / give it back
  *
@@ -28,6 +31,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "hud.h"
 #include "model.h"
 #include "wm.h"
 
@@ -79,7 +83,7 @@ static struct {
     guint ev_watch;
     GHashTable *wmclass;         /* lowercased StartupWMClass -> desktop id */
     int width, height;
-    char conf_path[600], theme_path[600];
+    char conf_path[600], theme_path[600], strata_path[600];
 } O = {.hover = -1, .kfocus = -1, .ev_fd = -1};
 
 static void refresh(void);
@@ -102,6 +106,8 @@ static void set_rgb(cairo_t *cr, rgb c, double a) { cairo_set_source_rgba(cr, c.
 static rgb mix(rgb a, rgb b, double t) { return (rgb){a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t}; }
 
 static void load_icons(void);
+
+static strata_rgb srgb(rgb c) { return (strata_rgb){c.r, c.g, c.b}; }
 
 static void load_theme(void)
 {
@@ -143,6 +149,8 @@ static void load_theme(void)
         if (!cur || strcmp(cur, O.c.icon_theme)) g_object_set(s, "gtk-icon-theme-name", O.c.icon_theme, NULL);
         g_free(cur);
     }
+    struct hud_colours hc = {srgb(O.c.bg), srgb(O.c.surface), srgb(O.c.text), srgb(O.c.muted), srgb(O.c.accent), O.c.opacity};
+    hud_set_colours(&hc);
 }
 
 static void read_animations(void)
@@ -150,6 +158,28 @@ static void read_animations(void)
     gboolean on = TRUE;
     g_object_get(gtk_settings_get_default(), "gtk-enable-animations", &on, NULL);
     O.animations = on;
+    hud_set_animations(on);
+}
+
+/* Strata: each layer's windows, with one icon per app. */
+static void strata_layers(void)
+{
+    struct hud_layer L[STRATA_LAYERS];
+    memset(L, 0, sizeof L);
+    int app_of[STRATA_LAYERS][HUD_ICONS];
+    for (int w = 0; w < O.nwins; w++) {
+        int ws = O.wins[w].ws, i = O.win_item[w];
+        if (ws < 1 || ws > STRATA_LAYERS || O.wins[w].minimized) continue;
+        struct hud_layer *l = &L[ws - 1];
+        l->windows++;
+        if (i < 0 || !O.it[i].pix || l->nicons >= HUD_ICONS) continue;
+        int dup = 0;
+        for (int k = 0; k < l->nicons; k++) dup |= app_of[ws - 1][k] == i;
+        if (dup) continue;
+        app_of[ws - 1][l->nicons] = i;
+        l->icons[l->nicons++] = O.it[i].pix;
+    }
+    hud_set_layers(L);
 }
 
 /* ---------- apps ---------- */
@@ -220,6 +250,7 @@ static void load_icons(void)
         if (O.it[i].pix) g_object_unref(O.it[i].pix);
         O.it[i].pix = load_icon(O.it[i].info);
     }
+    strata_layers();
     if (O.area) gtk_widget_queue_draw(O.area);
 }
 
@@ -327,6 +358,8 @@ static void refresh(void)
     for (int i = 1; i < O.n; i++) g_strlcat(ids_before, O.it[i].id, sizeof ids_before), g_strlcat(ids_before, ",", sizeof ids_before);
     rebuild();
     apply_windows();
+    strata_layers();
+    if (O.ev_fd < 0) hud_set_current(wm_workspace());  /* no events: polled */
     char ids_after[MAX_ITEMS * 64] = "";
     for (int i = 1; i < O.n; i++) g_strlcat(ids_after, O.it[i].id, sizeof ids_after), g_strlcat(ids_after, ",", sizeof ids_after);
     if (before != O.n || strcmp(ids_before, ids_after)) {
@@ -941,6 +974,8 @@ static void file_changed(GFileMonitor *m, GFile *f, GFile *o, GFileMonitorEvent 
         load_theme();
         load_icons();
         write_state();
+    } else if (GPOINTER_TO_INT(which) == 3) {
+        hud_reload_conf();
     } else {
         int fold = O.conf.fold;
         load_conf();
@@ -1166,12 +1201,14 @@ static gboolean on_key(GtkWidget *w, GdkEventKey *e, gpointer d)
 
 static gboolean on_wm_event(gint fd, GIOCondition c, gpointer d)
 {
-    if ((c & (G_IO_HUP | G_IO_ERR)) || wm_event_read(fd) < 0) {
+    int r = (c & (G_IO_HUP | G_IO_ERR)) ? -1 : wm_event_read(fd);
+    if (r < 0) {
         close(fd);
         O.ev_fd = -1;  /* every_2s polls from now on */
         O.ev_watch = 0;
         return G_SOURCE_REMOVE;
     }
+    if (r == 2) hud_set_current(wm_workspace());  /* at once: the stack shouldn't lag the switch */
     refresh_soon();
     return G_SOURCE_CONTINUE;
 }
@@ -1218,6 +1255,8 @@ int main(int argc, char **argv)
     }
     config_path(O.conf_path, sizeof O.conf_path, "orbit.conf");
     config_path(O.theme_path, sizeof O.theme_path, "lock.conf");
+    config_path(O.strata_path, sizeof O.strata_path, "strata.conf");
+    hud_init(O.strata_path);
     load_conf();
     load_theme();
     read_animations();
@@ -1249,11 +1288,12 @@ int main(int argc, char **argv)
 
     O.fold_t = O.fold_target = O.conf.fold ? 1 : 0;
     connect_wm();
+    hud_set_current(wm_workspace());  /* noted, not shown */
     refresh();
     relayout();
     gtk_widget_show_all(O.win);
 
-    GFileMonitor *m1 = watch_file(O.theme_path, 1), *m2 = watch_file(O.conf_path, 2);
+    GFileMonitor *m1 = watch_file(O.theme_path, 1), *m2 = watch_file(O.conf_path, 2), *m3 = watch_file(O.strata_path, 3);
     g_signal_connect(gtk_icon_theme_get_default(), "changed", G_CALLBACK(on_icons_changed), NULL);
     g_signal_connect(gtk_settings_get_default(), "notify::gtk-enable-animations", G_CALLBACK(on_anim_setting), NULL);
     g_signal_connect(g_app_info_monitor_get(), "changed", G_CALLBACK(on_apps_changed), NULL);
@@ -1262,5 +1302,6 @@ int main(int argc, char **argv)
     gtk_main();
     if (m1) g_object_unref(m1);
     if (m2) g_object_unref(m2);
+    if (m3) g_object_unref(m3);
     return 0;
 }

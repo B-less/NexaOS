@@ -1224,6 +1224,18 @@ bindsym $mod+Shift+3 move container to workspace $ws3
 bindsym $mod+Shift+4 move container to workspace $ws4
 bindsym $mod+Shift+5 move container to workspace $ws5
 
+# Strata: the workspaces are five layers. Super+scroll or Super+Page
+# Down/Up dives one layer deeper or comes back; with Shift the window in
+# front comes along (nexa-strata; Orbit shows the stack, Living the tint).
+bindsym --whole-window $mod+button5 exec nexa-strata dive +1
+bindsym --whole-window $mod+button4 exec nexa-strata dive -1
+bindsym --whole-window $mod+Shift+button5 exec nexa-strata carry +1
+bindsym --whole-window $mod+Shift+button4 exec nexa-strata carry -1
+bindsym $mod+Next exec nexa-strata dive +1
+bindsym $mod+Prior exec nexa-strata dive -1
+bindsym $mod+Shift+Next exec nexa-strata carry +1
+bindsym $mod+Shift+Prior exec nexa-strata carry -1
+
 # Navigation
 bindsym $mod+Left focus left
 bindsym $mod+Down focus down
@@ -1331,7 +1343,9 @@ animations {
     animation = windowsMove, 1, 5, nexa
     animation = fade, 1, 5, nexa
     animation = border, 1, 8, nexa
-    animation = workspaces, 1, 6, nexa, slide
+    # Strata: layers lie one behind the other, so a workspace change slides
+    # up or down with a fade, not sideways.
+    animation = workspaces, 1, 6, nexa, slidefadevert 20%
     animation = specialWorkspace, 1, 5, nexa, slidevert
     animation = layers, 1, 4, nexa, fade
 }
@@ -1348,8 +1362,8 @@ input {
     }
 }
 
-# Three fingers sideways switches workspaces, like a Mac trackpad.
-gesture = 3, horizontal, workspace
+# Three fingers up or down move through Strata's layers (workspaces).
+gesture = 3, vertical, workspace
 
 # The pointer stays where you put it: focusing a window (the Dock bringing
 # one back) used to jump it there, onto whatever window was on top.
@@ -1383,7 +1397,7 @@ windowrule = center on, match:class .*
 # themselves, so Hyprland's own layer animation is off for them.
 layerrule = blur on, match:namespace ^(waybar|nexa-.*)$
 layerrule = ignore_alpha 0.1, match:namespace ^(waybar|nexa-.*)$
-layerrule = no_anim on, match:namespace ^(nexa-panel|nexa-deck|nexa-signals|waybar|barhide-ghost)$
+layerrule = no_anim on, match:namespace ^(nexa-panel|nexa-deck|nexa-signals|nexa-strata|waybar|barhide-ghost)$
 
 bind = SUPER, Return, exec, foot
 bind = SUPER, D, exec, nexa-start
@@ -1420,6 +1434,16 @@ bind = SUPER SHIFT, 2, movetoworkspace, 2
 bind = SUPER SHIFT, 3, movetoworkspace, 3
 bind = SUPER SHIFT, 4, movetoworkspace, 4
 bind = SUPER SHIFT, 5, movetoworkspace, 5
+# Strata: Super+scroll or Super+Page Down/Up through the five layers, with
+# Shift taking the window along (nexa-strata).
+bind = SUPER, mouse_down, exec, nexa-strata dive +1
+bind = SUPER, mouse_up, exec, nexa-strata dive -1
+bind = SUPER SHIFT, mouse_down, exec, nexa-strata carry +1
+bind = SUPER SHIFT, mouse_up, exec, nexa-strata carry -1
+bind = SUPER, Next, exec, nexa-strata dive +1
+bind = SUPER, Prior, exec, nexa-strata dive -1
+bind = SUPER SHIFT, Next, exec, nexa-strata carry +1
+bind = SUPER SHIFT, Prior, exec, nexa-strata carry -1
 bindm = SUPER, mouse:272, movewindow
 # Alt + drag anywhere in a window moves it too (needs no title bar).
 bindm = ALT, mouse:272, movewindow

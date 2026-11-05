@@ -270,3 +270,58 @@ visible state on every change; `hold`, `invoke`, `dismiss`, `dismiss_all`,
       images, sounds), a real bar above the tabs
 - [ ] Later: keyboard access to the tabs, inline reply, images in the body,
       Quiet modes
+
+## Strata
+
+Workspaces 1 to 5 become five layers, one behind the other. Layer 1 is the
+surface; the others lie deeper.
+
+**Moving.** Super+scroll dives through the layers: down goes one layer
+deeper, up comes back. Super+Page Down and Super+Page Up do the same from the
+keyboard. With Shift held, the window in front comes along. Moves stop at
+layers 1 and 5, with no wrapping. `tools-c/nexa-strata` is a small C command
+(no GTK, starts in about a millisecond) that both sessions bind:
+`nexa-strata dive +1|-1`, `nexa-strata carry +1|-1`, `nexa-strata current`.
+It asks the compositor for the current layer and moves to the next one by
+number, so it can reach an empty layer. A touchpad sends a stream of scroll
+events, so moves less than 150 ms apart are ignored (a timestamp in
+`$XDG_RUNTIME_DIR`). Super+1 to 5 still jump straight to a layer.
+
+**The stack.** Whenever the layer on screen changes, whatever caused it
+(scroll, keys, the bar, an app asking for attention), a small stack of five
+tilted glass sheets shows near the bottom of the screen for about a second.
+Each sheet is a layer: deeper ones sit higher, smaller and fainter. Layers
+you dived past fall towards you and fade out. The sheet you are on is
+solid, with its windows' app icons on it and its number in a hexagon. A
+column of five hexagons beside the stack shows where you are: filled for
+the current layer, outlined for layers with windows, faint for empty ones.
+The sheets glide to the new depth in 220 ms. With reduced motion there is
+no glide and no fade. The stack takes no input and never covers the
+pointer's clicks.
+
+It runs inside Orbit's process, so it shares Orbit's compositor
+connection, app icons and theme. That costs about 1 MB, where a second GTK
+program would cost about 13 MB. Its window exists only while it is shown.
+
+**Tint.** Every layer has its own colour: the theme's accent turned 40°
+around the colour wheel per layer (layer 1 is the accent itself), never a
+colour taken from the wallpaper. Living lays that colour faintly over the
+wallpaper of each screen (strength 0.14) and cross-fades it in 0.4 s when
+the layer changes; with reduced motion the change is instant. The windows
+and their styles are never tinted.
+
+**Files.** `~/.config/nexa/strata.conf`: `show=yes|no` (the stack) and
+`tint=0` to `0.3` (0 turns the tint off), watched live by Orbit and Living.
+Colours come from `~/.config/nexa/lock.conf`.
+
+- [x] Engine pieces with unit tests (layer maths, tint colours, config,
+      sheet geometry): 25 checks
+- [x] `nexa-strata` command; layer per window and the current layer in
+      Orbit's compositor code (Sway and Hyprland)
+- [x] The stack in Orbit; Living's tint
+- [x] Both session configs (Super+scroll, Super+Page Up/Down, with Shift)
+- [x] Headless Sway test with screenshots (`make test-strata`)
+- [x] Measured: `nexa-strata` 33 KB, about 3.5 ms a call; the stack adds
+      about 1 MB to Orbit while shown (26 MB to 27 MB); Living stays at 9 MB
+- [ ] Later: tested in a Hyprland session (its bindings and gesture are
+      written but only Sway runs in the test)

@@ -350,6 +350,11 @@ test-orbit:
 test-deck:
 	@sh scripts/test-deck.sh
 
+# Strata, workspaces as layers (C): unit tests, then a headless Sway with
+# Orbit's stack, Living's tint and a real pointer.
+test-strata:
+	@sh scripts/test-strata.sh
+
 # Signals, notifications (Rust service + C tabs): unit tests, then D-Bus
 # notifications in a headless Sway with a real pointer.
 test-signals:
