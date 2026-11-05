@@ -4,6 +4,12 @@
 //! the desktop knows how to carry out (open a folder, launch an app,
 //! brightness, volume, lock, power, a mode, a workspace, a settings page,
 //! an answer). Anything else gets "I can't do that yet", never a guess.
+//!
+//! The tiny command model (nexa-intent, about 1 MB, built in) reads the
+//! sentence first: which intent, how sure, and the name in it. What it is
+//! sure of becomes the same typed actions; the word rules below still run
+//! beside it, and the best of both is shown. It can't make anything new
+//! happen: only these actions exist, and destroying is never one of them.
 
 use crate::apps::App;
 use crate::workspace::Workspace;
@@ -334,22 +340,164 @@ fn settings(t: &[String], out: &mut Vec<Hit>) {
     }
 }
 
+/// What the model is sure of, as actions (score: how sure, 0.55 to 0.95).
+/// Also: how many words the sentence leans on that its likeliest command
+/// never uses (2 or more: it's about something else, "lock the front door").
+fn model(query: &str, all_apps: &BTreeMap<String, App>, list: &[Workspace], home: &Path, out: &mut Vec<Hit>) -> Option<(String, usize)> {
+    let p = nexa_intent::builtin().predict(query);
+    let off = nexa_intent::vocab::unfamiliar(&p.raw, &p.words, p.arg.as_deref()).len();
+    Some((model_hits(&p, all_apps, list, home, out)?, off))
+}
+
+fn model_hits(p: &nexa_intent::Prediction, all_apps: &BTreeMap<String, App>, list: &[Workspace], home: &Path, out: &mut Vec<Hit>) -> Option<String> {
+    let intent = p.intent.as_str();
+    let score = 0.55 + 0.4 * p.p as f64;
+    let num = nexa_intent::number(&p.words);
+    let mut push = |title: &str, sub: &str, action: Value| out.push(hit(title, sub, action, score));
+    let folder = |dir: &str| if dir.is_empty() { home.to_path_buf() } else { home.join(dir) };
+    let open = |dir: &str, label: &str, out: &mut Vec<Hit>| {
+        let path = folder(dir);
+        out.push(hit(format!("Open {label}"), path.to_string_lossy(), json!({"type": "open_path", "path": path}), score));
+    };
+    match intent {
+        "open_downloads" => open("Downloads", "Downloads", out),
+        "open_documents" => open("Documents", "Documents", out),
+        "open_pictures" => open("Pictures", "Pictures", out),
+        "open_music_folder" => open("Music", "Music", out),
+        "open_videos" => open("Videos", "Videos", out),
+        "open_desktop" => open("Desktop", "Desktop", out),
+        "open_home" => open("", "Home folder", out),
+        "open_trash" => push("Open the Trash", "Files that were deleted, ready to restore", json!({"type": "open_trash"})),
+        "launch" | "find_file" | "workspace_go" => {
+            // The name the model found, looked up the usual way (typos and all).
+            let Some(name) = p.arg.as_deref() else { return None };
+            let mut found = Vec::new();
+            match intent {
+                "launch" => {
+                    let mut t = tokens(name);
+                    t.insert(0, "open".into());
+                    apps(&t, all_apps, &mut found);
+                }
+                "find_file" => {
+                    let mut t = tokens(name);
+                    t.insert(0, "where".into());
+                    trail(&t, home, &mut found);
+                }
+                _ => {
+                    let mut t = tokens(name);
+                    t.push("workspace".into());
+                    workspaces(&t, list, &mut found);
+                }
+            }
+            for mut h in found {
+                h.score = h.score.max(score.min(0.95) * if h.score >= 0.7 { 1.0 } else { 0.9 });
+                out.push(h);
+            }
+        }
+        "workspace_save" => push("Save these apps as a workspace", "Settings > Intelligence > Workspaces",
+                                 json!({"type": "settings", "page": "intelligence", "section": "workspaces"})),
+        "brightness_down" => push("Lower the brightness", "Screen", json!({"type": "brightness", "delta": -10})),
+        "brightness_up" => push("Raise the brightness", "Screen", json!({"type": "brightness", "delta": 10})),
+        "brightness_set" => if let Some(v) = num.filter(|v| *v <= 100) {
+            push(&format!("Set brightness to {v} %"), "Screen", json!({"type": "brightness", "value": v.max(1)}))
+        },
+        "volume_down" => push("Turn the volume down", "Sound", json!({"type": "volume", "delta": -10})),
+        "volume_up" => push("Turn the volume up", "Sound", json!({"type": "volume", "delta": 10})),
+        "volume_set" => if let Some(v) = num.filter(|v| *v <= 100) {
+            push(&format!("Set the volume to {v} %"), "Sound", json!({"type": "volume", "value": v}))
+        },
+        "mute" => push("Mute the sound", "Sound", json!({"type": "volume", "mute": true})),
+        "unmute" => push("Unmute the sound", "Sound", json!({"type": "volume", "mute": false})),
+        "lock" => push("Lock the screen", "Asks for your password to come back", json!({"type": "lock"})),
+        "suspend" | "reboot" | "poweroff" => {
+            let (what, title) = match intent {
+                "suspend" => ("suspend", "Put the computer to sleep"),
+                "reboot" => ("reboot", "Restart the computer"),
+                _ => ("poweroff", "Shut down the computer"),
+            };
+            let mut h = hit(title, "Asks first", json!({"type": "power", "what": what}), score);
+            h.confirm = true;
+            out.push(h);
+        }
+        "mode_low_resource" => push("Low resource mode: hold back background work", "Nexa MicroBrain", json!({"type": "mode", "mode": "low-resource"})),
+        "mode_battery_saver" => push("Battery saver mode", "Nexa MicroBrain", json!({"type": "mode", "mode": "battery-saver"})),
+        "mode_performance" => push("Performance mode", "Nexa MicroBrain", json!({"type": "mode", "mode": "performance"})),
+        "mode_balanced" => push("Balanced mode", "Nexa MicroBrain", json!({"type": "mode", "mode": "balanced"})),
+        "mode_auto" => push("Automatic mode: NexaOS decides", "Nexa MicroBrain", json!({"type": "mode", "mode": "auto"})),
+        "answer_slow" => push("Why is the computer slow?", "What's using it, and what NexaOS already did", json!({"type": "answer", "topic": "slow"})),
+        "answer_battery" => push("Battery health", "Charge, wear and whether it's charging", json!({"type": "answer", "topic": "battery"})),
+        "answer_memory" => push("What's using the memory?", "The biggest programs, and whether memory ran out", json!({"type": "answer", "topic": "memory"})),
+        "answer_crash" => push("Why did an app close?", "Crashes, memory running out, or something ending it", json!({"type": "answer", "topic": "crash"})),
+        "answer_network" => push("Why is there no internet?", "Adapter, address, route and DNS, checked now", json!({"type": "answer", "topic": "network"})),
+        "answer_stopped" => push("Why did something stop?", "Paused programs, waiting jobs and what MicroBrain did", json!({"type": "answer", "topic": "stopped"})),
+        "rewind" => push("Rewind settings changes", "Go back to before a change \u{b7} Magic Layer", json!({"type": "settings", "page": "magic"})),
+        "settings_network" => push("Wi-Fi and network settings", "Settings", json!({"type": "launch", "app": "nexa-network"})),
+        "layer_go" => if let Some(n) = num.filter(|n| (1..=5).contains(n)) {
+            push(&format!("Go to layer {n}"), "Strata", json!({"type": "layer", "to": n}))
+        },
+        "layer_next" => push("One layer deeper", "Strata", json!({"type": "layer", "step": 1})),
+        "layer_prev" => push("One layer back up", "Strata", json!({"type": "layer", "step": -1})),
+        "quiet_on" => push("Turn on Do not disturb", "Notifications wait in Deck's Signals card", json!({"type": "quiet", "on": true})),
+        "quiet_off" => push("Turn off Do not disturb", "Notifications pop up again", json!({"type": "quiet", "on": false})),
+        "destroy" => return Some("destroy".into()),
+        s if s.starts_with("settings") => {
+            let page = s.strip_prefix("settings_").unwrap_or("");
+            let (page, label) = match page {
+                "" => ("", "Settings"),
+                "bluetooth" => ("bluetooth", "Bluetooth settings"),
+                "personalization" => ("personalization", "Personalization settings"),
+                "privacy" => ("privacy", "Privacy settings"),
+                "time" => ("time", "Time & Keyboard settings"),
+                "users" => ("users", "Users settings"),
+                "updates" => ("updates", "Updates settings"),
+                "link" => ("nexa", "Nexa Link settings"),
+                "intelligence" => ("intelligence", "Intelligence settings"),
+                "power" => ("power", "Power settings"),
+                "vpn" => ("vpn", "VPN settings"),
+                "startup" => ("startup", "Startup settings"),
+                "magic" => ("magic", "Magic Layer settings"),
+                "layers" => ("layers", "Layers settings"),
+                "notifications" => ("notifications", "Notifications settings"),
+                "display" => ("display", "Display settings"),
+                "sound" => ("sound", "Sound settings"),
+                "accessibility" => ("accessibility", "Accessibility settings"),
+                _ => return None,
+            };
+            push(if page.is_empty() { "Open Settings" } else { label }, "Settings", json!({"type": "settings", "page": page}));
+        }
+        _ => {}
+    }
+    Some(intent.to_string())
+}
+
 pub fn ask(query: &str, all_apps: &BTreeMap<String, App>, list: &[Workspace], home: &Path) -> Results {
     let t = tokens(query);
     let mut out = Vec::new();
-    if any(&t, DESTROY) {
+    let (understood, off) = if t.is_empty() { (None, 0) } else {
+        model(query, all_apps, list, home, &mut out).map(|(i, o)| (Some(i), o)).unwrap_or((None, 0))
+    };
+    if any(&t, DESTROY) || understood.as_deref() == Some("destroy") {
         return Results { hits: Vec::new(), ambiguous: false,
                          note: Some("I can't delete or remove things from here. Files' Move to Trash does it, and can be undone.".into()) };
     }
     if !t.is_empty() {
-        folders(&t, home, &mut out);
+        // About something else ("lock the front door"): the word rules for
+        // the computer's own controls stand back; names are still looked up.
+        let elsewhere = off >= 2 && understood.as_deref() == Some("unknown");
+        if !elsewhere {
+            folders(&t, home, &mut out);
+        }
         apps(&t, all_apps, &mut out);
-        controls(&t, &mut out);
-        modes(&t, &mut out);
-        answers(&t, &mut out);
+        if !elsewhere {
+            controls(&t, &mut out);
+            modes(&t, &mut out);
+            answers(&t, &mut out);
+        }
         trail(&t, home, &mut out);
         workspaces(&t, list, &mut out);
-        settings(&t, &mut out);
+        if !elsewhere {
+            settings(&t, &mut out);
+        }
     }
     out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     // The same action twice (two routes to it): keep the best.
@@ -362,7 +510,9 @@ pub fn ask(query: &str, all_apps: &BTreeMap<String, App>, list: &[Workspace], ho
     });
     out.truncate(5);
     let ambiguous = out.len() >= 2 && (out[0].score - out[1].score).abs() < 0.05;
-    let note = out.is_empty().then(|| {
+    let note = out.is_empty().then(|| if understood.as_deref() == Some("unknown") && t.len() > 1 {
+        "That sounds like a question, not a command: the Assistant can answer it.".to_string()
+    } else {
         "I can't do that yet. Try: \u{201c}open Downloads\u{201d}, \u{201c}reduce brightness\u{201d}, \u{201c}why is my computer slow\u{201d}, \
          \u{201c}battery health\u{201d}, \u{201c}pause background work\u{201d}, or the name of an app or workspace.".to_string()
     });
@@ -436,6 +586,37 @@ mod tests {
     }
 
     #[test]
+    fn the_model_understands_other_wordings() {
+        assert_eq!(top("the screen is way too bright"), json!({"type": "brightness", "delta": -10}));
+        assert_eq!(top("i can barely hear it turn it up"), json!({"type": "volume", "delta": 10}));
+        assert_eq!(top("could you fire up the calculater for me"), json!({"type": "launch", "app": "nexa-calc"}));
+        assert_eq!(top("take me to layer 3"), json!({"type": "layer", "to": 3}));
+        assert_eq!(top("dive deeper"), json!({"type": "layer", "step": 1}));
+        assert_eq!(top("no notifications for now"), json!({"type": "quiet", "on": true}));
+        assert_eq!(top("show my notifications again"), json!({"type": "quiet", "on": false}));
+        assert_eq!(top("make the text bigger"), json!({"type": "settings", "page": "accessibility"}));
+        assert_eq!(top("my pc keeps freezing"), json!({"type": "answer", "topic": "slow"}));
+        assert_eq!(top("restore my coding workspace"), json!({"type": "workspace", "name": "Coding"}));
+        let (a, w) = setup();
+        let r = ask("restart my pc", &a, &w, Path::new("/home/u"));
+        assert!(r.hits[0].confirm && r.hits[0].action == json!({"type": "power", "what": "reboot"}), "power still asks first");
+    }
+
+    #[test]
+    fn the_model_never_turns_chat_or_destroying_into_an_action() {
+        let (a, w) = setup();
+        for q in ["tell me a joke", "write an email to my teacher", "who is the president of ghana", "how do i bake bread"] {
+            let r = ask(q, &a, &w, Path::new("/home/u"));
+            assert!(r.hits.is_empty(), "{q}: {:?}", r.hits);
+            assert!(r.note.unwrap().contains("Assistant"), "{q}: a question goes to the Assistant");
+        }
+        for q in ["erase my documents", "factory reset the laptop", "get rid of all my photos", "uninstall the editor"] {
+            let r = ask(q, &a, &w, Path::new("/home/u"));
+            assert!(r.hits.is_empty() && r.note.unwrap().starts_with("I can't delete"), "{q}");
+        }
+    }
+
+    #[test]
     fn typos_are_forgiven() {
         assert_eq!(top("opne donwloads"), json!({"type": "open_path", "path": "/home/u/Downloads"}));
         assert_eq!(top("calculater"), json!({"type": "launch", "app": "nexa-calc"}));
@@ -458,7 +639,11 @@ mod tests {
         let r = ask("delete all my files forever", &a, &w, Path::new("/home/u"));
         assert!(r.hits.is_empty(), "{:?}", r.hits);
         assert!(r.note.unwrap().starts_with("I can't delete"), "destroying is never mapped to something else");
-        assert!(ask("knit me a scarf", &a, &w, Path::new("/home/u")).note.unwrap().starts_with("I can't do that yet"));
+        for q in ["knit me a scarf", "lock the front door", "turn down the heating", "start the washing machine"] {
+            let r = ask(q, &a, &w, Path::new("/home/u"));
+            assert!(r.hits.is_empty(), "{q}: not the computer's, so no action: {:?}", r.hits);
+            assert!(r.note.is_some(), "{q}: said so");
+        }
         assert!(ask("", &a, &w, Path::new("/home/u")).hits.is_empty());
         assert!(ask("asdfgh qwerty", &a, &w, Path::new("/home/u")).note.is_some());
     }

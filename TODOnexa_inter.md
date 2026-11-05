@@ -119,6 +119,15 @@ Each: **exists** = what we build on; **build** = new work; **test** = done when.
 - Exists: Nexus (apps, settings, sums, "Ask Nexa").
 - Build: [x] intents, synonyms, typo tolerance (swapped letters count as one typo; short words exact); every result is a typed action the desktop carries out; ambiguous → choices; unsupported → "I can't do that yet"; delete/wipe requests are never mapped to anything; [x] "Why is my computer slow?" and battery health answered from real numbers; [x] inside Nexus (power actions need a second press).
 - Test: [x] commands, typos, ambiguous and unsupported phrases (search.rs tests, `make test-microbrain`).
+- [x] Tiny command model (2026-11-05): `tools/nexa-intent`, built into MicroBrain instead of a 1 GB language model for commands. 62 intents
+      (folders, apps, files, workspaces, brightness, volume, power, modes, answers, every Settings page, Strata layers, Do not disturb,
+      "destroy" and "not a command"); fastText-style classifier (hashed words, word pairs, 3-5 letter pieces; 32 numbers each, 8-bit)
+      plus a perceptron tagger for the name in the sentence. 1.4 MB, about 30 µs a command, trained here in 15 s from 62100 generated
+      sentences (`nexa-intent-train`, same bytes every time: `make test-intent`). Below 50 % sure, or leaning on words its intent never
+      uses ("lock the front door"), it's not a command: the word rules stay beside it. Measured on hand-written sets: 97.9 % (187, used to
+      tune), 91.7 % (60, never tuned on; the misses come back as not a command), 39 of 40 everyday non-computer requests kept out, no delete
+      or chat sentence ever made an action. MicroBrain with it loaded: 3.6 MB PSS.
+- [ ] Later: a chat model that knows NexaOS (about 0.5B, fine-tuned on a GPU elsewhere) for questions; this model only does commands.
 
 ### 12. AdaptivePulse (resource modes)
 - Exists: `nexa-kerneld` CPU floor for the app in front and the AI cgroup cap; power profiles in Settings > Power.

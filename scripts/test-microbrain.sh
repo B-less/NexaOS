@@ -73,6 +73,16 @@ a=$($U "$E nexa-microbrain ask opne donwloads")
 [ "$(echo "$a" | jq -r ".results.hits[0].action.path")" = /home/user/Downloads ] && pass "ZeroSearch: \"opne donwloads\" opens Downloads" || fail "ask" "$a"
 a=$($U "$E nexa-microbrain ask delete all my files")
 echo "$a" | jq -e ".results.hits == [] and (.results.note | startswith(\"I can\"))" >/dev/null && pass "ZeroSearch: a delete request is refused, not guessed" || fail "delete refused" "$a"
+a=$($U "$E nexa-microbrain ask the screen is way too bright")
+echo "$a" | jq -e ".results.hits[0].action == {\"type\":\"brightness\",\"delta\":-10}" >/dev/null && pass "the command model: \"the screen is way too bright\" lowers it" || fail "model wording" "$a"
+a=$($U "$E nexa-microbrain ask take me to layer 3")
+echo "$a" | jq -e ".results.hits[0].action == {\"type\":\"layer\",\"to\":3}" >/dev/null && pass "the command model: \"take me to layer 3\"" || fail "model layer" "$a"
+a=$($U "$E nexa-microbrain ask lock the front door")
+echo "$a" | jq -e ".results.hits == []" >/dev/null && pass "the command model: \"lock the front door\" is not the screen lock" || fail "model outside" "$a"
+for i in $(seq 20); do $U "$E nexa-microbrain ask make the screen darker" >/dev/null; done
+st=$($U "$E nexa-microbrain status")
+echo "MEASURED with the command model loaded (after 20 commands): PSS $(echo "$st" | jq -r .self.pss_mb) MB"
+awk "BEGIN{exit !($(echo "$st" | jq -r .self.pss_mb) < 12)}" && pass "small with the model loaded (PSS under 12 MB)" || fail "model memory" "$(echo "$st" | jq -r .self.pss_mb) MB"
 a=$($U "$E nexa-microbrain answer slow")
 echo "$a" | jq -r .text | grep -q "^Memory: " && pass "\"Why is my computer slow?\" answers from real numbers" || fail "slow answer" "$a"
 r=$(printf "%s\n" "{\"cmd\":\"workspace-save\",\"name\":\"Coding\",\"folder\":\"~/Projects/App\",\"windows\":[{\"app_id\":\"nexa-edit\",\"rect\":[1,2,3,4]},{\"app_id\":\"made-up\"}]}" | $U "socat - UNIX-CONNECT:/run/user/1000/nexa-microbrain.sock" 2>/dev/null)

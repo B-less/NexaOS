@@ -166,6 +166,17 @@ def run(action):
         return ("Couldn't restore everything: " + "; ".join(problems)) if problems else ""
     elif kind == "answer":
         return request("answer", topic=action.get("topic", "")).get("text", "")
+    elif kind == "layer":  # Strata
+        if "to" in action:
+            n = int(action["to"])
+            if not 1 <= n <= 5:
+                raise BrainError("There are five layers: 1 to 5.")
+            _spawn(["nexa-strata", "go", str(n)])
+        else:
+            _spawn(["nexa-strata", "dive", "+1" if int(action.get("step", 1)) > 0 else "-1"])
+    elif kind == "quiet":  # Do not disturb (Nexa Signals)
+        _spawn(["nexa-signalctl", "mode", "-a" if action.get("on") else "-r", "do-not-disturb"])
+        return "Do not disturb is on: notifications wait in Deck's Signals card." if action.get("on") else "Do not disturb is off."
     else:
         raise BrainError("NexaOS doesn't know how to do that.")
     return ""

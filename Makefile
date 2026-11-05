@@ -32,7 +32,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later test-settings-devices test-bootfix test-editor-app test-viewer-app test-pdf-app test-music-app test-browser-features test-photos-app
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later test-settings-devices test-bootfix test-editor-app test-viewer-app test-pdf-app test-music-app test-browser-features test-photos-app test-intent
 .SECONDARY:
 
 # ============================================================================
@@ -343,7 +343,7 @@ iconset:
 	@rm -rf assets/iconset/NexaHexa assets/iconset/NexaHexa-*
 	@# The themes' colours, from themes.py, so the variants never drift from it.
 	@python3 -c "import sys; sys.path.insert(0, 'common'); from nexa_common import themes; h = lambda c: c if isinstance(c, str) else '#%02x%02x%02x' % tuple(c); print('# name dark accent accent2 surface (from themes.py)'); [print(n, int(t['dark']), t['accent'], t['accent2'], h(t['surface'])) for n, t in themes.THEMES.items()]" > assets/iconset/themes.txt
-	@docker run --rm -v "$(BASE_DIR):/src" -v /var/tmp/nexa-cargo:/root/.cargo/registry -w /src/assets/iconset/forge nexa-rust:$(basename $(ALPINE_VERSION)) sh -c 'cargo test -q && cargo run -q --release -- /src/assets/iconset/NexaHexa /src/assets/iconset/themes.txt && chown -R $(shell id -u):$(shell id -g) /src/assets/iconset'
+	@docker run --rm -v "$(BASE_DIR):/src" -v /var/tmp/nexa-cargo:/root/.cargo/registry -w /src/assets/iconset/forge nexa-rust:$(shell echo $(ALPINE_VERSION) | cut -d. -f1,2) sh -c 'cargo test -q && cargo run -q --release -- /src/assets/iconset/NexaHexa /src/assets/iconset/themes.txt && chown -R $(shell id -u):$(shell id -g) /src/assets/iconset'
 	@docker run --rm -v "$(BASE_DIR)/assets/iconset:/i" nexa-apptest:$(basename $(ALPINE_VERSION)) python3 -c "import gi; gi.require_version('GdkPixbuf', '2.0'); from gi.repository import GdkPixbuf; GdkPixbuf.Pixbuf.new_from_file_at_size('/i/NexaHexa/preview.svg', 1240, -1).savev('/i/preview.png', 'png', [], []); GdkPixbuf.Pixbuf.new_from_file_at_size('/i/NexaHexa/preview-themes.svg', 1240, -1).savev('/i/preview-themes.png', 'png', [], [])" 2>/dev/null
 	@echo "icons: assets/iconset/NexaHexa, preview: assets/iconset/preview.png"
 
@@ -386,6 +386,12 @@ test-titlebar: nexa-apps
 # to memory pressure, modes, restart and a damaged settings file.
 test-microbrain: native
 	@sh scripts/test-microbrain.sh
+
+# The tiny command model (tools/nexa-intent): trained again from scratch,
+# it must give the same bytes as model/nexa-intent.bin, and its scores.
+test-intent:
+	@docker run --rm -v "$(CURDIR):/src" -v /var/tmp/nexa-cargo:/root/.cargo/registry -w /src/tools nexa-rust:$(shell echo $(ALPINE_VERSION) | cut -d. -f1,2) \
+	    sh -c 'cargo test -q -p nexa-intent && cargo run -q --release -p nexa-intent --bin nexa-intent-train -- --check'
 
 # Nexa Link between three machines (a PC, a phone, a stranger) on a private
 # Docker network: pairing, Nexa-only signals, files, Nexa Drop, Forget.

@@ -6,6 +6,7 @@
  *
  *   nexa-strata dive +1|-1    one layer deeper / back up (stops at 1 and 5)
  *   nexa-strata carry +1|-1   the same, taking the window in front along
+ *   nexa-strata go N          straight to layer N (1..5)
  *   nexa-strata current       print the layer on screen (0: not a layer)
  *
  * No GTK: it starts in about a millisecond, so each scroll step can run it. */
@@ -51,7 +52,7 @@ static int too_soon(void)
 
 static int usage(void)
 {
-    fprintf(stderr, "usage: nexa-strata dive +1|-1 | carry +1|-1 | current\n");
+    fprintf(stderr, "usage: nexa-strata dive +1|-1 | carry +1|-1 | go 1..5 | current\n");
     return 2;
 }
 
@@ -68,6 +69,15 @@ int main(int argc, char **argv)
             return 1;
         }
         printf("%d\n", cur >= 1 && cur <= STRATA_LAYERS ? cur : 0);
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "go")) {
+        int n = strata_step(argv[2]);
+        if (argv[2][0] == '+' || argv[2][0] == '-' || n < 1 || n > STRATA_LAYERS) return usage();
+        if (wm_workspace_go(n) < 0) {
+            fprintf(stderr, "nexa-strata: couldn't reach layer %d\n", n);
+            return 1;
+        }
         return 0;
     }
     if (argc != 3 || (strcmp(argv[1], "dive") && strcmp(argv[1], "carry"))) return usage();

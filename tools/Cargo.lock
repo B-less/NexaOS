@@ -569,6 +569,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-intent"
+version = "0.1.0"
+
+[[package]]
 name = "nexa-kerneld"
 version = "0.1.0"
 dependencies = [
@@ -598,6 +602,7 @@ name = "nexa-microbrain"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "nexa-intent",
  "nexa-sys",
  "serde",
  "serde_json",

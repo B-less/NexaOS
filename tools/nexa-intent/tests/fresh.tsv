@@ -1,0 +1,62 @@
+# A second hand-written set, written after heldout.tsv had been used to tune
+# the patterns: measured once, never tuned on. Its score is the honest one.
+open_downloads	can i see what i downloaded today
+open_documents	documents please
+open_trash	show me what i threw away
+launch	open calc	calc
+launch	could you start obs for me	obs
+launch	open the clock app	clock
+launch	launch krita	krita
+launch	open my mail	mail
+launch	start the image viewer	image viewer
+find_file	where on earth is my passport scan	passport scan
+find_file	help me find the wedding photos	wedding photos
+find_file	where did i save the contract	contract
+workspace_go	activate the research workspace	research
+brightness_down	screen too bright at night
+brightness_down	could you dim the display
+brightness_up	its very dark make the screen brighter
+brightness_set	brightness 50 percent
+volume_down	a bit quieter
+volume_up	the volume is too low
+volume_set	put the volume at 20
+mute	turn the sound off
+unmute	i want the sound back
+lock	lock up the pc
+suspend	sleep
+reboot	reboot the system now
+poweroff	switch off the pc
+mode_low_resource	stop the background scans
+mode_battery_saver	save power
+mode_performance	turbo mode
+answer_slow	the computer is really sluggish today
+answer_battery	is the battery charging
+answer_memory	ram usage
+answer_crash	my game crashed
+answer_network	the wifi is down
+rewind	rewind my settings
+settings	open preferences
+settings_network	join the wifi network
+settings_bluetooth	connect my bluetooth speaker
+settings_personalization	choose a new background picture
+settings_updates	are there any updates
+settings_display	change the screen scaling
+settings_sound	pick a different speaker
+settings_accessibility	reduce motion
+layer_go	switch to layer four
+layer_next	go one layer deeper
+layer_prev	up a layer
+quiet_on	mute all notifications
+quiet_off	resume notifications
+destroy	erase my documents
+destroy	delete the downloads
+destroy	wipe the computer
+unknown	what time is it in london
+unknown	tell me about the history of ghana
+unknown	can you sing
+unknown	good morning
+unknown	who is the president of ghana
+unknown	how do i learn to code
+unknown	write a poem about rain
+unknown	whats 12 times 12
+unknown	order pizza

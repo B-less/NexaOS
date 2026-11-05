@@ -1,0 +1,17 @@
+[package]
+name = "nexa-intent"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "NexaOS's tiny command model: what a typed or spoken command asks for, about 1 MB, trained here from generated sentences"
+
+[features]
+# The trained model, built in (model/nexa-intent.bin). Off for the trainer,
+# which makes that file.
+builtin = []
+
+[[bin]]
+name = "nexa-intent-train"
+path = "src/bin/train.rs"
+
+[dependencies]

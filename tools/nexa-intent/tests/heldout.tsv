@@ -1,0 +1,189 @@
+# Hand-written commands the model never trains on: intent, sentence, the
+# name in it (if any). Phrased unlike data.rs's patterns, with typos.
+open_downloads	where did my downloads end up
+open_downloads	show downlods
+open_downloads	take me to the stuff i just downloaded
+open_downloads	open my downloads pls
+open_documents	open documents folder
+open_documents	go to my docs
+open_documents	i want to see my documents
+open_pictures	open the pictures folder
+open_pictures	show me my pictures directory
+open_music_folder	open music folder
+open_videos	browse my videos folder
+open_desktop	open desktop folder
+open_home	show my home folder
+open_trash	whats in the recycle bin
+open_trash	open trash
+open_trash	i deleted something by mistake where is the bin
+launch	open firefox	firefox
+launch	launch the calculator	calculator
+launch	fire up spotify	spotify
+launch	start telegram please	telegram
+launch	open fierfox	fierfox
+launch	can you open the text editor	text editor
+launch	run blender	blender
+launch	i need the terminal	terminal
+launch	bring up discord	discord
+launch	open photos	photos
+launch	start the video player	video player
+launch	gimp	gimp
+launch	launch vs code	vs code
+launch	open nexa store	nexa store
+launch	open the music app	music
+launch	open the pdf viewer	pdf viewer
+find_file	where did i put my cv	cv
+find_file	wheres my invoice	invoice
+find_file	i cant find the budget spreadsheet	budget spreadsheet
+find_file	find my thesis draft	thesis draft
+find_file	where did the tax return go	tax return
+find_file	locate the meeting notes	meeting notes
+find_file	where is my resume	resume
+find_file	i lost the project plan	project plan
+workspace_go	restore my coding workspace	coding
+workspace_go	switch to the study workspace	study
+workspace_go	open android development workspace	android development
+workspace_save	save these windows as a workspace
+workspace_save	make a new workspace from this
+brightness_down	the screen is way too bright
+brightness_down	turn down the brightnes
+brightness_down	dim it a bit
+brightness_down	lower screen brightness
+brightness_down	make the display less bright
+brightness_up	brighten the screen
+brightness_up	i cant see anything the screen is too dark
+brightness_up	more brightness please
+brightness_up	turn the brightness up
+brightness_set	brightness to 40
+brightness_set	set screen brightness at 80 percent
+brightness_set	put brightness on 100
+volume_down	its too loud
+volume_down	turn the volume down a little
+volume_down	lower the sound
+volume_down	quieter please
+volume_up	louder
+volume_up	i can barely hear it turn it up
+volume_up	increase volume
+volume_up	raise the audio
+volume_set	volume 30
+volume_set	set the volume to 60 percent
+mute	mute
+mute	mute the speakers
+mute	silence the computer
+unmute	unmute
+unmute	turn the sound back on
+lock	lock my computer
+lock	lock the screen im going for lunch
+lock	lock it
+suspend	put the laptop to sleep
+suspend	suspend
+suspend	go to sleep now
+reboot	restart the computer
+reboot	reboot please
+reboot	restart my pc
+poweroff	shut down the computer
+poweroff	turn off the laptop
+poweroff	power off
+poweroff	shut it down im done
+mode_low_resource	pause background tasks
+mode_low_resource	stop indexing for now
+mode_low_resource	free up some memory
+mode_battery_saver	turn on battery saver
+mode_battery_saver	i need the battery to last longer
+mode_battery_saver	power saving mode
+mode_performance	performance mode
+mode_performance	max performance please
+mode_performance	go full speed
+mode_balanced	back to balanced mode
+mode_auto	automatic mode
+mode_auto	resume background work
+answer_slow	why is my laptop so slow
+answer_slow	everything is lagging
+answer_slow	my pc keeps freezing
+answer_slow	whats slowing my computer down
+answer_slow	why is the fan so loud
+answer_battery	how is my battery
+answer_battery	battery health
+answer_battery	how much battery do i have left
+answer_memory	whats using all my ram
+answer_memory	how much memory is free
+answer_crash	why did my browser crash
+answer_crash	the app just closed by itself
+answer_crash	the editor disappeared
+answer_network	why is there no internet
+answer_network	my wifi isnt working
+answer_network	i cant connect to the internet
+answer_network	internet keeps dropping
+answer_stopped	why did the download stop
+answer_stopped	what is paused
+rewind	undo my settings change
+rewind	put my settings back how they were
+rewind	revert the theme change
+settings	open settings
+settings	system settings
+settings	control panel
+settings_network	connect to wifi
+settings_network	turn off wifi
+settings_network	wifi settings
+settings_bluetooth	pair my headphones
+settings_bluetooth	turn on bluetooth
+settings_personalization	change the wallpaper
+settings_personalization	i want dark mode
+settings_personalization	change my theme
+settings_privacy	which apps can use my camera
+settings_privacy	privacy settings
+settings_time	the clock is wrong
+settings_time	change the keyboard layout
+settings_users	change my password
+settings_users	add a new user
+settings_updates	check for updates
+settings_updates	update the system
+settings_link	connect my phone
+settings_power	when does the screen go to sleep
+settings_vpn	connect to the vpn
+settings_startup	which apps start when i log in
+settings_magic	turn off the animated background
+settings_layers	layer settings
+settings_layers	give each layer a mood
+settings_notifications	notification settings
+settings_display	change the resolution
+settings_display	connect a second screen
+settings_display	turn on night light
+settings_sound	my microphone isnt working
+settings_sound	choose the headset as output
+settings_accessibility	make the text bigger
+settings_accessibility	bigger mouse pointer
+layer_go	go to layer 3
+layer_go	layer two
+layer_go	take me to layer 5
+layer_next	next layer
+layer_next	dive deeper
+layer_prev	previous layer
+layer_prev	go back up a layer
+quiet_on	do not disturb
+quiet_on	no notifications for now
+quiet_on	turn on focus mode
+quiet_on	silence the alerts
+quiet_off	turn off do not disturb
+quiet_off	show my notifications again
+destroy	delete all my photos
+destroy	wipe my hard drive
+destroy	uninstall spotify	spotify
+destroy	format the usb stick
+destroy	remove everything in downloads
+destroy	kill firefox	firefox
+destroy	factory reset the laptop
+unknown	what is the capital of ghana
+unknown	tell me a joke
+unknown	how are you
+unknown	write an email to my teacher
+unknown	whats the weather in kumasi
+unknown	who won the match yesterday
+unknown	how do i bake bread
+unknown	thanks
+unknown	hello
+unknown	explain photosynthesis
+unknown	i am bored
+unknown	set an alarm for 6am
+unknown	recommend a good movie
+unknown	translate good morning to twi
