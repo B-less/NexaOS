@@ -1,0 +1,17 @@
+[package]
+id = "photos"
+name = "Photos"
+version = "1.0.0"
+description = "Your ~/Pictures by month: favourites, albums, search, details, slideshow, and Deleted for 30 days"
+categories = "Graphics;Photography;Viewer;"
+icon = "icon.svg"
+screenshots = ["shots/library.png", "shots/viewer.png", "shots/albums.png"]
+
+[build]
+command = "make"
+binary = "build/photos"
+
+[requires]
+# All already part of NexaOS, so installing needs no internet.
+depends = ["gtk+3.0", "libjpeg-turbo"]
+permissions = ["files.pictures"]

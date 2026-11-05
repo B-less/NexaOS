@@ -65,7 +65,7 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [x] USB drives and SD cards on the desktop (2026-10-25): the broker (Rust) publishes /run/nexa/drives.json on every change; `nexa-drives` shows each drive top-left (click opens it in Files, right-click Open / Eject), follows the theme; headless test
 - [ ] Nexa Identity (plan: TODOnexa_identity.md): our own look wherever people look every day. Orbit, the app rail on the left edge, replaced the Dock (2026-11-04); next Deck, Signals, Strata, Constellation
 - [ ] The Hive: apps, files and folders on the desktop in a honeycomb (plan: docs/DESKTOP_PLAN.md): D1 engine nexa-desktopd (Rust) + cells, D2 pinned apps, D3 thumbnails and Today, D4 clusters, D5 drag and keyboard, D6 settings
-- [ ] More of our own apps (.nexa, C/Rust): Photos, Music, Backup, Mail
+- [ ] More of our own apps (.nexa, C/Rust): Backup, Mail (Photos done 2026-11-05: apps/photos; Music is the system app)
 - [ ] Smart power: power-saving mode on battery, battery health, time-left estimate
 
 ## 4b. Next-gen ideas, made practical (from the "next-generation OS" article)

@@ -123,6 +123,9 @@ permissions, install/remove/open through the broker.
       app's page, one switch per permission (the same file Settings > Privacy
       writes and nexa-run reads), marked when NexaOS can't enforce it yet.
 - [ ] More apps in the catalogue (see TODO.md: Photos, Backup, Mail).
+  - [x] Photos (2026-11-05): `apps/photos`, see its section below.
+  - [ ] Backup
+  - [ ] Mail
 
 ## Text Editor (text-editor, engine nexa-textio)
 
@@ -198,3 +201,32 @@ volume.
 - [x] Media keys (MPRIS; play/pause/next/previous keys bound to playerctl
       in Sway and Hyprland). The top bar has no player controls yet.
 - [x] Remembers the queue and position; gapless next song.
+
+## Photos (apps/photos, .nexa in C)
+
+Built 2026-11-05 (`make test-photos-app`: 56 unit checks, the window through
+nexa-run confined to files.pictures, the package built twice byte-identical,
+verified and run from the package).
+
+- [x] Library: every picture under ~/Pictures (subfolders, hidden ones
+      skipped), by month, newest first; new ones show up by themselves; an
+      index in ~/.cache/photos so the next start reads only what changed
+- [x] Fast thumbnails: JPEGs decoded with libjpeg-turbo, shrunk while
+      decoding (about 25 times faster than gdk-pixbuf/glycin), off the main
+      thread, kept as small PNGs
+- [x] EXIF read in C (date, orientation, camera, settings, place), with
+      20000 damaged copies in the unit tests; photos shown the right way up
+- [x] Viewer: zoom (wheel, +/-, 0 fit, 1 actual size), drag, Left/Right,
+      Home/End, crossfade, Details panel, F11
+- [x] Turning a photo is remembered; the file is never rewritten
+- [x] Favourites and albums (Ctrl/Shift+click to select, Add to Album,
+      Rename, Delete Album); files stay where they are
+- [x] Search: every word, in names, folders, months, camera, albums
+- [x] Slideshow: full screen, 4 s, Space pauses
+- [x] Deleted for 30 days with Undo and Put Back (an installed app can't
+      reach the system Trash: ~/.local/share/Trash is outside its folders)
+- [x] Hostile files: empty, text named .jpg, a header claiming 60000 x 60000,
+      cut short, a PNG named .jpg, quotes and spaces in names
+- [ ] Later: import from a USB stick or camera (installed apps can't read
+      /media yet: needs a nexa-run rule or a broker action)
+- [ ] Later: editing (crop, light, colour), a map of the places
