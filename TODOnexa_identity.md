@@ -61,6 +61,47 @@ shapes come from docs/ROADMAP.md section 1 (Hexa).
 - [ ] **Quiet modes** (Work / Study / Night), shared with the Magic Layer's
       Quiet: background, which Signals get through, power profile.
 
+## Phase 5: ideas no other desktop has (planned 2026-11-05)
+
+Each builds on a part NexaOS already has. Same rules as above: C or Rust,
+follows the theme live, honours reduced motion and the 2 GB profile, works
+from the keyboard, measured. Suggested order: Layer moods, Edge glow, Chalk;
+then Lantern and the pointer set; then Glyphs and Hex Ring; Then after
+Backup.
+
+- [ ] **Layer moods** (Strata): each layer has its own mood: which Signals
+      get through, a Quiet mode, a Living style, a power profile. Diving
+      to layer 3 ("Work") silences chat; layer 5 ("Night") dims. The place
+      sets the mood, not the clock. Build: `strata.conf` per-layer keys,
+      nexa-signald learns the current layer, a Settings page. Small.
+- [ ] **Edge glow** (Signals + Living): a window that finished something or
+      needs you glows softly at its own edge, in the accent, instead of a
+      box in a corner; it fades once the window is looked at. Living
+      already knows every window's place and draws it on the background,
+      just outside the window. Small to medium.
+- [ ] **Glyphs**: Super+; labels every button, link and field on the
+      screen with two letters; typing them clicks it. Every app, through
+      AT-SPI. C overlay (layer-shell, keyboard grab) + at-spi2-core.
+      Medium to large.
+- [ ] **Chalk**: a short note written on a layer's background ("call the
+      bank"), behind the windows, in the theme's colours; it stays with
+      that layer. Living draws it; a tiny C editor;
+      `~/.config/nexa/chalk.json`. Small.
+- [ ] **Hex Ring**: Super+V opens the last 8 copied things (text, pictures,
+      files) as a ring around the pointer; point and release pastes. Off
+      until switched on, nothing from password apps
+      (`x-kde-passwordManagerHint`), never leaves the PC. C,
+      wlr-data-control. Medium.
+- [ ] **Lantern**: Super+L dims every other window and slows the
+      background; an optional timer shows as a hexagon slowly closing on
+      the window's edge. Window opacity through Sway/Hyprland IPC, the
+      timer in Living. Small.
+- [ ] **Then** (after Backup): a slider in Files shows a folder as it was
+      yesterday or last week, from Backup's snapshots; drag a file out to
+      get it back. Medium.
+- [ ] **Hexa pointer set**: NexaOS's own cursor theme, hexagon-based; busy
+      is a slowly turning hexagon. SVG cursors made by a script. Small.
+
 ## Orbit
 
 `tools-c/nexa-orbit` (C: GTK3 + gtk-layer-shell, cairo, Pango), its own
