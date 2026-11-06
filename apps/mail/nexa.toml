@@ -1,0 +1,19 @@
+[package]
+id = "mail"
+name = "Mail"
+version = "1.0.0"
+description = "Your email over IMAP and SMTP: folders, reading offline, writing with attachments, search, no tracking pictures"
+categories = "Network;Email;Office;"
+icon = "icon.svg"
+screenshots = ["shots/reading.png", "shots/reply.png", "shots/setup.png"]
+
+[build]
+command = "make"
+binary = "build/mail"
+
+[requires]
+# Already part of NexaOS, so installing needs no internet.
+depends = ["gtk+3.0", "libcurl", "libcrypto3"]
+# The internet (your mail server), Documents (saving attachments, attaching
+# files) and Pictures (attaching pictures).
+permissions = ["network", "files.documents", "files.pictures"]

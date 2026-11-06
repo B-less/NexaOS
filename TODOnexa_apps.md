@@ -125,7 +125,7 @@ permissions, install/remove/open through the broker.
 - [ ] More apps in the catalogue (see TODO.md: Photos, Backup, Mail).
   - [x] Photos (2026-11-05): `apps/photos`, see its section below.
   - [x] Backup (2026-11-05): `apps/backup`, see its section below.
-  - [ ] Mail
+  - [x] Mail (2026-11-06): `apps/mail`, see its section below.
 
 ## Text Editor (text-editor, engine nexa-textio)
 
@@ -257,3 +257,27 @@ nexa-pack, the Store, Settings > Privacy, the installer and the docs.
 - [ ] Later: encrypted backups (needs a crypto library NexaOS ships to C
       apps), backing up by itself when the drive is plugged in (needs the
       background permission enforced)
+
+## Mail (apps/mail, .nexa in C)
+
+Built 2026-11-06 (`make test-mail-app`: 41 engine checks, the window
+through nexa-run against a real IMAP server (Dovecot, TLS) and a test SMTP
+server (STARTTLS), the package built twice byte-identical, verified, run
+from the package). Permissions: network, files.documents, files.pictures.
+
+- [x] Add an account: servers filled in for Gmail, Outlook, Yahoo, iCloud,
+      Zoho, AOL and guessed for others; a plain connection only to this
+      computer; the password encrypted (ChaCha20-Poly1305), never in the
+      settings file
+- [x] Folders known by their roles, unread counts, new mail every few
+      minutes; an offline copy, so mail read before still reads offline
+- [x] Reading: HTML shown as text (no scripts, styles or tracking
+      pictures; links kept), any charset, attachments saved into Documents
+- [x] Writing: Reply, Reply All, Forward (threaded, quoted), attachments
+      from Documents and Pictures, a copy in Sent, the original marked
+      answered
+- [x] Search (this folder's list, Enter: the server searches every
+      message), Flag, Delete (to Trash; in Trash, for good)
+- [ ] Later: open mailto: links (so Settings > Default apps offers Mail;
+      needs a MIME field in nexa.toml), signing in to Gmail/Outlook
+      without an app password (OAuth), Nexa Mind summaries (local)
