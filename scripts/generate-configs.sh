@@ -1253,9 +1253,11 @@ bindsym $mod+shift+space floating toggle
 # Super+Space is Nexus, so the tiled/floating focus toggle moves here.
 bindsym $mod+Ctrl+space focus mode_toggle
 
-# Cycle focus between open windows, alt-tab style
-bindsym $mod+Tab focus next
-bindsym $mod+Shift+Tab focus prev
+# Constellation, the window overview (in Orbit; nexa-constellation opens and
+# closes it). Alt+Tab cycles focus between open windows.
+bindsym $mod+Tab exec nexa-constellation
+bindsym Mod1+Tab focus next
+bindsym Mod1+Shift+Tab focus prev
 
 # Scratchpad (restores windows minimized via each app's titlebar button --
 # sway ignores Wayland's own minimize request since there's no taskbar to
@@ -1397,7 +1399,7 @@ windowrule = center on, match:class .*
 # themselves, so Hyprland's own layer animation is off for them.
 layerrule = blur on, match:namespace ^(waybar|nexa-.*)$
 layerrule = ignore_alpha 0.1, match:namespace ^(waybar|nexa-.*)$
-layerrule = no_anim on, match:namespace ^(nexa-panel|nexa-deck|nexa-signals|nexa-strata|waybar|barhide-ghost)$
+layerrule = no_anim on, match:namespace ^(nexa-panel|nexa-deck|nexa-signals|nexa-strata|nexa-constellation|waybar|barhide-ghost)$
 
 bind = SUPER, Return, exec, foot
 bind = SUPER, D, exec, nexa-start
@@ -1422,8 +1424,9 @@ bind = SUPER, Left, movefocus, l
 bind = SUPER, Right, movefocus, r
 bind = SUPER, Up, movefocus, u
 bind = SUPER, Down, movefocus, d
-bind = SUPER, Tab, cyclenext
-bind = SUPER, Tab, bringactivetotop
+bind = SUPER, Tab, exec, nexa-constellation
+bind = ALT, Tab, cyclenext
+bind = ALT, Tab, bringactivetotop
 bind = SUPER, 1, workspace, 1
 bind = SUPER, 2, workspace, 2
 bind = SUPER, 3, workspace, 3

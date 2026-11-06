@@ -1,0 +1,11 @@
+[package]
+name = "nexa-starmap"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Constellation's graph: which project each open window belongs to"
+
+[dependencies]
+libc = "0.2"
+nexa-sys = { path = "../nexa-sys" }
+serde_json = "1"

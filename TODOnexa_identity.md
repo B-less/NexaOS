@@ -37,9 +37,9 @@ shapes come from docs/ROADMAP.md section 1 (Hexa).
 
 ## Phase 2: windows our own way
 
-- [ ] **Strata**: workspaces as layers behind each other; Super+scroll
+- [x] **Strata** (2026-11-05): workspaces as layers behind each other; Super+scroll
       dives through them; each layer tints the Living background.
-- [ ] **Constellation**: every window as a star grouped by app, lines
+- [x] **Constellation** (2026-11-06; first real use with the next ISO): every window as a star grouped by app, lines
       between windows of one project (same folder, from FileTrail and open
       files). Rust builds the graph, C draws it.
 - [ ] **Tethers**: windows that belong together share a thin coloured edge;
@@ -372,3 +372,90 @@ Colours come from `~/.config/nexa/lock.conf`.
       about 1 MB to Orbit while shown (26 MB to 27 MB); Living stays at 9 MB
 - [ ] Later: tested in a Hyprland session (its bindings and gesture are
       written but only Sway runs in the test)
+
+## Constellation
+
+The window overview: every open window as a star on a night sky in the
+theme's colours, the windows of one app forming one figure, lines between
+windows of one project. Not a grid of shrunken window pictures: no
+thumbnails at all (nothing to capture, little memory, the 2 GB profile
+keeps it).
+
+**Two parts**, so the part that reads other programs' state is Rust and
+the part on the screen is C:
+
+- **`nexa-starmap`** (Rust, `tools/nexa-starmap`): builds the graph. It
+  reads one line per window (id, pid, app, title) and answers each
+  window's project: a folder, its name, and why. Clues, each with a
+  weight: a path in the title (`~/…`, `/home/…`) 4; a file name in the
+  title that names one recent file (GTK's recently-used.xbel) or one file
+  FileTrail followed to where it is now, 3 (two different folders with
+  that name: ignored); files the window's processes hold open, 2 each; the
+  working folder of its child processes (a terminal's shell), 2; its own
+  working folder, 1. A folder becomes its project root: the nearest folder
+  above it with `.git`, `Cargo.toml`, `package.json`, `pyproject.toml`,
+  `go.mod` or `.nexa-project`; without one, two levels under home
+  (`~/Documents/Thesis`), or one level for a folder that isn't a standard
+  one (`~/notes`). Never home itself, hidden folders, `~/Downloads` and the
+  other standard folders on their own. The highest total wins. Only your
+  own processes; reads, never writes; nothing leaves the PC.
+- **The sky** (C, `tools-c/nexa-constellation`, inside Orbit's process like
+  Strata's stack: it shares Orbit's window list, icons and theme; its
+  window exists only while open).
+
+**Shape.** Apps are placed on a hexagon grid spiralling out from the
+centre, the app used last in the middle. An app's windows sit on a small
+ring and are joined by faint lines into one figure; one window is a lone
+star. Each star is a pointy-top hexagon with the app icon, a soft glow
+(brighter the more recently used), the title under it. A window on
+another Strata layer carries that layer's number in a small hexagon in
+the layer's tint; a minimised one is drawn at half strength; one that
+needs you has a slowly turning dashed ring in the warning colour.
+Windows of one project are joined by dashed accent lines (the shortest
+tree through them), the project's name beside them. Stars fly out from
+the middle when it opens (200 ms); reduced motion: no flight, no turning.
+
+**Use.** Super+Tab opens it (and closes it again), starting on the window
+used before the one in front, so Super+Tab, Enter swaps back; Alt+Tab takes over
+Super+Tab's old "next window". Arrows move to the nearest star that way,
+Tab / Shift+Tab by recent use, Home to the window in front; typing finds
+(title or app; the rest fade), Backspace; Enter or Space goes to the window
+(its layer too); Delete or Ctrl+W closes it; Escape clears the search, then
+leaves. Pointer: hover picks, click goes, middle click closes, a click on
+the sky leaves.
+
+**Files.** Nothing of its own. Colours from `lock.conf` (via Orbit),
+layer tints from Strata. `NEXA_CONSTELLATION_STATE=<file>`: what is shown,
+as JSON (tests).
+
+- [x] `nexa-starmap` with unit tests (`cargo test -p nexa-starmap`: a fake
+      /proc and home: titles, paths with spaces, open files, working
+      folders, roots, recent files, ambiguity, someone else's processes, a
+      looping process table). It reads /proc before confining itself to
+      the home folder: Landlock keeps a confined process from reading
+      other processes' cwd and fd links
+- [x] Layout, the project tree, finding and the arrow keys in C with unit
+      tests (29 checks)
+- [x] The sky in Orbit; window titles in Orbit's compositor code; the order
+      windows were used in is kept by the sky (Sway doesn't say)
+- [x] Both session configs (Super+Tab, Alt+Tab; the key binding test knows
+      them). Editor, Files and PDF Viewer already add files to the recent
+      files
+- [x] Headless Sway test (`make test-constellation`, 47 checks, screenshots
+      in dist/constellation-test): opened by the session's own binding,
+      every window a star (one on layer 3 too), an app's windows one
+      figure, the app used last in the middle, projects from a terminal's
+      shell folder, a recent file's name and a file held open (none for
+      Downloads or a note in home), one line per project; Tab, Shift+Tab,
+      Home, the arrows, finding, Backspace, Escape, Enter (to another layer
+      too), Delete; pointing, clicking, a click on the sky; a window that
+      needs you; a light theme while open; reduced motion; without Orbit
+- [x] Measured (headless): Orbit 9.4 MB PSS closed, 17.1 MB while the sky is
+      open (its full-screen frames); after the first opening about 1.5 MB
+      more of its own memory stays (plus font files and library pages,
+      shared with other apps in a session); its own memory levels off (4 to
+      8 MB of it, by use) and stays there over 30 openings. `nexa-starmap`: 500 KB, 8 ms for 5 windows
+- [ ] Not yet tested: Hyprland (its binding is written), a real session with
+      many windows, HiDPI
+- [ ] Later: Nexa Mind can open it ("show my windows"), windows' thumbnails
+      on hover (only if cheap), Tethers (phase 2) drawn from the same graph

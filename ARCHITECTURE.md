@@ -42,6 +42,7 @@ signed HTTPS repositories.
 | `nexa-start` | Start menu: search, pinned apps, power (Super+D) |
 | `nexa-deck` | Deck (C, tools-c/nexa-deck): quick settings as cards on the right: Wi-Fi, Bluetooth, sound, brightness, VPN, Quiet, now playing, notifications (Super+N; `nexa-deck wifi` opens on a card) |
 | `nexa-orbit` | Orbit (C, tools-c/nexa-orbit): the app rail on the left edge; hexagon frames show running, CPU activity, in front, waiting, starting; Super+O for the keyboard |
+| `nexa-constellation` | Constellation (C, drawn inside Orbit; graph by `nexa-starmap`, Rust): the window overview, every window a star, an app's windows one figure, lines between windows of one project (Super+Tab; Alt+Tab cycles windows) |
 | `nexa-launchpad` | Full-screen app grid with type-to-search (Super+Space) |
 | `nexa-lock` | Lock screen: starts `nexa-locker` (C, ext-session-lock), swaylock as fallback; idle lock/blank set in Settings > Power |
 | `nexa-signald` + `nexa-signals` | Signals, the notifications: the service (Rust: org.freedesktop.Notifications, Quiet, muted apps, history in memory) and the tabs hanging from the bar (C); `nexa-signalctl` for Deck, the bar and Settings |

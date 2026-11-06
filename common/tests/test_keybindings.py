@@ -26,10 +26,12 @@ dups = {k: v for k, v in sway.items() if len(v) > 1}
 check(f"sway: {len(sway)} bindings, none bound twice", sway and not dups, str(dups))
 check("sway: Nexus on Super+Space", ("", "$mod+space") in sway)
 check("sway: Nexa Pulse on Ctrl+Shift+Esc", ("", "ctrl+escape+shift") in sway)
+check("sway: Constellation on Super+Tab, focus cycling on Alt+Tab",
+      "bindsym $mod+Tab exec nexa-constellation" in text and ("", "mod1+tab") in sway)
 
-# Hyprland: "bind = MODS, KEY, dispatcher, args". Super+Tab is bound twice
+# Hyprland: "bind = MODS, KEY, dispatcher, args". Alt+Tab is bound twice
 # on purpose (cycle focus, then raise it), so pairs listed here are allowed.
-ALLOWED = {("super", "tab")}
+ALLOWED = {("alt", "tab")}
 hypr = {}
 for n, line in enumerate(text.splitlines(), 1):
     m = re.match(r"\s*bind[a-z]*\s*=\s*([^,]*),\s*([^,]+),", line)
@@ -40,5 +42,6 @@ for n, line in enumerate(text.splitlines(), 1):
 dups = {k: v for k, v in hypr.items() if len(v) > 1 and k not in ALLOWED}
 check(f"hyprland: {len(hypr)} bindings, none bound twice by accident", hypr and not dups, str(dups))
 check("hyprland: Nexus and Nexa Pulse bound", ("super", "space") in hypr and ("ctrl shift", "escape") in hypr)
+check("hyprland: Constellation on Super+Tab", "bind = SUPER, Tab, exec, nexa-constellation" in text and len(hypr[("super", "tab")]) == 1)
 
 print(f"\n{len(failures)} failure(s)"); sys.exit(1 if failures else 0)

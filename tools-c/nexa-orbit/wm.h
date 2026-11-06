@@ -13,6 +13,7 @@ struct wm_win {
     int minimized, focused, urgent;
     int rank;           /* 0 = most recently in front */
     int ws;             /* its workspace number (Strata's layer); 0 if none */
+    char title[256];    /* as the window gives it (Constellation) */
 };
 
 enum { WM_NONE, WM_SWAY, WM_HYPRLAND };

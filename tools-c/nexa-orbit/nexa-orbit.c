@@ -8,11 +8,13 @@
  * starting, minimised. Window changes come from the compositor's event
  * socket; activity from /proc every 2 s while apps run.
  *
- * It also hosts Strata's layer stack (tools-c/nexa-strata/hud.c), which
- * needs the same windows, icons and theme.
+ * It also hosts Strata's layer stack (tools-c/nexa-strata/hud.c) and
+ * Constellation, the window overview (tools-c/nexa-constellation/sky.c),
+ * which need the same windows, icons and theme.
  *
  *   nexa-orbit            run (one per session)
  *   pkill -USR1 nexa-orbit   Super+O: take the keyboard / give it back
+ *   pkill -USR2 nexa-orbit   Super+Tab (nexa-constellation): open or close Constellation
  *
  * NEXA_ORBIT_STATE=<file>: write what is shown there as JSON lines after
  * every change (for tests). */
@@ -32,6 +34,7 @@
 #include <unistd.h>
 
 #include "hud.h"
+#include "sky.h"
 #include "model.h"
 #include "wm.h"
 
@@ -151,6 +154,8 @@ static void load_theme(void)
     }
     struct hud_colours hc = {srgb(O.c.bg), srgb(O.c.surface), srgb(O.c.text), srgb(O.c.muted), srgb(O.c.accent), O.c.opacity};
     hud_set_colours(&hc);
+    struct sky_colours sc = {srgb(O.c.bg), srgb(O.c.surface), srgb(O.c.text), srgb(O.c.muted), srgb(O.c.accent), srgb(O.c.warn), O.c.opacity};
+    sky_set_colours(&sc);
 }
 
 static void read_animations(void)
@@ -159,6 +164,7 @@ static void read_animations(void)
     g_object_get(gtk_settings_get_default(), "gtk-enable-animations", &on, NULL);
     O.animations = on;
     hud_set_animations(on);
+    sky_set_animations(on);
 }
 
 /* Strata: each layer's windows, with one icon per app. */
@@ -180,6 +186,52 @@ static void strata_layers(void)
         l->icons[l->nicons++] = O.it[i].pix;
     }
     hud_set_layers(L);
+}
+
+/* Constellation: every window, with its app's name and icon. */
+static void sky_windows(void)
+{
+    static struct sky_win sw[WM_MAX_WIN];
+    for (int w = 0; w < O.nwins; w++) {
+        const struct wm_win *x = &O.wins[w];
+        int i = O.win_item[w];
+        struct sky_win *s = &sw[w];
+        s->id = x->id;
+        s->pid = x->pid;
+        snprintf(s->app_id, sizeof s->app_id, "%s", x->app_id);
+        snprintf(s->app, sizeof s->app, "%s", i >= 0 && O.it[i].name[0] ? O.it[i].name : x->app_id);
+        snprintf(s->title, sizeof s->title, "%s", x->title);
+        s->group = i >= 0 ? i : MAX_ITEMS + w;  /* a window of no known app: on its own */
+        s->icon = i >= 0 ? O.it[i].pix : NULL;
+        s->ws = x->ws;
+        s->focused = x->focused;
+        s->urgent = x->urgent;
+        s->minimized = x->minimized;
+    }
+    sky_set_windows(sw, O.nwins, sky_is_open() ? wm_workspace() : 0);
+}
+
+static void sky_focus(unsigned long id)
+{
+    for (int w = 0; w < O.nwins; w++)
+        if (O.wins[w].id == id) wm_focus(&O.wins[w]);
+}
+
+static void sky_close_window(unsigned long id)
+{
+    for (int w = 0; w < O.nwins; w++)
+        if (O.wins[w].id == id) wm_close(&O.wins[w]);
+}
+
+static gboolean on_usr2(gpointer d)
+{
+    if (!sky_is_open()) {
+        sky_toggle();
+        sky_windows();  /* the layer on screen, now */
+    } else {
+        sky_toggle();
+    }
+    return G_SOURCE_CONTINUE;
 }
 
 /* ---------- apps ---------- */
@@ -359,6 +411,7 @@ static void refresh(void)
     rebuild();
     apply_windows();
     strata_layers();
+    sky_windows();
     if (O.ev_fd < 0) hud_set_current(wm_workspace());  /* no events: polled */
     char ids_after[MAX_ITEMS * 64] = "";
     for (int i = 1; i < O.n; i++) g_strlcat(ids_after, O.it[i].id, sizeof ids_after), g_strlcat(ids_after, ",", sizeof ids_after);
@@ -1257,6 +1310,8 @@ int main(int argc, char **argv)
     config_path(O.theme_path, sizeof O.theme_path, "lock.conf");
     config_path(O.strata_path, sizeof O.strata_path, "strata.conf");
     hud_init(O.strata_path);
+    struct sky_hooks hooks = {sky_focus, sky_close_window};
+    sky_init(&hooks);
     load_conf();
     load_theme();
     read_animations();
@@ -1298,6 +1353,7 @@ int main(int argc, char **argv)
     g_signal_connect(gtk_settings_get_default(), "notify::gtk-enable-animations", G_CALLBACK(on_anim_setting), NULL);
     g_signal_connect(g_app_info_monitor_get(), "changed", G_CALLBACK(on_apps_changed), NULL);
     g_unix_signal_add(SIGUSR1, on_usr1, NULL);
+    g_unix_signal_add(SIGUSR2, on_usr2, NULL);
     g_timeout_add_seconds(2, every_2s, NULL);
     gtk_main();
     if (m1) g_object_unref(m1);

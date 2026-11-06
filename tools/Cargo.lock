@@ -689,6 +689,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa-starmap"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nexa-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "nexa-store"
 version = "0.1.0"
 dependencies = [

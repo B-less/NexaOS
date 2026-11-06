@@ -106,6 +106,7 @@ static void sway_walk(const struct jdoc *d, int n, int in_scratch, int ws, struc
         w->urgent = (int)json_num(d, n, "urgent", 0);
         w->rank = w->focused ? 0 : 1;
         w->ws = ws;
+        snprintf(w->title, sizeof w->title, "%s", json_str(d, n, "name", ""));
     }
     static const char *const kids[2] = {"nodes", "floating_nodes"};
     for (int k = 0; k < 2; k++) {
@@ -198,6 +199,7 @@ static int hypr_windows(struct wm_win *out, int max)
             w->rank = (int)json_num(&d, c, "focusHistoryID", 99);
             w->focused = w->rank == 0;
             w->urgent = is_urgent(w->id);
+            snprintf(w->title, sizeof w->title, "%s", json_str(&d, c, "title", ""));
         }
     }
     json_free(&d);
