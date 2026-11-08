@@ -263,6 +263,39 @@ int main(void)
     g_bytes_unref(body);
     box_free(b);
 
+    /* ---- links from elsewhere */
+    char *lto, *lcc, *subj, *text;
+    check(mailto_parse("mailto:kofi@example.com?subject=Lunch%20on%20Friday&body=See%20you%0D%0AKofi&cc=yaw@example.com&bcc=spy@example.com",
+                       &lto, &lcc, &subj, &text) &&
+          !strcmp(lto, "kofi@example.com") && !strcmp(lcc, "yaw@example.com") && !strcmp(subj, "Lunch on Friday") && !strcmp(text, "See you\nKofi"),
+          "mailto: address, subject, body (CRLF made \\n), cc; bcc ignored");
+    g_free(lto); g_free(lcc); g_free(subj); g_free(text);
+    check(mailto_parse("MAILTO:a@x.org,b@y.org?to=c@z.org", &lto, &lcc, &subj, &text) && !strcmp(lto, "a@x.org, b@y.org, c@z.org") && !*subj,
+          "mailto: several addresses, any case");
+    g_free(lto); g_free(lcc); g_free(subj); g_free(text);
+    check(mailto_parse("mailto:not-an-address?subject=Hi%0D%0ABcc:%20spy@x.org", &lto, &lcc, &subj, &text) && !*lto &&
+          !strchr(subj, '\n') && !strchr(subj, '\r'), "mailto: a bad address dropped; a line break can't add a header");
+    g_free(lto); g_free(lcc); g_free(subj); g_free(text);
+    check(mailto_parse("mailto:?subject=%E2%82%AC%zz%FF", &lto, &lcc, &subj, &text) && g_utf8_validate(subj, -1, NULL) && strstr(subj, "€"),
+          "mailto: bad escapes and bad UTF-8 survive as text");
+    g_free(lto); g_free(lcc); g_free(subj); g_free(text);
+    check(!mailto_parse("https://example.com", &lto, &lcc, &subj, &text) && !lto, "not a mailto: link");
+
+    GPtrArray *senders = g_ptr_array_new();
+    g_ptr_array_add(senders, "Kofi Mensah <kofi@test.local>");
+    g_ptr_array_add(senders, "Abena <abena@test.local>");
+    g_ptr_array_add(senders, "Kofi Boateng <kboateng@work.example>");
+    g_ptr_array_add(senders, "\"Mensah, Kofi\" <KOFI@test.local>");
+    char *who = address_pick(senders, "abena");
+    check(who && !strcmp(who, "Abena <abena@test.local>"), "write to Abena: her address from mail she sent");
+    g_free(who);
+    who = address_pick(senders, "kofi mensah");
+    check(who && strstr(who, "kofi@test.local"), "two words; the same address written twice is one person");
+    g_free(who);
+    check(!address_pick(senders, "kofi"), "two different Kofis: no guess");
+    check(!address_pick(senders, "yaw") && !address_pick(senders, "") && !address_pick(NULL, "x"), "nobody, or nothing asked: none");
+    g_ptr_array_free(senders, TRUE);
+
     printf("%d of %d checks passed\n", checks - fails, checks);
     return fails != 0;
 }

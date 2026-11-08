@@ -278,6 +278,19 @@ from the package). Permissions: network, files.documents, files.pictures.
       answered
 - [x] Search (this folder's list, Enter: the server searches every
       message), Flag, Delete (to Trash; in Trash, for good)
-- [ ] Later: open mailto: links (so Settings > Default apps offers Mail;
-      needs a MIME field in nexa.toml), signing in to Gmail/Outlook
-      without an app password (OAuth), Nexa Mind summaries (local)
+- [x] Connected (2026-11-08): new mail in the Inbox is a Signal while
+      you're elsewhere (none for mail already there; Quiet and Layer moods
+      apply); clicking it opens the message and Signals brings Mail
+      forward; the title carries the unread count (Orbit, Constellation)
+- [x] The email app: `opens = ["x-scheme-handler/mailto"]` (a new,
+      optional nexa.toml field; nexa-pack checks it, the broker writes
+      MimeType=), so Settings > Default apps offers Mail; a mailto: link
+      opens only a new message (to, cc, subject, body; never a bcc), which
+      ends Mail when sent or closed, with a copy in Sent
+- [x] Nexa Mind: "find the email from Kofi" (`mail --search`), "email my
+      landlord" (`mail --write`: the address from mail they sent, never a
+      guess between two people); without Mail, the Store
+- [x] Saved attachments are on FileTrail ("Saved by Mail")
+- [ ] Later: signing in to Gmail/Outlook without an app password (OAuth;
+      Outlook.com needs it), Nexa Mind summaries (local), mail checked
+      while Mail is closed (needs the background permission enforced)

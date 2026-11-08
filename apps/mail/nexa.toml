@@ -6,6 +6,9 @@ description = "Your email over IMAP and SMTP: folders, reading offline, writing 
 categories = "Network;Email;Office;"
 icon = "icon.svg"
 screenshots = ["shots/reading.png", "shots/reply.png", "shots/setup.png"]
+# Email links (the Browser, a PDF): Mail can be the email app in
+# Settings > Default apps.
+opens = ["x-scheme-handler/mailto"]
 
 [build]
 command = "make"
@@ -15,5 +18,6 @@ binary = "build/mail"
 # Already part of NexaOS, so installing needs no internet.
 depends = ["gtk+3.0", "libcurl", "libcrypto3"]
 # The internet (your mail server), Documents (saving attachments, attaching
-# files) and Pictures (attaching pictures).
-permissions = ["network", "files.documents", "files.pictures"]
+# files), Pictures (attaching pictures) and notifications (new mail, as
+# Signals).
+permissions = ["network", "files.documents", "files.pictures", "notifications"]

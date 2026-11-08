@@ -39,12 +39,35 @@ pub struct Manifest {
     /// none, so older packages stay byte-for-byte the same.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub screenshots: Vec<String>,
+    /// What the app opens: file types ("text/plain") and link schemes
+    /// ("x-scheme-handler/mailto"), so the desktop offers it for them
+    /// (Open with, Settings > Default apps). Left out when empty, so older
+    /// packages stay byte-for-byte the same.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub opens: Vec<String>,
     /// Every file in the package except manifest.json and SIGNATURE, with
     /// its SHA-256 (hex). Sorted, so the manifest is byte-for-byte stable.
     pub files: BTreeMap<String, String>,
 }
 
 pub const MAX_SCREENSHOTS: usize = 6;
+pub const MAX_OPENS: usize = 32;
+/// Link schemes an app may offer to open. Never http(s), file or the
+/// like: a Store app can't put itself forward for every web link.
+pub const OPEN_SCHEMES: &[&str] = &["mailto", "tel", "sms", "geo", "magnet", "webcal", "xmpp", "matrix"];
+const OPEN_TYPES: &[&str] = &["application", "audio", "font", "image", "model", "text", "video"];
+
+/// "text/plain", "image/svg+xml", "x-scheme-handler/mailto": a type the
+/// app may say it opens.
+pub fn valid_open(t: &str) -> bool {
+    let Some((ty, sub)) = t.split_once('/') else { return false };
+    let sub_ok = !sub.is_empty() && sub.len() <= 100
+        && sub.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || ".+-_".contains(c));
+    if ty == "x-scheme-handler" {
+        return OPEN_SCHEMES.contains(&sub);
+    }
+    OPEN_TYPES.contains(&ty) && sub_ok && sub != "*"
+}
 pub const MAX_SCREENSHOT_BYTES: usize = 3 << 20;
 
 fn default_categories() -> String {
@@ -131,6 +154,14 @@ impl Manifest {
                 return Err(format!("screenshot '{s}' must be a .png or .jpg in screenshots/ inside the package"));
             }
         }
+        if self.opens.len() > MAX_OPENS {
+            return Err(format!("at most {MAX_OPENS} types in opens"));
+        }
+        for t in &self.opens {
+            if !valid_open(t) {
+                return Err(format!("opens: '{t}' isn't a file type or a link scheme an app may open ({})", OPEN_SCHEMES.join(", ")));
+            }
+        }
         for (path, hash) in &self.files {
             if !is_safe_path(path) || path == "manifest.json" || path == "SIGNATURE" {
                 return Err(format!("unsafe or reserved path '{path}'"));
@@ -159,7 +190,7 @@ mod tests {
         files.insert("bin/hello".into(), "a".repeat(64));
         Manifest {
             format: FORMAT, id: "hello".into(), name: "Hello".into(), version: "1.0.0".into(),
-            description: String::new(), categories: "Utility;".into(), icon: None, screenshots: vec![],
+            description: String::new(), categories: "Utility;".into(), icon: None, screenshots: vec![], opens: vec![],
             arch: ARCH.into(), abi: ABI.into(), depends: vec!["gtk+3.0".into()],
             permissions: vec!["network".into()], terminal: false, files,
         }
@@ -185,6 +216,12 @@ mod tests {
             ("reserved", Box::new(|m| { m.files.insert("SIGNATURE".into(), "b".repeat(64)); })),
             ("SHA-256", Box::new(|m| { m.files.insert("lib/x".into(), "zz".into()); })),
             ("icon", Box::new(|m| m.icon = Some("missing.svg".into()))),
+            ("opens", Box::new(|m| m.opens = vec!["x-scheme-handler/https".into()])),
+            ("opens", Box::new(|m| m.opens = vec!["x-scheme-handler/file".into()])),
+            ("opens", Box::new(|m| m.opens = vec!["text/plain;Exec=sh".into()])),
+            ("opens", Box::new(|m| m.opens = vec!["image/*".into()])),
+            ("opens", Box::new(|m| m.opens = vec!["inode/directory".into()])),
+            ("opens", Box::new(|m| m.opens = vec!["text/plain".into(); 33])),
         ];
         for (what, change) in cases {
             let mut m = sample();
@@ -192,6 +229,16 @@ mod tests {
             let err = m.validate().expect_err(what);
             assert!(err.contains(what), "{what}: {err}");
         }
+    }
+
+    #[test]
+    fn opens() {
+        let mut m = sample();
+        m.opens = vec!["x-scheme-handler/mailto".into(), "text/plain".into(), "image/svg+xml".into(), "application/vnd.oasis.opendocument.text".into()];
+        assert_eq!(m.validate(), Ok(()));
+        assert!(!String::from_utf8(sample().to_bytes()).unwrap().contains("opens"), "left out when empty: older packages stay the same");
+        let back: Manifest = serde_json::from_slice(&m.to_bytes()).unwrap();
+        assert_eq!(back.opens, m.opens);
     }
 
     #[test]

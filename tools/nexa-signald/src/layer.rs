@@ -101,6 +101,73 @@ fn ask_hyprland(sig: &std::ffi::OsStr) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// The windows a Signal's desktop entry stands for: an installed .nexa
+/// app's entry "nexa-mail" is the window "mail"; others are their own
+/// name. Only [A-Za-z0-9_-] and dots (escaped) get through, so nothing in
+/// a notification can become a compositor command.
+pub fn window_ids(desktop: &str) -> Vec<String> {
+    let d = desktop.strip_suffix(".desktop").unwrap_or(desktop);
+    if d.is_empty() || d.len() > 128 || !d.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)) {
+        return vec![];
+    }
+    let mut ids = vec![d.to_string()];
+    if let Some(app) = d.strip_prefix("nexa-").filter(|a| !a.is_empty()) {
+        ids.push(app.to_string());
+    }
+    ids
+}
+
+fn pattern(ids: &[String]) -> String {
+    format!("^({})$", ids.iter().map(|i| i.replace('.', "\\.")).collect::<Vec<_>>().join("|"))
+}
+
+pub fn sway_focus_cmd(ids: &[String]) -> String {
+    format!("[app_id=\"{}\"] focus", pattern(ids))
+}
+
+pub fn hypr_focus_cmd(ids: &[String]) -> String {
+    format!("dispatch focuswindow class:{}", pattern(ids))
+}
+
+fn send_sway(sock: &std::ffi::OsStr, kind: u32, payload: &str) -> Option<Vec<u8>> {
+    let mut s = UnixStream::connect(sock).ok()?;
+    s.set_read_timeout(Some(Duration::from_millis(500))).ok()?;
+    let mut msg = b"i3-ipc".to_vec();
+    msg.extend((payload.len() as u32).to_ne_bytes());
+    msg.extend(kind.to_ne_bytes());
+    msg.extend(payload.as_bytes());
+    s.write_all(&msg).ok()?;
+    let mut head = [0u8; 14];
+    s.read_exact(&mut head).ok()?;
+    let len = u32::from_ne_bytes(head[6..10].try_into().ok()?) as usize;
+    if len > 1 << 20 {
+        return None;
+    }
+    let mut body = vec![0; len];
+    s.read_exact(&mut body).ok()?;
+    Some(body)
+}
+
+/// A click on a Signal brings its app forward. Wayland doesn't let an app
+/// raise its own window (no stealing focus), but the compositor can, when
+/// the person asked for it by clicking.
+pub fn focus_app(desktop: &str) -> bool {
+    let ids = window_ids(desktop);
+    if ids.is_empty() {
+        return false;
+    }
+    if let Some(sig) = std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE") {
+        let Some(run) = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from) else { return false };
+        let Some(sock) = [run.join("hypr"), PathBuf::from("/tmp/hypr")].into_iter().map(|d| d.join(&sig).join(".socket.sock"))
+            .find(|p| p.exists()) else { return false };
+        let Ok(mut s) = UnixStream::connect(sock) else { return false };
+        let _ = s.set_read_timeout(Some(Duration::from_millis(500)));
+        return s.write_all(hypr_focus_cmd(&ids).as_bytes()).is_ok();
+    }
+    let Some(sock) = std::env::var_os("SWAYSOCK") else { return false };
+    send_sway(&sock, 0, &sway_focus_cmd(&ids)).map_or(false, |r| String::from_utf8_lossy(&r).contains("\"success\": true") || String::from_utf8_lossy(&r).contains("\"success\":true"))
+}
+
 /// The layer on screen now: 1..5, or None (another workspace, no compositor).
 pub fn current() -> Option<u32> {
     let n = if let Some(sig) = std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE") {
@@ -131,6 +198,18 @@ mod tests {
         assert!(m.mutes("chat") && !m.mutes("Files") && !m.mutes(""));
         assert_eq!(parse(t, 1), Mood { layer: 1, ..Default::default() }, "no mood: all of them pop up");
         assert_eq!(parse(t, 9).name, "", "not a layer");
+    }
+
+    #[test]
+    fn bringing_the_sender_forward() {
+        assert_eq!(window_ids("nexa-mail"), vec!["nexa-mail", "mail"]);
+        assert_eq!(window_ids("org.gnome.Maps.desktop"), vec!["org.gnome.Maps"]);
+        assert_eq!(sway_focus_cmd(&window_ids("nexa-mail")), "[app_id=\"^(nexa-mail|mail)$\"] focus");
+        assert_eq!(sway_focus_cmd(&window_ids("org.gnome.Maps")), "[app_id=\"^(org\\.gnome\\.Maps)$\"] focus", "a dot is a dot");
+        assert_eq!(hypr_focus_cmd(&window_ids("nexa-mail")), "dispatch focuswindow class:^(nexa-mail|mail)$");
+        for bad in ["", "mail\"] kill", "a b", "x;exec sh", "$(reboot)", &"a".repeat(200)] {
+            assert!(window_ids(bad).is_empty(), "{bad}: nothing a compositor command could be made of");
+        }
     }
 
     #[test]

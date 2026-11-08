@@ -186,7 +186,13 @@ fn handle(sh: &Arc<Shared>, req: &Value, out: &mut UnixStream) -> bool {
         }
         ("invoke", Some(id), _) => {
             let key = req.get("action").and_then(Value::as_str).unwrap_or("default");
+            let desktop = sh.store.lock().unwrap().desktop_of(id);
             let done = sh.store.lock().unwrap().invoke(id, key);
+            if done.is_some() {
+                if let Some(d) = desktop {
+                    nexa_signald::layer::focus_app(&d);  // the person clicked it: its app comes forward
+                }
+            }
             match done {
                 Some((send, closed)) => {
                     if let Some(k) = send {

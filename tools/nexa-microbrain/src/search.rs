@@ -439,6 +439,21 @@ fn model_hits(p: &nexa_intent::Prediction, all_apps: &BTreeMap<String, App>, lis
         "layer_prev" => push("One layer back up", "Strata", json!({"type": "layer", "step": -1})),
         "quiet_on" => push("Turn on Do not disturb", "Notifications wait in Deck's Signals card", json!({"type": "quiet", "on": true})),
         "quiet_off" => push("Turn off Do not disturb", "Notifications pop up again", json!({"type": "quiet", "on": false})),
+        "windows" => push("Show all your windows", "Constellation \u{b7} Super+Tab", json!({"type": "windows"})),
+        "mail_find" | "mail_write" => {
+            // Mail is a Store app: without it, the Store's Mail page instead.
+            if !all_apps.contains_key("nexa-mail") {
+                push("Get Mail from the Store", "Mail isn't installed yet", json!({"type": "launch", "app": "nexa-store"}));
+                return Some(intent.into());
+            }
+            let name = p.arg.as_deref().map(str::trim).filter(|n| !n.is_empty());
+            match (intent, name) {
+                ("mail_find", Some(n)) => push(&format!("Find mail: {n}"), "Mail searches every message", json!({"type": "mail", "search": n})),
+                ("mail_find", None) => push("Open Mail", "Your email", json!({"type": "mail"})),
+                (_, Some(n)) => push(&format!("Write to {n}"), "Mail finds the address in mail they sent", json!({"type": "mail", "write": n})),
+                (_, None) => push("Write an email", "Mail", json!({"type": "mail", "write": ""})),
+            }
+        }
         "destroy" => return Some("destroy".into()),
         s if s.starts_with("settings") => {
             let page = s.strip_prefix("settings_").unwrap_or("");
@@ -586,6 +601,20 @@ mod tests {
     }
 
     #[test]
+    fn mail_from_nexa_mind() {
+        assert_eq!(top("find the email from kofi"), json!({"type": "launch", "app": "nexa-store"}), "no Mail yet: the Store");
+        let (mut a, w) = setup();
+        a.insert("nexa-mail".into(), apps::parse("nexa-mail", "[Desktop Entry]\nName=Mail\nExec=x %U\nMimeType=x-scheme-handler/mailto;\n").unwrap());
+        let act = |q: &str| ask(q, &a, &w, Path::new("/home/u")).hits.first().map(|h| h.action.clone()).unwrap_or(Value::Null);
+        assert_eq!(act("find the email from kofi"), json!({"type": "mail", "search": "kofi"}));
+        assert_eq!(act("search my inbox for school fees"), json!({"type": "mail", "search": "school fees"}));
+        assert_eq!(act("email my landlord"), json!({"type": "mail", "write": "my landlord"}));
+        assert_eq!(act("write a new email"), json!({"type": "mail", "write": ""}));
+        let open = act("open my mail");
+        assert!(open == json!({"type": "mail"}) || open == json!({"type": "launch", "app": "nexa-mail"}), "opening Mail either way: {open}");
+    }
+
+    #[test]
     fn the_model_understands_other_wordings() {
         assert_eq!(top("the screen is way too bright"), json!({"type": "brightness", "delta": -10}));
         assert_eq!(top("i can barely hear it turn it up"), json!({"type": "volume", "delta": 10}));
@@ -594,6 +623,7 @@ mod tests {
         assert_eq!(top("dive deeper"), json!({"type": "layer", "step": 1}));
         assert_eq!(top("no notifications for now"), json!({"type": "quiet", "on": true}));
         assert_eq!(top("show my notifications again"), json!({"type": "quiet", "on": false}));
+        assert_eq!(top("show me all my windows"), json!({"type": "windows"}));
         assert_eq!(top("make the text bigger"), json!({"type": "settings", "page": "accessibility"}));
         assert_eq!(top("my pc keeps freezing"), json!({"type": "answer", "topic": "slow"}));
         assert_eq!(top("restore my coding workspace"), json!({"type": "workspace", "name": "Coding"}));
@@ -605,7 +635,8 @@ mod tests {
     #[test]
     fn the_model_never_turns_chat_or_destroying_into_an_action() {
         let (a, w) = setup();
-        for q in ["tell me a joke", "write an email to my teacher", "who is the president of ghana", "how do i bake bread"] {
+        // ("write an email to my teacher" is a Mail command now: it opens a draft, nothing is sent)
+        for q in ["tell me a joke", "write a poem about my teacher", "who is the president of ghana", "how do i bake bread"] {
             let r = ask(q, &a, &w, Path::new("/home/u"));
             assert!(r.hits.is_empty(), "{q}: {:?}", r.hits);
             assert!(r.note.unwrap().contains("Assistant"), "{q}: a question goes to the Assistant");

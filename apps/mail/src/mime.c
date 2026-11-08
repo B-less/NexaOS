@@ -972,3 +972,126 @@ char *mime_quote(const Message *m)
     g_strfreev(lines);
     return g_string_free(o, FALSE);
 }
+
+/* ---- links from elsewhere ---- */
+
+static char *pct_decode(const char *s, gsize n)
+{
+    GString *o = g_string_sized_new(n);
+    for (gsize i = 0; i < n; i++) {
+        if (s[i] == '%' && i + 2 < n && g_ascii_isxdigit(s[i + 1]) && g_ascii_isxdigit(s[i + 2])) {
+            g_string_append_c(o, (char)(g_ascii_xdigit_value(s[i + 1]) * 16 + g_ascii_xdigit_value(s[i + 2])));
+            i += 2;
+        } else {
+            g_string_append_c(o, s[i]);
+        }
+    }
+    char *t = g_string_free(o, FALSE);
+    if (!g_utf8_validate(t, -1, NULL)) {
+        char *v = g_utf8_make_valid(t, -1);
+        g_free(t);
+        t = v;
+    }
+    return t;
+}
+
+/* Addresses from a link: valid ones only, appended to `out`. */
+static void add_link_addresses(GString *out, const char *text)
+{
+    GPtrArray *list = mime_addresses(text);
+    for (guint i = 0; i < list->len; i++) {
+        Address *a = list->pdata[i];
+        if (!address_valid(a->addr)) continue;
+        char *f = address_format(a);
+        if (out->len) g_string_append(out, ", ");
+        g_string_append(out, f);
+        g_free(f);
+    }
+    g_ptr_array_free(list, TRUE);
+}
+
+gboolean mailto_parse(const char *uri, char **to, char **cc, char **subject, char **body)
+{
+    *to = *cc = *subject = *body = NULL;
+    if (!uri || g_ascii_strncasecmp(uri, "mailto:", 7)) return FALSE;
+    const char *p = uri + 7, *q = strchr(p, '?');
+    GString *t = g_string_new(NULL), *c = g_string_new(NULL);
+    char *path = pct_decode(p, q ? (gsize)(q - p) : strlen(p));
+    add_link_addresses(t, path);
+    g_free(path);
+    char *subj = NULL, *text = NULL;
+    if (q) {
+        char **fields = g_strsplit(q + 1, "&", 64);
+        for (int i = 0; fields[i]; i++) {
+            char *eq = strchr(fields[i], '=');
+            if (!eq) continue;
+            *eq = 0;
+            char *val = pct_decode(eq + 1, strlen(eq + 1));
+            if (!g_ascii_strcasecmp(fields[i], "to")) add_link_addresses(t, val);
+            else if (!g_ascii_strcasecmp(fields[i], "cc")) add_link_addresses(c, val);
+            else if (!g_ascii_strcasecmp(fields[i], "subject") && !subj) subj = g_strdup(val);
+            else if (!g_ascii_strcasecmp(fields[i], "body") && !text) text = g_strdup(val);
+            g_free(val);
+        }
+        g_strfreev(fields);
+    }
+    if (subj) {  /* one line: a link mustn't add header lines */
+        g_strdelimit(subj, "\r\n\t", ' ');
+        if (strlen(subj) > 900) subj[g_utf8_find_prev_char(subj, subj + 900) - subj] = 0;
+    }
+    if (text) {
+        GString *b = g_string_new(NULL);
+        for (const char *x = text; *x && b->len < (64u << 10); x++)
+            if (*x != '\r') g_string_append_c(b, *x);
+        g_free(text);
+        text = g_string_free(b, FALSE);
+    }
+    *to = g_string_free(t, FALSE);
+    *cc = g_string_free(c, FALSE);
+    *subject = subj ? subj : g_strdup("");
+    *body = text ? text : g_strdup("");
+    return TRUE;
+}
+
+char *address_pick(GPtrArray *senders, const char *who)
+{
+    if (!senders || !who) return NULL;
+    char *fw = g_utf8_casefold(who, -1);
+    char **words = g_strsplit_set(fw, " \t,", -1);
+    g_free(fw);
+    int nwords = 0;
+    for (int i = 0; words[i]; i++) nwords += *words[i] != 0;
+    char *found = NULL, *found_addr = NULL;
+    gboolean two = FALSE;
+    for (guint s = 0; nwords && s < senders->len && !two; s++) {
+        GPtrArray *list = mime_addresses(senders->pdata[s]);
+        for (guint k = 0; k < list->len && !two; k++) {
+            Address *a = list->pdata[k];
+            if (!address_valid(a->addr)) continue;
+            char *hay0 = g_strconcat(a->name ? a->name : "", " ", a->addr, NULL), *hay = g_utf8_casefold(hay0, -1);
+            gboolean all = TRUE;
+            for (int i = 0; words[i] && all; i++)
+                if (*words[i] && !strstr(hay, words[i])) all = FALSE;
+            if (all) {
+                char *addr = g_ascii_strdown(a->addr, -1);
+                if (!found_addr) {
+                    found_addr = addr;
+                    found = address_format(a);
+                } else {
+                    if (strcmp(found_addr, addr)) two = TRUE;  /* two people: don't guess */
+                    g_free(addr);
+                }
+            }
+            g_free(hay);
+            g_free(hay0);
+        }
+        g_ptr_array_free(list, TRUE);
+    }
+    g_strfreev(words);
+    g_free(found_addr);
+    if (two) {
+        g_free(found);
+        return NULL;
+    }
+    return found;
+}

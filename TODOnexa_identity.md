@@ -315,6 +315,10 @@ visible state on every change; `hold`, `invoke`, `dismiss`, `dismiss_all`,
 - [ ] Measured: nexa-signald 1.3 to 1.4 MB PSS, nexa-signals 13 to 22 MB (three headless runs; nothing else shares its libraries there)
 - [ ] Not yet tested: Hyprland, real apps' notifications (Firefox-style
       images, sounds), a real bar above the tabs
+- [x] A click on a Signal brings its app forward (2026-11-08): Wayland
+      doesn't let an app raise itself; nexa-signald asks the compositor
+      to focus the sender's windows (its desktop entry, nexa-<id> also as
+      <id>; only [A-Za-z0-9._-], dots escaped)
 - [ ] Later: keyboard access to the tabs, inline reply, images in the body,
       Quiet modes
 
@@ -457,5 +461,10 @@ as JSON (tests).
       8 MB of it, by use) and stays there over 30 openings. `nexa-starmap`: 500 KB, 8 ms for 5 windows
 - [ ] Not yet tested: Hyprland (its binding is written), a real session with
       many windows, HiDPI
-- [ ] Later: Nexa Mind can open it ("show my windows"), windows' thumbnails
+- [x] Connected (2026-11-08): Nexa Mind opens it ("show my windows");
+      Ctrl+S sends the picked window's file (nexa-starmap now names it:
+      a path in the title, a recent file, a file held open) to a paired
+      device nearby with Nexa Link (by number when several), the result
+      as a Signal if the sky closed first
+- [ ] Later: windows' thumbnails
       on hover (only if cheap), Tethers (phase 2) drawn from the same graph

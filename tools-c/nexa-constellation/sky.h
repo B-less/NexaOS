@@ -8,6 +8,11 @@
  * the sky opens or its windows change; until it answers (or if it can't),
  * the stars show without project lines.
  *
+ * Ctrl+S sends the picked window's file (the one nexa-starmap found) to a
+ * paired device nearby with Nexa Link (nexa-linkd send); a result that
+ * comes after the sky closed arrives as a Signal. NEXA_LINKD=<path>: the
+ * Link program (tests).
+ *
  * NEXA_CONSTELLATION_STATE=<file>: what is shown, as JSON, after every
  * change (for tests). NEXA_STARMAP=<path>: the graph program (default
  * nexa-starmap on PATH). */

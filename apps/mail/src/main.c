@@ -1,6 +1,11 @@
 /* Mail: a NexaOS app in C (GTK 3): your email over IMAP and SMTP.
  *
- *   mail
+ *   mail                    the window
+ *   mail mailto:LINK        only a new message, filled in from the link
+ *                           (the Browser, a PDF: Mail is the email app)
+ *   mail --write NAME       only a new message to NAME, whose address is
+ *                           found in mail they sent (Nexa Mind)
+ *   mail --search WORDS     the window, searching every message for WORDS
  *
  * Folders on the left, the messages in the middle, the one you read on
  * the right. Write, Reply, Reply All, Forward (with attachments), flag,
@@ -12,6 +17,11 @@
  * Installed, it runs confined by nexa-run to network, files.documents
  * (attachments are saved to Documents/Mail attachments) and files.pictures
  * (to attach pictures).
+ *
+ * New mail in the Inbox becomes a Signal (org.freedesktop.Notifications)
+ * while Mail is open and you're elsewhere; clicking it opens the message.
+ * Quiet and Layer moods apply, as Signals decides. The window's title
+ * carries the unread count, so Orbit and Constellation show it too.
  *
  * Keys: Ctrl+N write, Ctrl+R reply, Ctrl+Shift+R reply all, Ctrl+Shift+F
  * forward, Delete, F5 check now, Ctrl+F search, Ctrl+Enter send.
@@ -62,6 +72,16 @@ typedef struct {
     char *test_dir;
     guint state_id;
     int syncs, opens, sends;
+    /* Signals */
+    GDBusConnection *bus;
+    GHashTable *notes;     /* Signal id -> Inbox UID (0: open the Inbox) */
+    guint inbox_seen;      /* the Inbox's unread count at the last check */
+    gboolean inbox_known;
+    int signals_sent;
+    /* started for something */
+    gboolean compose_only; /* mailto: or --write: just a message, no window */
+    gboolean pending_compose;
+    char *pending_to, *pending_cc, *pending_subject, *pending_body, *pending_who, *pending_search;
 } App;
 
 static App app;
@@ -76,6 +96,12 @@ struct Compose {
 };
 
 static void state_changed(void);
+static void announce_new(GArray *uids);
+static void announce_inbox(guint before, guint now);
+static void update_title(void);
+static void open_pending_compose(void);
+static void on_search_activate(GtkEntry *e, gpointer d);
+static void json_str(GString *s, const char *v);
 static void fill_folders(void);
 static void fill_list(void);
 static void clear_shown(void);
@@ -295,6 +321,12 @@ static gpointer worker(gpointer d)
             gsize n;
             const char *d2 = g_bytes_get_data(j->raw, &n);
             j->ok = smtp_send(&j->out, j->from, j->rcpt, d2, n, &j->err);
+            if (j->ok && m && !j->sent_folder) {  /* started for one message: the folders aren't known yet */
+                GPtrArray *fs = imap_folders(m, NULL);
+                for (guint i = 0; fs && i < fs->len; i++)
+                    if (((Folder *)fs->pdata[i])->role == FOLDER_SENT) j->sent_folder = g_strdup(((Folder *)fs->pdata[i])->raw);
+                if (fs) g_ptr_array_free(fs, TRUE);
+            }
             if (j->ok && m && j->sent_folder) imap_append(m, j->sent_folder, d2, n, NULL);  /* a copy in Sent */
             if (j->ok && m && j->folder && j->uid) imap_flag(m, j->folder, j->uid, "\\Answered", TRUE, NULL);
             break;
@@ -349,9 +381,18 @@ static void apply_folders(Job *j)
     fill_folders();
 }
 
+static gboolean is_inbox(const char *raw)
+{
+    Folder *in = folder_by_role(FOLDER_INBOX);
+    return raw && (in ? !strcmp(in->raw, raw) : !g_ascii_strcasecmp(raw, "INBOX"));
+}
+
 static void apply_sync(Job *j)
 {
     if (!app.box || g_strcmp0(j->folder, app.folder)) return;
+    /* new mail is only news once there was mail before (not on the first check) */
+    gboolean had = app.box->entries->len > 0 && app.box->uidvalidity == j->uidvalidity;
+    GArray *fresh = g_array_new(FALSE, FALSE, sizeof(guint32));
     if (app.box->uidvalidity != j->uidvalidity) {  /* the server renumbered: start again */
         g_ptr_array_set_size(app.box->entries, 0);
         app.box->uidvalidity = j->uidvalidity;
@@ -360,6 +401,7 @@ static void apply_sync(Job *j)
     for (guint i = 0; i < j->summaries->len; i++) {
         Summary *s = j->summaries->pdata[i];
         if (box_find(app.box, s->uid)) continue;
+        if (!s->seen) g_array_append_val(fresh, s->uid);
         gsize n;
         const char *h = g_bytes_get_data(s->headers, &n);
         Message *m = mime_parse_headers(h, n);
@@ -393,6 +435,8 @@ static void apply_sync(Job *j)
         i++;
     }
     box_save(app.box);
+    if (had && is_inbox(j->folder)) announce_new(fresh);
+    g_array_free(fresh, TRUE);
 }
 
 static void compose_done(Compose *c, Job *j);
@@ -431,6 +475,7 @@ static gboolean job_done(gpointer data)
             app.box = box_load(app.acc->id, app.folder);
             fill_list();
             sync_now();
+            if (app.pending_compose) open_pending_compose();  /* a link brought us here before there was an account */
         } else {
             gtk_label_set_text(GTK_LABEL(app.su_msg), j->err ? j->err->message : "Signing in didn't work.");
             gtk_widget_show(app.su_msg);
@@ -440,10 +485,21 @@ static gboolean job_done(gpointer data)
     case J_SYNC:
         app.syncs++;
         if (j->ok) {
+            Folder *in = folder_by_role(FOLDER_INBOX);
+            guint before = in ? GPOINTER_TO_UINT(g_hash_table_lookup(app.unseen, in->raw)) : 0;
             apply_folders(j);
             if (j->kind == J_SYNC) apply_sync(j);
+            in = folder_by_role(FOLDER_INBOX);
+            guint now = in ? GPOINTER_TO_UINT(g_hash_table_lookup(app.unseen, in->raw)) : 0;
+            if (in && app.inbox_known && !is_inbox(app.folder)) announce_inbox(before, now);
+            if (in) app.inbox_known = TRUE;
             fill_list();
             set_status("", FALSE);
+            if (app.pending_search && j->kind == J_SYNC) {  /* mail --search: once the list is here */
+                gtk_entry_set_text(GTK_ENTRY(app.search), app.pending_search);
+                on_search_activate(GTK_ENTRY(app.search), NULL);
+                g_clear_pointer(&app.pending_search, g_free);
+            }
         } else {
             set_status(j->err ? j->err->message : "Mail couldn't check for new mail.", TRUE);
         }
@@ -483,7 +539,7 @@ static gboolean job_done(gpointer data)
     case J_SEND:
         app.sends++;
         compose_done(j->compose, j);
-        if (j->ok) sync_now();
+        if (j->ok && !app.compose_only) sync_now();
         break;
     }
     job_free(j);
@@ -552,6 +608,7 @@ static void fill_folders(void)
 {
     gtk_container_foreach(GTK_CONTAINER(app.folder_list), destroy_child, NULL);
     if (!app.folders) return;
+    update_title();
     GPtrArray *order = g_ptr_array_new();
     for (guint i = 0; i < app.folders->len; i++)
         if (!((Folder *)app.folders->pdata[i])->noselect) g_ptr_array_add(order, app.folders->pdata[i]);
@@ -727,6 +784,34 @@ static void on_search_activate(GtkEntry *e, gpointer d)
 
 /* ---- reading ---- */
 
+/* FileTrail: "where did that attachment go?". Mail can't write FileTrail's
+ * own journal (nor should an app); it keeps a record in its own data
+ * folder, which FileTrail reads, believing only paths inside the folders
+ * Mail may write (nexa_sys::filetrail::app_saves). The newest 200 count. */
+static void note_saved(const char *path)
+{
+    char *dir = g_build_filename(g_get_user_data_dir(), APP_ID, NULL), *log = g_build_filename(dir, "nexa-saved.jsonl", NULL);
+    g_mkdir_with_parents(dir, 0700);
+    char *old = NULL;
+    gsize n = 0;
+    GString *s = g_string_new(NULL);
+    if (g_file_get_contents(log, &old, &n, NULL) && n > (64u << 10)) {  /* too long: keep the newer half */
+        const char *half = strchr(old + n / 2, '\n');
+        g_string_append(s, half ? half + 1 : "");
+    } else if (old) {
+        g_string_append(s, old);
+    }
+    g_string_append_printf(s, "{\"at\": %" G_GINT64_FORMAT ", \"path\": ", g_get_real_time() / G_USEC_PER_SEC);
+    json_str(s, path);
+    g_string_append(s, "}\n");
+    g_file_set_contents(log, s->str, (gssize)s->len, NULL);
+    g_chmod(log, 0600);
+    g_string_free(s, TRUE);
+    g_free(old);
+    g_free(log);
+    g_free(dir);
+}
+
 static void on_save_att(GtkButton *b, gpointer d)
 {
     (void)b;
@@ -750,6 +835,7 @@ static void on_save_att(GtkButton *b, gpointer d)
     if (g_file_set_contents(path, data ? data : "", (gssize)n, &e)) {
         char *base_name = g_path_get_basename(path), *m = g_strdup_printf("Saved to Documents/Mail attachments as %s.", base_name);
         set_status(m, FALSE);
+        note_saved(path);
         g_free(m);
         g_free(base_name);
     } else {
@@ -871,14 +957,26 @@ static void on_delete(GtkButton *b, gpointer d)
     }
     j->uid = e->uid;
     submit(j);
-    /* the next one down gets the focus */
-    guint at = 0;
-    if (app.box) g_ptr_array_find(app.box->entries, e, &at);
+    /* the next one down in the list as shown (newest first) gets the focus */
+    int at = 0, k = 0;
+    GList *rows = gtk_container_get_children(GTK_CONTAINER(app.msg_list));
+    for (GList *r = rows; r; r = r->next, k++)
+        if (g_object_get_data(G_OBJECT(r->data), "entry") == e) at = k;
+    g_list_free(rows);
     box_remove(app.box, e->uid);
     box_save(app.box);
-    app.open = app.box && at < app.box->entries->len ? app.box->entries->pdata[at] : NULL;
+    app.open = NULL;
     fill_list();
-    show_message();
+    rows = gtk_container_get_children(GTK_CONTAINER(app.msg_list));
+    GtkWidget *next = g_list_nth_data(rows, (guint)at);
+    if (!next && rows) next = g_list_last(rows)->data;  /* it was the last: the one above */
+    g_list_free(rows);
+    if (next) {
+        gtk_list_box_select_row(GTK_LIST_BOX(app.msg_list), GTK_LIST_BOX_ROW(next));
+        on_msg_row(NULL, GTK_LIST_BOX_ROW(next), NULL);
+    } else {
+        show_message();
+    }
 }
 
 /* ---- writing ---- */
@@ -1083,6 +1181,8 @@ static void on_compose_destroy(GtkWidget *w, gpointer d)
     g_ptr_array_remove(app.composes, c);
     compose_free(c);
     state_changed();
+    /* started just for a message: done when it's sent or closed */
+    if (app.compose_only && !app.composes->len && !gtk_widget_get_visible(app.win)) gtk_main_quit();
 }
 
 static gboolean on_compose_delete(GtkWidget *w, GdkEvent *e, gpointer d)
@@ -1127,7 +1227,7 @@ static Compose *compose_new(const char *to, const char *cc, const char *subject,
     c->win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_default_size(GTK_WINDOW(c->win), 680, 560);
     gtk_window_set_title(GTK_WINDOW(c->win), subject && *subject ? subject : "New Message");
-    gtk_window_set_transient_for(GTK_WINDOW(c->win), GTK_WINDOW(app.win));
+    if (gtk_widget_get_visible(app.win)) gtk_window_set_transient_for(GTK_WINDOW(c->win), GTK_WINDOW(app.win));
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     add_class(box, "page");
     g_object_set(box, "margin", 16, NULL);
@@ -1624,8 +1724,11 @@ static gboolean write_state(gpointer d)
     app.state_id = 0;
     GString *s = g_string_new("{\"page\": ");
     json_str(s, gtk_stack_get_visible_child_name(GTK_STACK(app.stack)));
-    g_string_append_printf(s, ", \"busy\": %d, \"syncs\": %d, \"opens\": %d, \"sends\": %d, \"accounts\": %u, \"setup_msg\": ", app.busy,
-                           app.syncs, app.opens, app.sends, app.accounts->len);
+    g_string_append_printf(s, ", \"busy\": %d, \"syncs\": %d, \"opens\": %d, \"sends\": %d, \"accounts\": %u, \"main_shown\": %d, "
+                              "\"signals\": %d, \"title\": ", app.busy, app.syncs, app.opens, app.sends, app.accounts->len,
+                           gtk_widget_get_visible(app.win), app.signals_sent);
+    json_str(s, gtk_window_get_title(GTK_WINDOW(app.win)));
+    g_string_append(s, ", \"setup_msg\": ");
     json_str(s, gtk_widget_get_visible(app.su_msg) ? gtk_label_get_text(GTK_LABEL(app.su_msg)) : "");
     g_string_append(s, ", \"status\": ");
     json_str(s, gtk_label_get_text(GTK_LABEL(app.status)));
@@ -1777,6 +1880,158 @@ static void test_setup(void)
     g_io_add_watch(ch, G_IO_IN, on_test_input, NULL);
 }
 
+/* ---- Signals: new mail, and where a click on one goes ---- */
+
+static void update_title(void)
+{
+    Folder *in = folder_by_role(FOLDER_INBOX);
+    guint n = in ? GPOINTER_TO_UINT(g_hash_table_lookup(app.unseen, in->raw)) : 0;
+    char *t = n ? g_strdup_printf("Mail · %u unread", n) : g_strdup("Mail");
+    if (g_strcmp0(gtk_window_get_title(GTK_WINDOW(app.win)), t)) gtk_window_set_title(GTK_WINDOW(app.win), t);
+    g_free(t);
+}
+
+/* Open the Inbox, and the message `uid` if it's there. */
+static void show_inbox_message(guint32 uid)
+{
+    Folder *in = folder_by_role(FOLDER_INBOX);
+    if (in && g_strcmp0(app.folder, in->raw)) open_folder(in->raw);
+    gtk_entry_set_text(GTK_ENTRY(app.search), "");
+    gtk_widget_show(app.win);
+    gtk_window_present(GTK_WINDOW(app.win));
+    if (!uid) return;
+    GList *rows = gtk_container_get_children(GTK_CONTAINER(app.msg_list));
+    for (GList *r = rows; r; r = r->next) {
+        Entry *e = g_object_get_data(G_OBJECT(r->data), "entry");
+        if (e && e->uid == uid) {
+            gtk_list_box_select_row(GTK_LIST_BOX(app.msg_list), GTK_LIST_BOX_ROW(r->data));
+            on_msg_row(NULL, GTK_LIST_BOX_ROW(r->data), NULL);
+            break;
+        }
+    }
+    g_list_free(rows);
+}
+
+static void on_signal_action(GDBusConnection *c, const char *sender, const char *path, const char *iface, const char *signal,
+                             GVariant *params, gpointer d)
+{
+    (void)c; (void)sender; (void)path; (void)iface; (void)signal; (void)d;
+    guint32 id = 0;
+    const char *key = NULL;
+    g_variant_get(params, "(u&s)", &id, &key);
+    gpointer uid;
+    if (!app.notes || !g_hash_table_lookup_extended(app.notes, GUINT_TO_POINTER(id), NULL, &uid)) return;  /* not ours */
+    g_hash_table_remove(app.notes, GUINT_TO_POINTER(id));
+    show_inbox_message(GPOINTER_TO_UINT(uid));
+    state_changed();
+}
+
+static void on_bus(GObject *src, GAsyncResult *res, gpointer d)
+{
+    (void)src; (void)d;
+    app.bus = g_bus_get_finish(res, NULL);  /* no session bus: no Signals, nothing else changes */
+    if (!app.bus) return;
+    g_dbus_connection_signal_subscribe(app.bus, NULL, "org.freedesktop.Notifications", "ActionInvoked", "/org/freedesktop/Notifications",
+                                       NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_signal_action, NULL, NULL);
+}
+
+static void signals_init(void)
+{
+    app.notes = g_hash_table_new(NULL, NULL);
+    g_bus_get(G_BUS_TYPE_SESSION, NULL, on_bus, NULL);
+}
+
+static void on_notified(GObject *src, GAsyncResult *res, gpointer uid)
+{
+    GVariant *r = g_dbus_connection_call_finish(G_DBUS_CONNECTION(src), res, NULL);
+    if (!r) return;
+    guint32 id = 0;
+    g_variant_get(r, "(u)", &id);
+    g_variant_unref(r);
+    if (id) g_hash_table_replace(app.notes, GUINT_TO_POINTER(id), uid);
+    app.signals_sent++;
+    state_changed();
+}
+
+/* One Signal. Text from an email is plain (escaped): Signals may read markup. */
+static void signal_new(const char *summary, const char *body, guint32 uid)
+{
+    if (!app.bus) return;
+    char *s = g_markup_escape_text(summary, -1), *b = g_markup_escape_text(body ? body : "", -1);
+    GVariantBuilder actions, hints;
+    g_variant_builder_init(&actions, G_VARIANT_TYPE("as"));
+    g_variant_builder_add(&actions, "s", "default");
+    g_variant_builder_add(&actions, "s", uid ? "Read" : "Open Inbox");
+    g_variant_builder_init(&hints, G_VARIANT_TYPE("a{sv}"));
+    g_variant_builder_add(&hints, "{sv}", "desktop-entry", g_variant_new_string("nexa-" APP_ID));
+    g_variant_builder_add(&hints, "{sv}", "category", g_variant_new_string("email.arrived"));
+    g_dbus_connection_call(app.bus, "org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+                           "Notify", g_variant_new("(susssasa{sv}i)", "Mail", 0u, "nexa-" APP_ID, s, b, &actions, &hints, -1),
+                           G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, 5000, NULL, on_notified, GUINT_TO_POINTER(uid));
+    g_free(s);
+    g_free(b);
+}
+
+static gboolean looking_at_mail(void)
+{
+    return gtk_widget_get_visible(app.win) && gtk_window_is_active(GTK_WINDOW(app.win));
+}
+
+/* New unread messages in the Inbox: one Signal each (a few), or one for all. */
+static void announce_new(GArray *uids)
+{
+    if (!uids->len || looking_at_mail()) return;
+    if (uids->len <= 3) {
+        for (guint i = 0; i < uids->len; i++) {
+            Entry *e = box_find(app.box, g_array_index(uids, guint32, i));
+            if (!e || e->seen) continue;
+            char *who = g_strdup(e->from && *e->from ? e->from : "Someone"), *lt = strchr(who, '<');
+            if (lt && lt > who) *lt = 0;
+            signal_new(g_strstrip(who), e->subject && *e->subject ? e->subject : "(no subject)", e->uid);
+            g_free(who);
+        }
+        return;
+    }
+    GString *b = g_string_new(NULL);
+    for (guint i = 0; i < uids->len && i < 3; i++) {
+        Entry *e = box_find(app.box, g_array_index(uids, guint32, i));
+        if (e) g_string_append_printf(b, "%s%s", b->len ? "\n" : "", e->subject && *e->subject ? e->subject : "(no subject)");
+    }
+    char *t = g_strdup_printf("%u new messages", uids->len);
+    signal_new(t, b->str, 0);
+    g_free(t);
+    g_string_free(b, TRUE);
+}
+
+/* Looking at another folder: the Inbox's count went up. */
+static void announce_inbox(guint before, guint now)
+{
+    if (now <= before || looking_at_mail()) return;
+    char *t = now - before == 1 ? g_strdup("A new message in your Inbox") : g_strdup_printf("%u new messages in your Inbox", now - before);
+    signal_new(t, "", 0);
+    g_free(t);
+}
+
+/* mailto: or --write: the new message, once there's an account. */
+static void open_pending_compose(void)
+{
+    if (!app.pending_compose || !app.acc) return;
+    app.pending_compose = FALSE;
+    char *to = g_strdup(app.pending_to ? app.pending_to : "");
+    if (app.pending_who && *app.pending_who) {  /* their address from mail they sent */
+        Box *b = box_load(app.acc->id, "INBOX");
+        GPtrArray *senders = g_ptr_array_new();
+        for (guint i = 0; b && i < b->entries->len; i++) g_ptr_array_add(senders, ((Entry *)b->entries->pdata[i])->from);
+        char *found = address_pick(senders, app.pending_who);
+        g_free(to);
+        to = found ? found : g_strdup(app.pending_who);  /* not found: what was asked, to correct */
+        g_ptr_array_free(senders, TRUE);
+        box_free(b);
+    }
+    compose_new(to, app.pending_cc, app.pending_subject, app.pending_body);
+    g_free(to);
+}
+
 /* ---- keys and start ---- */
 
 static gboolean on_key(GtkWidget *w, GdkEventKey *e, gpointer d)
@@ -1809,7 +2064,19 @@ int main(int argc, char **argv)
     app.composes = g_ptr_array_new();
     app.jobs = g_async_queue_new();
     app.accounts = accounts_load();
+    for (int i = 1; i < argc; i++) {
+        if (!g_ascii_strncasecmp(argv[i], "mailto:", 7)) {
+            app.pending_compose = mailto_parse(argv[i], &app.pending_to, &app.pending_cc, &app.pending_subject, &app.pending_body);
+        } else if (!strcmp(argv[i], "--write") && i + 1 < argc) {
+            app.pending_compose = TRUE;
+            app.pending_who = g_strndup(argv[++i], 200);
+        } else if (!strcmp(argv[i], "--search") && i + 1 < argc) {
+            app.pending_search = g_strndup(argv[++i], 200);
+        }
+    }
+    app.compose_only = app.pending_compose && app.accounts->len;  /* no account yet: the window, to add one */
     g_thread_unref(g_thread_new("mail", worker, NULL));
+    signals_init();
 
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_data(css, CSS, -1, NULL);
@@ -1842,7 +2109,8 @@ int main(int argc, char **argv)
     gtk_container_add(GTK_CONTAINER(app.win), app.stack);
     g_signal_connect(app.win, "key-press-event", G_CALLBACK(on_key), NULL);
     g_signal_connect(app.win, "destroy", G_CALLBACK(gtk_main_quit), NULL);
-    gtk_widget_show_all(app.win);
+    gtk_widget_show_all(gtk_bin_get_child(GTK_BIN(app.win)));
+    if (!app.compose_only) gtk_widget_show_all(app.win);
     if (app.test_dir) test_setup();
     if (app.accounts->len) {
         app.acc = app.accounts->pdata[0];
@@ -1851,13 +2119,14 @@ int main(int argc, char **argv)
         app.box = box_load(app.acc->id, app.folder);
         gtk_stack_set_visible_child_name(GTK_STACK(app.stack), "mail");
         fill_list();
-        sync_now();
+        if (app.compose_only) open_pending_compose();
+        else sync_now();
     } else {
         gtk_stack_set_visible_child_name(GTK_STACK(app.stack), "setup");
         gtk_widget_set_sensitive(app.write_btn, FALSE);
         gtk_widget_set_sensitive(app.refresh_btn, FALSE);
     }
-    app.check_id = g_timeout_add_seconds(CHECK_EVERY, every_few_minutes, NULL);
+    if (!app.compose_only) app.check_id = g_timeout_add_seconds(CHECK_EVERY, every_few_minutes, NULL);
     state_changed();
     gtk_main();
     return 0;

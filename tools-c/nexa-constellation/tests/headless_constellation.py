@@ -4,8 +4,10 @@ pointer (nexa-vpointer). Run by scripts/test-constellation.sh; screenshots
 go to $OUT."""
 import json
 import os
+import socket
 import subprocess
 import sys
+import threading
 import time
 
 import gi
@@ -138,6 +140,35 @@ def write(path, text):
         f.write(text)
 
 
+# Nexa Link, stood in for: the device list over its socket, and a nexa-linkd
+# that writes down how it was asked to send.
+LINK_DEVICES = []
+def link_server():
+    path = os.path.join(os.environ["XDG_RUNTIME_DIR"], "nexa-link.sock")
+    srv = socket.socket(socket.AF_UNIX)
+    srv.bind(path)
+    srv.listen(4)
+    while True:
+        c, _ = srv.accept()
+        req = c.makefile().readline()
+        if '"devices"' in req:
+            c.sendall((json.dumps({"ok": True, "devices": LINK_DEVICES}) + "\n").encode())
+        c.close()
+threading.Thread(target=link_server, daemon=True).start()
+FAKE_LINKD = "/tmp/fake-linkd"
+with open(FAKE_LINKD, "w") as f:
+    f.write("#!/bin/sh\necho \"$@\" > /tmp/link-args\nsleep \"$(cat /tmp/link-slow 2>/dev/null || echo 0)\"\n"
+            "echo '{\"event\": \"sent\", \"to\": \"x\"}'\n")
+os.chmod(FAKE_LINKD, 0o755)
+
+
+def link_args():
+    try:
+        return open("/tmp/link-args").read().split()
+    except OSError:
+        return []
+
+
 def open_sky():
     super_tab()
     return wait(lambda: sky()["open"] == 1, 3)
@@ -171,7 +202,8 @@ for app, name, icon in (("test-editor", "Editor", "accessories-text-editor"), ("
                         ("test-viewer", "Viewer", "image-x-generic"), ("test-files", "Files", "folder")):
     write(f"{apps}/{app}.desktop", f"[Desktop Entry]\nType=Application\nName={name}\nIcon={icon}\nExec=true\n")
 
-orbit = subprocess.Popen(["nexa-orbit"], env=dict(os.environ, NEXA_CONSTELLATION_STATE=STATE), stderr=open("/tmp/orbit.err", "w"))
+orbit = subprocess.Popen(["nexa-orbit"], env=dict(os.environ, NEXA_CONSTELLATION_STATE=STATE, NEXA_LINKD=FAKE_LINKD),
+                         stderr=open("/tmp/orbit.err", "w"))
 time.sleep(1)
 procs = []
 def launch(app, title, *extra):
@@ -279,6 +311,59 @@ spot = max(((x, y) for x in range(30, W - 30, 50) for y in range(80, H - 120, 50
            key=lambda p: min((p[0] - s["x"]) ** 2 + (p[1] - s["y"]) ** 2 for s in stars))
 subprocess.run([VP, str(W), str(H), "move", str(spot[0]), str(spot[1]), "wait", "60", "click"], timeout=10)
 check(wait(lambda: sky()["open"] == 0, 2), "a click on the sky leaves", spot)
+
+# ---- Nexa Link: Ctrl+S sends the picked window's file
+check(open_sky(), "open for Nexa Link")
+files = {x["title"]: x["file"] for x in sky()["stars"]}
+check(files["fig1.png"] == f"{HOME}/Documents/Thesis/fig1.png" and files["ch1.odt — Editor"] == f"{HOME}/Documents/Thesis/ch1.odt"
+      and files["main.rs — Editor"] == f"{HOME}/code/NexaOS/tools/main.rs" and files["ama@nexa: ~"] == "",
+      "each window's file: held open, a recent file's name; a terminal has none", files)
+def ctrl_s():
+    """Ctrl+S, pressed once more if the sky shows no change at all: a new
+    wtype keyboard can lose its first key while GTK takes its key map (see
+    keys()); a real keyboard doesn't."""
+    before = (sky().get("link"), sky().get("choosing"))
+    keys("-M", "ctrl", "-k", "s", "-m", "ctrl")
+    if not wait(lambda: (sky().get("link"), sky().get("choosing")) != before, 1):
+        keys("-M", "ctrl", "-k", "s", "-m", "ctrl")
+keys("fig1")
+ctrl_s()
+check(wait(lambda: "No paired device is nearby" in sky()["link"], 2), "no device nearby: says where to pair one", sky().get("link"))
+LINK_DEVICES[:] = [{"id": "dev-1", "name": "Ama's phone", "files": "ask", "online": True},
+                   {"id": "dev-9", "name": "Old tablet", "files": "ask", "online": False}]
+ctrl_s()
+check(wait(lambda: sky()["link"] == "Sent fig1.png to Ama's phone.", 4), "one device nearby: sent to it", sky().get("link"))
+check(link_args() == ["send", "dev-1", f"{HOME}/Documents/Thesis/fig1.png", "--json"], "nexa-linkd send DEVICE FILE (an offline one isn't asked)",
+      link_args())
+LINK_DEVICES.append({"id": "dev-2", "name": "Office PC", "files": "always", "online": True})
+ctrl_s()
+check(wait(lambda: sky()["choosing"] == 2 and "1 Ama's phone" in sky()["link"] and "2 Office PC" in sky()["link"], 2),
+      "two nearby: which one, by number", sky().get("link"))
+keys("2")
+check(wait(lambda: link_args()[:2] == ["send", "dev-2"] and sky()["link"].startswith("Sent fig1.png to Office PC"), 4), "2: the Office PC",
+      (link_args(), sky().get("link")))
+keys("-k", "Escape")
+keys("ama")
+ctrl_s()
+check(wait(lambda: "can't tell which file" in sky()["link"], 2), "a window with no file: says so", sky().get("link"))
+shot("constellation-link.png")
+keys("-k", "Escape")
+# a send still going when the sky closes: its result comes as a Signal
+with open("/tmp/link-slow", "w") as f:
+    f.write("2")
+LINK_DEVICES[:] = LINK_DEVICES[:1]
+keys("fig1")
+ctrl_s()
+check(wait(lambda: "Sending fig1.png" in sky()["link"], 2), "sending...", sky().get("link"))
+close_sky()
+def link_signal():
+    r = subprocess.run(["nexa-signalctl", "history"], capture_output=True, text=True).stdout
+    try:
+        return [i for i in json.loads(r)["data"][0] if i["app-name"]["data"] == "Nexa Link"]
+    except (ValueError, KeyError, IndexError):
+        return []
+check(wait(lambda: link_signal() and link_signal()[0]["body"]["data"] == "Sent fig1.png to Ama's phone.", 6),
+      "finished after the sky closed: a Signal says so", link_signal())
 
 # ---- needs you; the theme, live
 sway('[title="main.rs — Editor"]', "urgent", "enable")

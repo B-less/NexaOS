@@ -110,6 +110,13 @@ to where it is now, through later moves of it or of a folder it's in.
   Work/Docs" and opens that folder.
 - Honest when it can't know: something moved outside Files reads "Not there
   any more: moved or deleted outside Files"; an emptied Trash says so.
+- Files installed apps saved: "Saved by Mail in Documents/Mail attachments".
+  A sandboxed app can't write the journal (and shouldn't): it keeps its own
+  record, `~/.local/share/<id>/nexa-saved.jsonl` (`{"at", "path"}` lines),
+  and FileTrail believes only paths inside the folders that app may write
+  (its `files.*` permissions, as nexa-run grants them), the newest 200 per
+  app, followed through later moves like the rest. Mail does this for
+  attachments.
 
 Built in Rust: `nexa_sys::filetrail` (the journal, trimming, following),
 used by nexa-fileops (writing; the journal is opened before it confines

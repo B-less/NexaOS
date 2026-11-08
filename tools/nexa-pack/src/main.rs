@@ -78,7 +78,7 @@ fn report_json(v: &package::Verified) -> String {
         "publisher": v.trust.publisher(),
         "id": m.id, "name": m.name, "version": m.version,
         "description": m.description, "categories": m.categories, "icon": m.icon,
-        "terminal": m.terminal, "depends": m.depends, "permissions": m.permissions,
+        "terminal": m.terminal, "depends": m.depends, "permissions": m.permissions, "opens": m.opens,
         "files": v.files.len(),
         "size": v.files.values().map(|d| d.len()).sum::<usize>(),
     })

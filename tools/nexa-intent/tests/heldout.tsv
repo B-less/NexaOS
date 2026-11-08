@@ -176,7 +176,7 @@ destroy	factory reset the laptop
 unknown	what is the capital of ghana
 unknown	tell me a joke
 unknown	how are you
-unknown	write an email to my teacher
+mail_write	write an email to my teacher	my teacher
 unknown	whats the weather in kumasi
 unknown	who won the match yesterday
 unknown	how do i bake bread
@@ -187,3 +187,13 @@ unknown	i am bored
 unknown	set an alarm for 6am
 unknown	recommend a good movie
 unknown	translate good morning to twi
+windows	show me everything i have open
+windows	which windows are open right now
+windows	i lost a window
+mail_find	find the email from kofi	kofi
+mail_find	did ama reply to me	ama
+mail_find	search my inbox for school fees	school fees
+mail_find	where's that mail about the flight	the flight
+mail_write	email my landlord	my landlord
+mail_write	i want to write a new email
+mail_write	send abena a mail	abena

@@ -188,6 +188,11 @@ impl Store {
     /// The person chose an action: the key to send back, and the Signal
     /// closes. "default" is a click on the Signal itself, even when the app
     /// didn't name it (then nothing is sent, it just closes).
+    /// The desktop entry of a Signal still showing ("" if none).
+    pub fn desktop_of(&self, id: u32) -> Option<String> {
+        self.active.iter().find(|s| s.id == id).map(|s| s.desktop.clone())
+    }
+
     pub fn invoke(&mut self, id: u32, key: &str) -> Option<(Option<String>, (u32, Reason))> {
         let s = self.active.iter().find(|s| s.id == id)?;
         let send = s.actions.iter().find(|(k, _)| k == key).map(|(k, _)| k.clone());

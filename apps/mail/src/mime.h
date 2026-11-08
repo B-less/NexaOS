@@ -68,4 +68,16 @@ char *mime_build(const Draft *d, char **message_id, gsize *len);
 char *mime_reply_subject(const char *s, gboolean forward);
 /* The quoted text under a reply: "On ..., Ama wrote:" and "> " lines. */
 char *mime_quote(const Message *m);
+
+/* ---- links from elsewhere ---- */
+
+/* A mailto: link (RFC 6068), as the Browser or a PDF hands it over: the
+ * addresses (to, cc: only valid ones, comma-separated), subject (one line)
+ * and body. Other fields (bcc, headers) are ignored: a link never adds a
+ * hidden recipient. FALSE if it isn't a mailto: link. */
+gboolean mailto_parse(const char *uri, char **to, char **cc, char **subject, char **body);
+/* "Write to Kofi": the one address among `senders` (From lines, "Name
+ * <addr>") whose name or address holds every word of `who`, ignoring case,
+ * formatted; NULL if none, or if two different people match. */
+char *address_pick(GPtrArray *senders, const char *who);
 #endif

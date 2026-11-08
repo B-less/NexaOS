@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 #include "chart.h"
 #include "json.h"
@@ -16,7 +19,10 @@
 #define STARMAP_WAIT 3     /* s: then the graph program is stopped */
 #define DUST 140
 
-struct project { unsigned long id; char path[512], name[128], place[256]; };
+struct project { unsigned long id; char path[512], name[128], place[256], file[1024]; };
+
+#define LINK_MAX 9
+struct device { char id[80], name[80]; };
 
 static struct {
     GtkWidget *win, *area;
@@ -44,6 +50,14 @@ static struct {
     char query[128];
     double opened_at;
     guint tick, urgent_timer;
+    /* Nexa Link: sending the picked window's file */
+    char link_status[300];
+    int link_bad;
+    struct device dev[LINK_MAX];
+    int ndev, choosing;          /* choosing: which device, by number */
+    char send_file[1024];
+    GSubprocess *link_job;
+    char link_to[80], link_name[256];
 } S = {.sel = -1, .animations = 1, .c = {{0.03, 0.05, 0.12}, {0.08, 0.11, 0.23}, {0.9, 0.93, 1}, {0.56, 0.61, 0.77}, {0.3, 0.64, 1}, {1, 0.71, 0.28}, 0.78}};
 
 static void recompute(void);
@@ -230,6 +244,7 @@ static void starmap_done(GObject *src, GAsyncResult *res, gpointer d)
                 snprintf(p->path, sizeof p->path, "%s", path);
                 snprintf(p->name, sizeof p->name, "%s", json_str(&doc, c, "name", ""));
                 snprintf(p->place, sizeof p->place, "%s", json_str(&doc, c, "place", ""));
+                snprintf(p->file, sizeof p->file, "%s", json_str(&doc, c, "file", ""));
             }
             S.projects_known = 1;
         }
@@ -303,6 +318,8 @@ static void write_state(void)
     g_string_append_printf(s, "{\"open\": %d, \"current\": %d, \"scale\": %.3f, \"projects_known\": %d, \"animations\": %d, \"query\": ",
                            S.win != NULL, S.current, S.scale, S.projects_known, S.animations);
     json_esc(s, S.query);
+    g_string_append_printf(s, ", \"choosing\": %d, \"link_bad\": %d, \"link\": ", S.choosing ? S.ndev : 0, S.link_bad);
+    json_esc(s, S.link_status);
     g_string_append(s, ", \"selected\": ");
     if (S.win && S.sel >= 0) g_string_append_printf(s, "\"%lu\"", S.w[S.sel].id);
     else g_string_append(s, "null");
@@ -315,9 +332,11 @@ static void write_state(void)
         g_string_append(s, ", \"title\": ");
         json_esc(s, S.w[i].title);
         g_string_append_printf(s, ", \"x\": %.1f, \"y\": %.1f, \"group\": %d, \"rank\": %d, \"on\": %d, \"layer\": %d, \"urgent\": %d, "
-                                  "\"minimized\": %d, \"icon\": %d, \"project\": ",
+                                  "\"minimized\": %d, \"icon\": %d, \"file\": ",
                                S.star[i].x, S.star[i].y, S.group[i], S.rank[i], S.on[i], S.w[i].ws, S.w[i].urgent, S.w[i].minimized,
                                S.w[i].icon != NULL);
+        json_esc(s, S.proj[i] >= 0 ? S.p[S.proj[i]].file : "");
+        g_string_append(s, ", \"project\": ");
         json_esc(s, S.proj[i] >= 0 ? S.p[S.proj[i]].name : "");
         g_string_append_c(s, '}');
     }
@@ -592,9 +611,159 @@ static gboolean draw(GtkWidget *wd, cairo_t *cr, gpointer d)
         text_at(cr, sub->str, 11.5, 0, W / 2, H - 65, cw - 40);
         g_string_free(sub, TRUE);
     }
+    if (*S.link_status) {  /* Nexa Link: what happened to the file */
+        set_rgb(cr, S.link_bad ? S.c.warn : S.c.accent, 1);
+        text_at(cr, S.link_status, 12.5, 1, W / 2, H - 122, W - 60);
+    }
     set_rgb(cr, S.c.muted, 0.85);
-    text_at(cr, "Arrows move  ·  Enter goes there  ·  Delete closes  ·  type to find  ·  Escape leaves", 11, 0, W / 2, H - 26, W - 40);
+    text_at(cr, "Arrows move  ·  Enter goes there  ·  Delete closes  ·  Ctrl+S sends its file  ·  type to find  ·  Escape leaves",
+            11, 0, W / 2, H - 26, W - 40);
     return FALSE;
+}
+
+/* ---------- Nexa Link: send the picked window's file ---------- */
+
+static void link_say(const char *text, int bad)
+{
+    snprintf(S.link_status, sizeof S.link_status, "%s", text);
+    S.link_bad = bad;
+    if (S.area) gtk_widget_queue_draw(S.area);
+    write_state();
+}
+
+/* Paired devices that are nearby now, from nexa-linkd's socket. */
+static int link_devices(void)
+{
+    S.ndev = 0;
+    const char *run = g_getenv("XDG_RUNTIME_DIR");
+    if (!run) return 0;
+    struct sockaddr_un a = {.sun_family = AF_UNIX};
+    if (snprintf(a.sun_path, sizeof a.sun_path, "%s/nexa-link.sock", run) >= (int)sizeof a.sun_path) return 0;
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return 0;
+    struct timeval tv = {0, 400000};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+    static const char req[] = "{\"cmd\": \"devices\"}\n";
+    GString *got = g_string_new(NULL);
+    if (connect(fd, (struct sockaddr *)&a, sizeof a) == 0 && write(fd, req, sizeof req - 1) == (ssize_t)(sizeof req - 1)) {
+        char buf[4096];
+        ssize_t r;
+        while (got->len < (64u << 10) && !strchr(got->str, '\n') && (r = read(fd, buf, sizeof buf)) > 0) g_string_append_len(got, buf, r);
+    }
+    close(fd);
+    struct jdoc doc = {0};
+    if (got->len && json_parse(&doc, got->str) == 0) {
+        int arr = json_get(&doc, 0, "devices");
+        for (int c = arr >= 0 ? doc.n[arr].child : -1; c >= 0 && S.ndev < LINK_MAX; c = doc.n[c].next) {
+            int on = json_get(&doc, c, "online");
+            if (on < 0 || doc.n[on].type != J_BOOL || !doc.n[on].num) continue;
+            const char *id = json_str(&doc, c, "id", "");
+            if (!*id) continue;
+            snprintf(S.dev[S.ndev].id, sizeof S.dev[S.ndev].id, "%s", id);
+            snprintf(S.dev[S.ndev].name, sizeof S.dev[S.ndev].name, "%s", json_str(&doc, c, "name", "your device"));
+            S.ndev++;
+        }
+    }
+    json_free(&doc);
+    g_string_free(got, TRUE);
+    return S.ndev;
+}
+
+/* A send that ends after the sky closed: its result as a Signal. */
+static void link_signal(const char *summary, const char *body)
+{
+    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, NULL);
+    if (!bus) return;
+    GVariantBuilder actions, hints;
+    g_variant_builder_init(&actions, G_VARIANT_TYPE("as"));
+    g_variant_builder_init(&hints, G_VARIANT_TYPE("a{sv}"));
+    char *s = g_markup_escape_text(summary, -1), *b = g_markup_escape_text(body, -1);
+    g_dbus_connection_call(bus, "org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
+                           g_variant_new("(susssasa{sv}i)", "Nexa Link", 0u, "nexa-network", s, b, &actions, &hints, -1), NULL,
+                           G_DBUS_CALL_FLAGS_NONE, 3000, NULL, NULL, NULL);
+    g_free(s);
+    g_free(b);
+    g_object_unref(bus);
+}
+
+static void link_done(GObject *src, GAsyncResult *res, gpointer d)
+{
+    GSubprocess *job = G_SUBPROCESS(src);
+    char *out = NULL, *err = NULL;
+    gboolean ran = g_subprocess_communicate_utf8_finish(job, res, &out, &err, NULL);
+    int ok = ran && g_subprocess_get_if_exited(job) && g_subprocess_get_exit_status(job) == 0;
+    char *text, *why = NULL;
+    if (ok && out && strstr(out, "\"declined\"")) {
+        text = g_strdup_printf("%s didn't accept %s.", S.link_to, S.link_name);
+        ok = 0;
+    } else if (ok) {
+        text = g_strdup_printf("Sent %s to %s.", S.link_name, S.link_to);
+    } else {
+        why = g_strstrip(g_strdup(err && *err ? (g_str_has_prefix(err, "nexa-linkd: ") ? err + 12 : err) : "it didn't work"));
+        char *nl = strchr(why, '\n');
+        if (nl) *nl = 0;
+        text = g_strdup_printf("Couldn't send %s: %s", S.link_name, why);
+    }
+    if (S.win) link_say(text, !ok);
+    else link_signal(ok ? "Sent" : "Not sent", text);
+    g_free(text);
+    g_free(why);
+    g_free(out);
+    g_free(err);
+    g_clear_object(&S.link_job);
+}
+
+static void start_send(int dev)
+{
+    S.choosing = 0;
+    if (dev < 0 || dev >= S.ndev) return;
+    const char *prog = g_getenv("NEXA_LINKD");
+    const char *argv[] = {prog && *prog ? prog : "nexa-linkd", "send", S.dev[dev].id, S.send_file, "--json", NULL};
+    GError *e = NULL;
+    S.link_job = g_subprocess_newv(argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &e);
+    snprintf(S.link_to, sizeof S.link_to, "%s", S.dev[dev].name);
+    char *base = g_path_get_basename(S.send_file);
+    snprintf(S.link_name, sizeof S.link_name, "%s", base);
+    g_free(base);
+    if (!S.link_job) {
+        link_say("Nexa Link isn't here to send it.", 1);
+        g_clear_error(&e);
+        return;
+    }
+    g_subprocess_communicate_utf8_async(S.link_job, NULL, NULL, link_done, NULL);
+    char *t = g_strdup_printf("Sending %s to %s… (they accept it there)", S.link_name, S.link_to);
+    link_say(t, 0);
+    g_free(t);
+}
+
+/* Ctrl+S: the picked window's file to a paired device nearby. */
+static void send_selected(void)
+{
+    if (S.sel < 0) return;
+    if (S.link_job) {
+        link_say("Still sending the last one.", 1);
+        return;
+    }
+    struct project *p = project_of(S.w[S.sel].id);
+    if (!p || !*p->file) {
+        link_say(S.projects_known ? "NexaOS can't tell which file this window shows." : "Still finding out which file this window shows.", 1);
+        return;
+    }
+    snprintf(S.send_file, sizeof S.send_file, "%s", p->file);
+    int n = link_devices();
+    if (!n) {
+        link_say("No paired device is nearby. Pair one in Settings > Nexa Link.", 1);
+    } else if (n == 1) {
+        start_send(0);
+    } else {
+        GString *t = g_string_new("Send it to:");
+        for (int i = 0; i < n; i++) g_string_append_printf(t, "%s  %d %s", i ? "  ·" : "", i + 1, S.dev[i].name);
+        g_string_append(t, "   (press a number)");
+        S.choosing = 1;
+        link_say(t->str, 0);
+        g_string_free(t, TRUE);
+    }
 }
 
 /* ---------- use ---------- */
@@ -652,6 +821,20 @@ static gboolean on_key(GtkWidget *wd, GdkEventKey *e, gpointer d)
 {
     guint k = e->keyval;
     int ctrl = (e->state & GDK_CONTROL_MASK) != 0;
+    if (S.choosing) {  /* which device: a number, or Escape */
+        if (k >= GDK_KEY_1 && k <= GDK_KEY_9 && (int)(k - GDK_KEY_1) < S.ndev) start_send((int)(k - GDK_KEY_1));
+        else if (k == GDK_KEY_Escape) {
+            S.choosing = 0;
+            link_say("", 0);
+        }
+        gtk_widget_queue_draw(S.area);
+        write_state();
+        return TRUE;
+    }
+    if (ctrl && (k == GDK_KEY_s || k == GDK_KEY_S)) {
+        send_selected();
+        return TRUE;
+    }
     if (k == GDK_KEY_Escape) {
         if (*S.query) {
             S.query[0] = 0;
@@ -799,6 +982,8 @@ static void sky_open(void)
     g_signal_connect(S.win, "key-press-event", G_CALLBACK(on_key), NULL);
     gtk_container_add(GTK_CONTAINER(S.win), S.area);
     S.query[0] = 0;
+    S.choosing = 0;
+    if (!S.link_job) S.link_status[0] = 0;
     S.opened_at = now_s();
     recompute();
     /* the window that was in front before is in front of the list; start on the one before it,

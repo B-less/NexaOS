@@ -156,11 +156,125 @@ fn follow(all: &[Value], after: usize, start: &str, in_trash: bool) -> (String, 
     (cur, status)
 }
 
-/// Every change, newest first, each followed to where the thing is now.
+/// Every change, newest first, each followed to where the thing is now:
+/// what Files did, and files installed apps saved (see `app_saves`).
 /// `query`: part of a name (any case); empty for everything.
 pub fn trail(home: &Path, query: &str, limit: usize) -> Vec<Value> {
+    trail_with(home, &registry_dir(), query, limit)
+}
+
+pub fn trail_with(home: &Path, registry: &Path, query: &str, limit: usize) -> Vec<Value> {
     let all = entries(home);
     let q = query.trim().to_lowercase();
+    let mut out = journal_items(&all, &q, limit);
+    if crate::magic::enabled(home, "filetrail") {
+        for (at, app, path) in app_saves(home, registry) {
+            let label = name(&path);
+            if !q.is_empty() && !label.to_lowercase().contains(&q) {
+                continue;
+            }
+            // followed through what Files did after it was saved
+            let after = all.iter().position(|e| e["at"].as_u64().unwrap_or(0) >= at).unwrap_or(all.len());
+            let (now, status) = follow(&all, after, &path, false);
+            out.push(json!({"at": at, "kind": "saved", "name": label, "from": null, "to": path, "now": now, "status": status, "app": app}));
+        }
+        out.sort_by(|a, b| b["at"].as_u64().cmp(&a["at"].as_u64()));
+        out.truncate(limit);
+    }
+    out
+}
+
+/// Where installed apps are recorded (the broker writes it; nexa-run reads it).
+pub fn registry_dir() -> PathBuf {
+    std::env::var_os("NEXA_RUN_REGISTRY").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/var/lib/nexa-packages"))
+}
+
+/// An app's own record of files it saved, in its own data folder (a
+/// sandboxed app can't write FileTrail's journal, and shouldn't):
+/// `~/.local/share/<id>/nexa-saved.jsonl`, one `{"at": unix, "path": "/home/..."}` a line.
+pub const APP_LOG: &str = "nexa-saved.jsonl";
+
+/// The folders an app may write, from its files.* permissions, as nexa-run
+/// grants them (user-dirs.dirs, or the usual names).
+fn app_folders(home: &Path, perms: &[String]) -> Vec<PathBuf> {
+    let dirs = std::fs::read_to_string(home.join(".config/user-dirs.dirs")).unwrap_or_default();
+    let xdg = |key: &str, fallback: &str| {
+        dirs.lines().filter_map(|l| l.split_once('=')).find(|(k, _)| *k == key)
+            .map(|(_, v)| PathBuf::from(v.trim().trim_matches('"').replace("$HOME", &home.to_string_lossy())))
+            .filter(|p| p.is_absolute() && !p.to_string_lossy().contains(".."))
+            .unwrap_or_else(|| home.join(fallback))
+    };
+    perms.iter().filter_map(|p| match p.as_str() {
+        "files.home" => Some(home.to_path_buf()),
+        "files.documents" => Some(xdg("XDG_DOCUMENTS_DIR", "Documents")),
+        "files.pictures" => Some(xdg("XDG_PICTURES_DIR", "Pictures")),
+        "files.music" => Some(xdg("XDG_MUSIC_DIR", "Music")),
+        "files.videos" => Some(xdg("XDG_VIDEOS_DIR", "Videos")),
+        _ => None,
+    }).collect()
+}
+
+/// Files installed apps say they saved: (at, the app's name, path). Only
+/// paths inside a folder that app may write count, so an app can only
+/// speak for files it could have made; the newest 200 per app.
+pub fn app_saves(home: &Path, registry: &Path) -> Vec<(u64, String, String)> {
+    let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".local/share"));
+    let mut out = Vec::new();
+    let Ok(rd) = fs::read_dir(registry) else { return out };
+    for e in rd.flatten() {
+        let Ok(rec) = fs::read(e.path()).map_err(|_| ()).and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|_| ())) else { continue };
+        let Some(id) = rec["id"].as_str().filter(|i| !i.is_empty() && i.chars().all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))) else { continue };
+        let perms: Vec<String> = rec["permissions"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
+        let folders = app_folders(home, &perms);
+        if folders.is_empty() {
+            continue;
+        }
+        // the app's name, from the menu entry the broker wrote
+        let label = rec["paths"].as_array().into_iter().flatten().filter_map(Value::as_str).find(|p| p.ends_with(".desktop"))
+            .and_then(|d| fs::read_to_string(d).ok())
+            .and_then(|t| t.lines().find_map(|l| l.strip_prefix("Name=").map(|n| n.chars().filter(|c| !c.is_control()).take(80).collect::<String>())))
+            .unwrap_or_else(|| id.to_string());
+        let Ok(text) = fs::read_to_string(data.join(id).join(APP_LOG)) else { continue };
+        let mut mine: Vec<(u64, String, String)> = text.lines().rev().take(200).filter_map(|l| {
+            let v: Value = serde_json::from_str(l).ok()?;
+            let p = v["path"].as_str()?;
+            let path = Path::new(p);
+            let clean = path.is_absolute() && !path.components().any(|c| matches!(c, std::path::Component::ParentDir));
+            (clean && folders.iter().any(|f| path.starts_with(f)) && p.len() < 4096)
+                .then(|| (v["at"].as_u64().unwrap_or(0), label.clone(), p.to_string()))
+        }).collect();
+        mine.reverse();
+        out.extend(mine);
+    }
+    out
+}
+
+/// What reading the apps' records needs (for a sandbox): the registry,
+/// each installed app's own data folder and its menu entry. Read only.
+pub fn app_read_paths(home: &Path, registry: &Path) -> Vec<PathBuf> {
+    let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".local/share"));
+    let mut out = vec![];
+    let Ok(rd) = fs::read_dir(registry) else { return out };
+    out.push(registry.to_path_buf());
+    for e in rd.flatten() {
+        let Some(rec) = fs::read(e.path()).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()) else { continue };
+        if let Some(id) = rec["id"].as_str().filter(|i| !i.is_empty() && i.chars().all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))) {
+            let d = data.join(id);
+            if d.is_dir() {
+                out.push(d);
+            }
+        }
+        if let Some(desktop) = rec["paths"].as_array().into_iter().flatten().filter_map(Value::as_str).find(|p| p.ends_with(".desktop")) {
+            if Path::new(desktop).is_file() {
+                out.push(PathBuf::from(desktop));
+            }
+        }
+    }
+    out
+}
+
+/// What Files did, newest first, each followed to where it is now.
+fn journal_items(all: &[Value], q: &str, limit: usize) -> Vec<Value> {
     let mut out = Vec::new();
     for (i, e) in all.iter().enumerate().rev() {
         let at = e["at"].as_u64().unwrap_or(0);
@@ -198,7 +312,7 @@ pub fn trail(home: &Path, query: &str, limit: usize) -> Vec<Value> {
                 && !from.as_deref().map(|f| name(f).to_lowercase().contains(&q)).unwrap_or(false) {
                 continue;
             }
-            let (now, status) = follow(&all, i + 1, &to, kind == "trashed");
+            let (now, status) = follow(all, i + 1, &to, kind == "trashed");
             let status = if kind == "deleted" && status == "gone" { "deleted" } else { status };
             let mut item = json!({"at": at, "kind": kind, "name": label, "from": from, "to": to, "now": now, "status": status});
             // How to put it back, when that is possible and safe.
@@ -242,6 +356,48 @@ mod tests {
     fn touch(p: &Path) {
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(p, b"x").unwrap();
+    }
+
+    #[test]
+    fn files_apps_saved() {
+        let h = home();
+        let reg = h.join("registry");
+        fs::create_dir_all(&reg).unwrap();
+        let p = |s: &str| h.join(s).to_string_lossy().into_owned();
+        fs::create_dir_all(h.join("apps")).unwrap();
+        fs::write(h.join("apps/nexa-mail.desktop"), "[Desktop Entry]\nName=Mail\nExec=x\n").unwrap();
+        fs::write(reg.join("mail.json"), json!({"id": "mail", "permissions": ["network", "files.documents"],
+                                               "paths": [p("apps/nexa-mail.desktop")]}).to_string()).unwrap();
+        fs::write(reg.join("other.json"), json!({"id": "other", "permissions": ["network"]}).to_string()).unwrap();
+        touch(&h.join("Documents/Mail attachments/invoice.pdf"));
+        touch(&h.join(".ssh/id_rsa"));
+        let log = h.join(".local/share/mail").join(APP_LOG);
+        touch(&log);
+        fs::write(&log, [
+            json!({"at": 300, "path": p("Documents/Mail attachments/invoice.pdf")}).to_string(),
+            json!({"at": 301, "path": p(".ssh/id_rsa")}).to_string(),
+            json!({"at": 302, "path": p("Documents/../.ssh/id_rsa")}).to_string(),
+            json!({"at": 303, "path": "relative.pdf"}).to_string(),
+            "not json".to_string(),
+        ].join("\n")).unwrap();
+        // an app with no folders can't speak for any file
+        touch(&h.join(".local/share/other").join(APP_LOG));
+        fs::write(h.join(".local/share/other").join(APP_LOG), json!({"at": 1, "path": p("Documents/x")}).to_string()).unwrap();
+        std::env::remove_var("XDG_DATA_HOME");
+        let saves = app_saves(&h, &reg);
+        assert_eq!(saves, vec![(300, "Mail".to_string(), p("Documents/Mail attachments/invoice.pdf"))], "only inside its own folders");
+        // Files then moves it: followed there
+        touch(&h.join("Documents/Bills/invoice.pdf"));
+        fs::remove_file(h.join("Documents/Mail attachments/invoice.pdf")).unwrap();
+        let mut f = open(&h).unwrap();
+        append(&mut f, "move", &[json!({"op": "moved", "from": p("Documents/Mail attachments/invoice.pdf"), "to": p("Documents/Bills/invoice.pdf")})], None, 400);
+        drop(f);
+        let t = trail_with(&h, &reg, "invoice", 10);
+        let saved = t.iter().find(|x| x["kind"] == "saved").expect("the save is on the trail");
+        assert_eq!((saved["app"].as_str(), saved["now"].as_str(), saved["status"].as_str()),
+                   (Some("Mail"), Some(p("Documents/Bills/invoice.pdf").as_str()), Some("here")));
+        assert_eq!(t[0]["kind"], "moved", "newest first: the move came after the save");
+        assert!(trail_with(&h, &reg, "id_rsa", 10).is_empty());
     }
 
     #[test]

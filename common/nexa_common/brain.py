@@ -111,6 +111,21 @@ def restore_workspace(name):
     return problems
 
 
+def mail_command():
+    """The installed Mail's command, from its menu entry (the broker wrote
+    it): an absolute path to a program, or None."""
+    path = desktop_file("nexa-mail")
+    if not path:
+        return None
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except OSError:
+        return None
+    exec_line = next((l[5:] for l in lines if l.startswith("Exec=")), "")
+    cmd = exec_line.split(" ")[0] if exec_line else ""
+    return cmd if os.path.isabs(cmd) and os.access(cmd, os.X_OK) else None
+
+
 def save_workspace(name, folder=None):
     from . import compositor
     return request("workspace-save", name=name, folder=folder, windows=compositor.window_rects())
@@ -174,6 +189,18 @@ def run(action):
             _spawn(["nexa-strata", "go", str(n)])
         else:
             _spawn(["nexa-strata", "dive", "+1" if int(action.get("step", 1)) > 0 else "-1"])
+    elif kind == "windows":  # Constellation, the window overview (in Orbit)
+        _spawn(["nexa-constellation"])
+    elif kind == "mail":  # Mail, a Store app: its own command, words as one argument each
+        cmd = mail_command()
+        if not cmd:
+            raise BrainError("Mail isn't installed: you can get it from the Store.")
+        if "search" in action:
+            _spawn([cmd, "--search", str(action["search"])[:200]])
+        elif "write" in action:
+            _spawn([cmd, "--write", str(action["write"])[:200]])
+        else:
+            _spawn([cmd])
     elif kind == "quiet":  # Do not disturb (Nexa Signals)
         _spawn(["nexa-signalctl", "mode", "-a" if action.get("on") else "-r", "do-not-disturb"])
         return "Do not disturb is on: notifications wait in Deck's Signals card." if action.get("on") else "Do not disturb is off."

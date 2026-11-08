@@ -30,8 +30,9 @@ set -e
 cargo test -q -p nexa-starmap 2>&1 | grep -E "^test result: ok. [1-9]|FAILED|panicked" || { cargo test -q -p nexa-starmap 2>&1 | tail -30; exit 1; }
 target=$(rustc -vV | sed -n "s/^host: //p")
 RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -q -p nexa-starmap --target $target
-install -m 0755 target/$target/release/nexa-starmap /src/build/test/
-chown -R "$OWNER" /src/tools/target /src/tools/Cargo.lock /src/build/test/nexa-starmap
+RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -q -p nexa-signald --target $target
+install -m 0755 target/$target/release/nexa-starmap target/$target/release/nexa-signald target/$target/release/nexa-signalctl /src/build/test/
+chown -R "$OWNER" /src/tools/target /src/tools/Cargo.lock /src/build/test
 '
 if ! docker run --rm "nexa-skytest:${version%.*}" sh -c 'command -v wtype' >/dev/null 2>&1; then
     printf 'FROM nexa-apptest:%s\nRUN apk add -q wtype\n' "${version%.*}" | docker build -q -t "nexa-skytest:${version%.*}" - >/dev/null
@@ -40,8 +41,10 @@ echo "== the sky"
 docker run --rm --cap-add SYS_NICE -v "$repo:/src:ro" -v "$(cd "$out" && pwd):/out" -e OUT=/out "nexa-skytest:${version%.*}" sh -c '
 export XDG_RUNTIME_DIR=/tmp/xdg WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 HOME=/root GSETTINGS_BACKEND=keyfile
 mkdir -p $XDG_RUNTIME_DIR /tmp/bin && chmod 700 $XDG_RUNTIME_DIR
-for t in nexa-orbit nexa-constellation nexa-starmap; do cp /src/build/test/$t /tmp/bin/$t; done
+for t in nexa-orbit nexa-constellation nexa-starmap nexa-signald nexa-signalctl; do cp /src/build/test/$t /tmp/bin/$t; done
 export PATH=/tmp/bin:$PATH
+# Signals: a send that ends after the sky closed is reported there.
+DBUS_SESSION_BUS_ADDRESS=$(dbus-daemon --session --fork --print-address | head -1); export DBUS_SESSION_BUS_ADDRESS
 # The session'"'"'s own bindings for Super+Tab and Alt+Tab, so Sway has to accept them.
 {
     printf "set \$mod Mod4\noutput * resolution 1280x800\nseat * xcursor_theme Adwaita 24\n"
@@ -54,5 +57,6 @@ sway -c /tmp/sway.conf >/tmp/sway.log 2>&1 &
 for i in $(seq 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
 export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1) WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
 PYTHONPATH=/src/common python3 -c "from nexa_common import themes; themes.apply(\"horizon\", reload=False)" >/dev/null 2>&1
+nexa-signald > /tmp/signald.log 2>&1 &
 python3 /src/tools-c/nexa-constellation/tests/headless_constellation.py
 '

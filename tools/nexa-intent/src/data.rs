@@ -4,7 +4,7 @@
 //! same seed gives the same sentences, so the model is reproducible.
 //!
 //! Pattern syntax: `[a|b|]` picks one (an empty choice: nothing),
-//! `{APP}` `{FILE}` `{WS}` `{NUM}` `{LAYER}` put in a name or number; the
+//! `{APP}` `{FILE}` `{WS}` `{WHO}` `{TOPIC}` `{NUM}` `{LAYER}` put in a name or number; the
 //! name's words are the argument the tagger learns to find.
 
 use crate::rng::Rng;
@@ -122,6 +122,18 @@ pub const INTENTS: &[(&str, &[&str])] = &[
                    "[stop|hide|pause|silence|mute] [the|all|] [notifications|pop-ups|popups|alerts]", "no [more|] notifications [please|for now|]", "leave me alone"]),
     ("quiet_off", &["[turn off|disable|stop|end|switch off] [do not disturb|quiet mode|dnd|focus mode]",
                     "[show|turn on|resume|enable] [the|] [notifications|pop-ups|alerts] [again|]", "i'm back show [my|the] notifications"]),
+    ("windows", &["[show|show me|open|see] [all|] [my|the|] [open|] windows", "[window overview|constellation|all my windows|every window]",
+                  "[what|which] [windows|apps] [are|do i have] open", "[switch|change|go] to [another|the other|a different] window",
+                  "[show|open] [the|] [window overview|constellation|overview]", "where are my windows", "show me everything [that's|i have] open",
+                  "[i lost|i can't find|i can't see|where did i put] [a|my|the|that] window"]),
+    ("mail_find", &["[find|search for|show me|look for|get|open] [the|my|an|that|] [email|emails|mail|message|messages] [from|by|sent by] {WHO}",
+                    "[find|search for|show me|look for|open] [the|my|an|that|] [email|emails|mail|message] [about|on|regarding|with] {TOPIC}",
+                    "[search|check|look in] [my|the] [mail|email|emails|inbox] for {TOPIC}",
+                    "[did|has] {WHO} [email|emailed|written to|replied to|mailed] me", "[any|new] [emails|mail|messages] from {WHO}",
+                    "{WHO} [email|emails|mail]", "where is the email [from|by] {WHO}", "where is the email about {TOPIC}"]),
+    ("mail_write", &["[write|send|compose|start|draft] [an|a|] [email|mail|e-mail] [to|for] {WHO}", "[email|mail|e-mail] {WHO}",
+                     "[write|send|compose|draft|start] [an|a] [new|] [email|mail|e-mail]", "new [email|mail|e-mail]",
+                     "send {WHO} [an|a] [email|mail]", "[i need to|i want to|let me] [email|write to] {WHO}"]),
     ("destroy", &["[delete|remove|erase|wipe|destroy|get rid of|trash] [my|the|all|all my|every|] [files|photos|pictures|downloads|documents|music|everything|history]",
                   "[format|wipe|erase] [the|my|a] [disk|drive|usb|stick|hard drive|computer]", "[uninstall|remove|delete] {APP}",
                   "[kill|force quit|terminate] {APP}", "delete {FILE}", "[wipe|reset|factory reset] [the|my] [computer|pc|laptop|system]",
@@ -129,13 +141,14 @@ pub const INTENTS: &[(&str, &[&str])] = &[
     ("unknown", &["{OUT}", "{OUT}", "{OUT}", "[can you|could you|please|i want you to|help me|i need to|i want to|let's] {OUT}", "{OUT} [for me|please|now|today|tomorrow]",
                   "what is [the|a|] [capital of france|meaning of life|weather|time in tokyo|square root of 2|largest planet|speed of light]",
                   "tell me [a joke|a story|about yourself|something interesting|the news]", "who [is|was] [the president|einstein|the best footballer|you]",
-                  "[write|draft] [an email|a poem|a letter|an essay|a story|code] [about|for|to] [my boss|cats|love|school|summer|python]",
+                  "[write|draft] [a poem|a letter|an essay|a story|code] [about|for|to] [my boss|cats|love|school|summer|python]",
                   "how do i [cook rice|learn python|tie a tie|change a tyre|make friends|lose weight]", "[translate|say] [hello|thank you] in [french|twi|spanish]",
                   "[hello|hi|hey|good morning|good evening|thanks|thank you|how are you|bye|goodbye|ok|okay|yes|no|lol|hmm]",
                   "what's the weather [today|tomorrow|in accra|like]", "[play|recommend] [a song|some music|a movie|a game]", "[what|which] [day|year|month] is it",
                   "[asdf|qwerty|xyz|blah blah|test|testing 123]", "[buy|order] [food|pizza|a ticket|shoes]", "[explain|summarise|summarize] [quantum physics|this|the news|world war 2]",
                   "[i feel|i am] [sad|bored|happy|tired]", "[can you|do you] [dance|sing|think|dream]", "how [old|tall|smart] are you",
                   "[who|what] made you", "[remind me|set an alarm|set a timer] [at 7|in 10 minutes|tomorrow|for 6am|to call mum]",
+                  "[wake me|wake me up|call me|pick me up|meet me|text me|ring me] [at 6|at 7|at noon|at five|in an hour|tomorrow|by 8|at half past six]",
                   "[explain|define|describe] [photosynthesis|gravity|democracy|inflation|a black hole|machine learning|the internet]",
                   "[what|why|how] [does|do|did|is|are] [the sun|plants|birds|people|computers|vaccines|elections] [work|grow|fly|vote|shine]",
                   "[give me|suggest|list] [ideas|names|recipes|tips|facts] [for|about] [a party|my business|dinner|studying|ghana]",
@@ -165,6 +178,13 @@ pub const FILES: &[&str] = &["cv", "resume", "invoice", "report", "thesis", "ess
 pub const FILE_TAILS: &[&str] = &["", "", "", " 2024", " 2025", " for work", " from last week", " final", " v2", " draft", " pdf", " for the bank"];
 pub const WORKSPACES: &[&str] = &["coding", "android development", "study", "work", "school", "writing", "design", "music production",
                                   "gaming", "research", "web dev", "thesis", "meetings", "photo editing"];
+/// People and things mail is from or about (Mail looks the name up).
+pub const PEOPLE: &[&str] = &["kofi", "ama", "abena", "yaw", "kwame", "efua", "john", "sarah", "mum", "dad", "my boss", "my teacher",
+                              "my lecturer", "the landlord", "my landlord", "the bank", "the school", "hr", "the hr team", "amazon", "dhl",
+                              "grandma", "my sister", "my brother", "kofi mensah", "ama boateng", "the doctor", "my manager", "the council"];
+pub const TOPICS: &[&str] = &["the invoice", "exam results", "the flight", "school fees", "the meeting", "my order", "the job offer", "rent",
+                              "the wedding", "the contract", "the interview", "my visa", "the party", "the delivery", "the payment",
+                              "lunch on friday", "the report", "my password", "the trip", "the course"];
 pub const NUMBERS: &[&str] = &["10", "20", "25", "30", "40", "50", "60", "70", "75", "80", "90", "100", "five", "fifty", "half", "thirty", "eighty"];
 /// Things people ask that NexaOS's commands don't do: verbs and objects
 /// mixed at random ("knit a flight" too), including command verbs on
@@ -172,7 +192,7 @@ pub const NUMBERS: &[&str] = &["10", "20", "25", "30", "40", "50", "60", "70", "
 /// learns that the object decides, not the verb.
 pub const OUT_VERBS: &[&str] = &["knit", "paint", "book", "buy", "cook", "teach me", "build", "draw", "call", "text", "order", "feed", "wash",
                                  "drive", "fix", "clean", "plant", "water", "sell", "rent", "bake", "sing", "dance", "learn", "read me",
-                                 "translate", "summarise", "pay", "send money to", "email", "invite", "marry", "visit", "walk", "count",
+                                 "translate", "summarise", "pay", "send money to", "invite", "marry", "visit", "walk", "count",
                                  "turn off", "turn on", "open", "close", "start", "set", "change", "show me", "find me", "get me", "make",
                                  "switch on", "switch off", "lock", "play"];
 pub const OUT_OBJECTS: &[&str] = &["a scarf", "my house", "a flight", "a hotel", "a taxi", "dinner", "guitar", "a website", "the lights",
@@ -214,11 +234,13 @@ fn expand(p: &str, rng: &mut Rng) -> String {
                     "APP" => APPS[rng.below(APPS.len())].to_string(),
                     "FILE" => format!("{}{}", FILES[rng.below(FILES.len())], FILE_TAILS[rng.below(FILE_TAILS.len())]),
                     "WS" => WORKSPACES[rng.below(WORKSPACES.len())].to_string(),
+                    "WHO" => PEOPLE[rng.below(PEOPLE.len())].to_string(),
+                    "TOPIC" => TOPICS[rng.below(TOPICS.len())].to_string(),
                     "NUM" => NUMBERS[rng.below(NUMBERS.len())].to_string(),
                     "OUT" => format!("{} {}", OUT_VERBS[rng.below(OUT_VERBS.len())], OUT_OBJECTS[rng.below(OUT_OBJECTS.len())]),
                     _ => LAYERS[rng.below(LAYERS.len())].to_string(),
                 };
-                if matches!(name.as_str(), "APP" | "FILE" | "WS") {
+                if matches!(name.as_str(), "APP" | "FILE" | "WS" | "WHO" | "TOPIC") {
                     out.push('\u{1}');
                     out.push_str(&v);
                     out.push('\u{2}');
@@ -311,7 +333,7 @@ pub fn generate(per: usize, seed: u64, typos: bool) -> Vec<Example> {
         // Names and chat vary most: twice the sentences.
         let n = match INTENTS[i].0 {
             "unknown" => per * 5,
-            "launch" | "find_file" | "destroy" => per * 2,
+            "launch" | "find_file" | "destroy" | "mail_find" => per * 2,
             _ => per,
         };
         for _ in 0..n {

@@ -42,6 +42,7 @@ description = "One plain sentence about what it does"
 categories = "Utility;"  # freedesktop categories
 icon = "icon.svg"        # should be SVG; Hexa style (section 4)
 screenshots = ["shots/main.png"]  # optional: up to 6 PNG/JPEG pictures for the Store page (3 MB each)
+opens = ["text/plain"]   # optional: file types and link schemes it opens (see below)
 
 [build]
 command = "make"
@@ -57,6 +58,15 @@ permissions = []         # see below
 - `depends` **should** only list packages NexaOS already ships (GTK 3,
   GStreamer and its plugins, cairo, curl, ...), so installing works
   offline. Anything else makes installing need the internet.
+- `opens` (optional, up to 32): the file types it opens (`text/plain`,
+  `image/png`; no wildcards) and link schemes (`x-scheme-handler/mailto`;
+  only `mailto`, `tel`, `sms`, `geo`, `magnet`, `webcal`, `xmpp`,
+  `matrix`, never `http`, `https` or `file`). The desktop then offers the
+  app in Open with and Settings > Default apps; it never becomes the
+  default by itself. An app that opens links gets them as `mailto:...`
+  arguments; one that only opens files gets file paths (and read access
+  to them). Packages with `opens` need a NexaOS built from 2026-11-08 on;
+  older ones refuse them as unknown.
 - `permissions` **must** be the fewest the app needs, from this list only:
   `network`, `files.home`, `files.documents`, `files.pictures`,
   `files.music`, `files.videos`, `files.drives`, `camera`, `microphone`, `location`,

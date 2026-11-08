@@ -225,6 +225,8 @@ fn plan(req: &Value, home: &Path) -> Result<(Job, Access), String> {
             if d.is_dir() {
                 a.read.push(d);
             }
+            // files installed apps saved (each in its own folder)
+            a.read.extend(nexa_sys::filetrail::app_read_paths(home, &nexa_sys::filetrail::registry_dir()));
             let query: String = req.get("query").and_then(Value::as_str).unwrap_or("").chars().take(200).collect();
             Job::Trail { query, limit: req.get("limit").and_then(Value::as_u64).unwrap_or(200).min(2000) as usize }
         }

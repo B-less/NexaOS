@@ -8,7 +8,7 @@ import time
 
 KIND = {"moved": "Moved", "renamed": "Renamed", "copied": "Copied", "trashed": "Put in the Trash",
         "restored": "Restored from the Trash", "created": "Created", "put back": "Put back",
-        "deleted": "Deleted for good"}
+        "deleted": "Deleted for good", "saved": "Saved"}
 
 
 def place(path, home=None):
@@ -46,6 +46,8 @@ def describe(item, home=None):
         what = f"Copied from {place(item['from'], home)} to {place(item['to'], home)}"
     elif k == "trashed":
         what = f"Put in the Trash from {place(item['from'], home)}"
+    elif k == "saved":  # by an installed app (Mail's attachments)
+        what = f"Saved by {item.get('app') or 'an app'} in {place(item['to'], home)}"
     elif k == "deleted":
         what = f"Deleted for good from {place(item['to'], home)}"
     else:

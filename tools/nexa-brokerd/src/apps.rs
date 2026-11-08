@@ -219,11 +219,7 @@ fn install_from(p: &Places, work: &Path, bytes: &[u8], allow_unverified: bool, w
             fs::copy(&icon, &dest).map_err(|e| e.to_string())?;
             placed.push(dest);
         }
-        let desktop = format!(
-            "[Desktop Entry]\nType=Application\nName={}\nComment={}\nExec={} %F\nIcon=nexa-{id}\nTerminal={}\nCategories={}\n",
-            one_line(&report["name"]), one_line(&report["description"]), owned[0].display(),
-            if report["terminal"] == true { "true" } else { "false" },
-            Some(one_line(&report["categories"])).filter(|c| !c.is_empty()).unwrap_or_else(|| "Utility;".into()));
+        let desktop = desktop_entry(&report, &owned[0], &id);
         fs::create_dir_all(&p.apps).map_err(|e| e.to_string())?;
         fs::write(&owned[2], desktop).map_err(|e| e.to_string())?;
         placed.push(owned[2].clone());
@@ -247,6 +243,26 @@ fn install_from(p: &Places, work: &Path, bytes: &[u8], allow_unverified: bool, w
               "id": id, "trust": report["trust"], "undo": {"action": "uninstall_app", "args": {"id": id}}}))
 }
 
+/// The app's menu entry. What it opens (checked again here: only plain
+/// type names) becomes MimeType=; an app that opens links gets them as
+/// URIs (%U), one that only opens files gets paths (%F), which nexa-run
+/// grants it read access to.
+fn desktop_entry(report: &Value, bin: &Path, id: &str) -> String {
+    let opens: Vec<&str> = report["opens"].as_array().into_iter().flatten().filter_map(Value::as_str)
+        .filter(|t| t.len() <= 120 && t.contains('/') && t.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "/.+-_".contains(c)))
+        .take(32).collect();
+    let links = opens.iter().any(|t| t.starts_with("x-scheme-handler/"));
+    let mut d = format!(
+        "[Desktop Entry]\nType=Application\nName={}\nComment={}\nExec={} {}\nIcon=nexa-{id}\nTerminal={}\nCategories={}\n",
+        one_line(&report["name"]), one_line(&report["description"]), bin.display(), if links { "%U" } else { "%F" },
+        if report["terminal"] == true { "true" } else { "false" },
+        Some(one_line(&report["categories"])).filter(|c| !c.is_empty()).unwrap_or_else(|| "Utility;".into()));
+    if !opens.is_empty() {
+        d.push_str(&format!("MimeType={};\n", opens.join(";")));
+    }
+    d
+}
+
 pub fn uninstall(p: &Places, id: &str) -> Result<Value, String> {
     let paths = p.registered(id).ok_or_else(|| format!("'{id}' isn't an installed app"))?;
     let owned = p.owned(id);
@@ -265,6 +281,18 @@ mod tests {
     #[test]
     fn desktop_values_stay_on_one_line() {
         assert_eq!(one_line(&json!("Video\nExec=/bin/sh  Player")), "Video Exec=/bin/sh Player");
+    }
+
+    #[test]
+    fn menu_entries() {
+        let bin = Path::new("/usr/local/bin/mail");
+        let mail = json!({"name": "Mail", "description": "Email", "categories": "Network;Email;", "opens": ["x-scheme-handler/mailto"]});
+        let d = desktop_entry(&mail, bin, "mail");
+        assert!(d.contains("Exec=/usr/local/bin/mail %U\n") && d.contains("MimeType=x-scheme-handler/mailto;\n"), "{d}");
+        let plain = desktop_entry(&json!({"name": "Notes"}), bin, "notes");
+        assert!(plain.contains(" %F\n") && !plain.contains("MimeType"), "{plain}");
+        let bad = desktop_entry(&json!({"name": "X", "opens": ["text/plain\nExec=/bin/sh", "Text/Plain;x", 7]}), bin, "x");
+        assert!(!bad.contains("MimeType") && bad.lines().filter(|l| l.starts_with("Exec=")).count() == 1, "{bad}");
     }
 
     #[test]

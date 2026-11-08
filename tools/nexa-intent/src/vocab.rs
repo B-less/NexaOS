@@ -34,8 +34,8 @@ fn sets() -> &'static Vec<HashSet<String>> {
                     text.push(' ');
                     text.push_str(&LAYERS.join(" "));
                 }
-                // ({APP} {FILE} {WS} {OUT} are names or chat: not this intent's own words)
-                for name in ["{APP}", "{FILE}", "{WS}", "{OUT}"] {
+                // ({APP} {FILE} {WS} {WHO} {TOPIC} {OUT} are names or chat: not this intent's own words)
+                for name in ["{APP}", "{FILE}", "{WS}", "{WHO}", "{TOPIC}", "{OUT}"] {
                     text = text.replace(name, " ");
                 }
                 s.extend(words(&text.replace(['[', ']', '|'], " ")));

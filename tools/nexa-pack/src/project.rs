@@ -1,6 +1,7 @@
 //! nexa.toml projects: build them and gather what goes into the package.
 //!
-//! [package]   id, name, version, description, categories, icon, screenshots, terminal
+//! [package]   id, name, version, description, categories, icon, screenshots, terminal,
+//!             opens (file types and link schemes it opens, e.g. "x-scheme-handler/mailto")
 //! [build]     command (run with sh -c in the project), binary (-> bin/<id>),
 //!             lib (optional folder -> lib/)
 //! [requires]  depends (Alpine packages), permissions
@@ -38,6 +39,8 @@ pub struct PackageSection {
     pub screenshots: Vec<String>,
     #[serde(default)]
     pub terminal: bool,
+    #[serde(default)]
+    pub opens: Vec<String>,
 }
 
 fn utility() -> String {
@@ -148,6 +151,7 @@ pub fn gather(dir: &Path, p: &Project) -> Result<(Manifest, BTreeMap<String, Vec
         permissions: p.requires.permissions.clone(),
         terminal: pk.terminal,
         screenshots,
+        opens: pk.opens.clone(),
         files: files.iter().map(|(k, v)| (k.clone(), sign::sha256_hex(v))).collect(),
     };
     manifest.validate()?;

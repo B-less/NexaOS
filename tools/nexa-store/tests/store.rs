@@ -42,7 +42,7 @@ impl World {
             format: FORMAT, id: id.into(), name: name.into(), version: version.into(),
             description: format!("{name} does useful things"), categories: categories.into(),
             icon: Some("icon.svg".into()), arch: ARCH.into(), abi: ABI.into(), depends: vec![],
-            permissions: perms.iter().map(|s| s.to_string()).collect(), terminal: false, screenshots: shots,
+            permissions: perms.iter().map(|s| s.to_string()).collect(), terminal: false, screenshots: shots, opens: vec![],
             files: files.iter().map(|(p, d)| (p.clone(), sign::sha256_hex(d))).collect(),
         };
         let bytes = package::write(&m, &files, key.map(|k| &k.0)).unwrap();

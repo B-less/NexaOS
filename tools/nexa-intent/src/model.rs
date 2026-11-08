@@ -44,7 +44,7 @@ pub struct Prediction {
 
 /// Intents whose sentences carry a name for the tagger to find.
 pub fn takes_arg(intent: &str) -> bool {
-    matches!(intent, "launch" | "find_file" | "workspace_go" | "destroy" | "settings_notifications")
+    matches!(intent, "launch" | "find_file" | "workspace_go" | "destroy" | "settings_notifications" | "mail_find" | "mail_write")
 }
 
 fn softmax(v: &mut [f32]) {

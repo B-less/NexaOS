@@ -197,11 +197,16 @@ fn projects() {
     assert_eq!(p(6), Some(h.join("code/NexaOS")));
     assert_eq!(p(7), p(6));
     assert_eq!(found.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(), ["1", "2", "3", "4", "5", "6", "7", "8"], "in order");
+    assert_eq!(found[0].file, None, "a terminal shows no one file");
+    assert_eq!(found[1].file, Some(ch1.clone()), "the recent file its title names");
+    assert_eq!(found[2].file, Some(data.clone()), "the file it holds open");
+    assert_eq!(found[5].file, Some(ch1.clone()), "the file in its title");
 
     let json: serde_json::Value = serde_json::from_str(&to_json(&found, &h)).unwrap();
     assert_eq!(json["windows"][0]["name"], "NexaOS");
     assert_eq!(json["windows"][0]["place"], "~/code/NexaOS");
     assert_eq!(json["windows"][0]["why"], "terminal");
+    assert_eq!(json["windows"][1]["file"], ch1.to_string_lossy().as_ref());
     assert!(json["windows"][4]["project"].is_null());
 }
 

@@ -202,7 +202,7 @@ mod tests {
             format: crate::manifest::FORMAT, id: id.into(), name: format!("App {id}"), version: version.into(),
             description: "A test app".into(), categories: "Utility;".into(), icon: Some("icon.svg".into()),
             arch: crate::manifest::ARCH.into(), abi: crate::manifest::ABI.into(), depends: vec![],
-            permissions: vec!["network".into()], terminal: false, screenshots: vec![], files: BTreeMap::new(),
+            permissions: vec!["network".into()], terminal: false, screenshots: vec![], opens: vec![], files: BTreeMap::new(),
         };
         let mut files = BTreeMap::new();
         files.insert(format!("bin/{id}"), b"#!/bin/sh\n".to_vec());

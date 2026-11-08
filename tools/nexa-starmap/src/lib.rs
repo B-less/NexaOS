@@ -44,6 +44,9 @@ pub struct Found {
     pub id: String,
     pub project: Option<PathBuf>,
     pub why: &'static str,
+    /// The file the window shows, when a clue names one in its project
+    /// (a path in the title, a recent file's name, a file held open).
+    pub file: Option<PathBuf>,
 }
 
 /// Where to look: `/proc`, the home folder, whose processes count, and
@@ -368,12 +371,12 @@ pub fn find(env: &Env, wins: &[Win]) -> Vec<Found> {
 
 /// Every window's project, from a /proc snapshot.
 pub fn find_in(env: &Env, procs: &Procs, wins: &[Win]) -> Vec<Found> {
-    // file name -> the project roots of the known files with that name
-    let mut by_name: HashMap<String, HashSet<PathBuf>> = HashMap::new();
+    // file name -> the project roots of the known files with that name (and one such file)
+    let mut by_name: HashMap<String, (HashSet<PathBuf>, PathBuf)> = HashMap::new();
     for k in env.known.iter().take(MAX_KNOWN) {
         let (Some(name), Some(parent)) = (k.file_name(), k.parent()) else { continue };
         if let Some(r) = root_of(parent, &env.home) {
-            by_name.entry(name.to_string_lossy().into_owned()).or_default().insert(r);
+            by_name.entry(name.to_string_lossy().into_owned()).or_insert_with(|| (HashSet::new(), k.clone())).0.insert(r);
         }
     }
     wins.iter()
@@ -381,6 +384,20 @@ pub fn find_in(env: &Env, procs: &Procs, wins: &[Win]) -> Vec<Found> {
         .map(|w| {
             // root -> (score, the strongest clue's name, its weight)
             let mut score: BTreeMap<PathBuf, (u32, &'static str, u32)> = BTreeMap::new();
+            // (weight, root, file): the files the clues name
+            let mut named: Vec<(u32, PathBuf, PathBuf)> = Vec::new();
+            for p in title_paths(&w.title, &env.home) {
+                if p.is_file() {
+                    if let Some(r) = p.parent().and_then(|d| root_of(d, &env.home)) {
+                        named.push((4, r, p));
+                    }
+                }
+            }
+            for (name, (roots, file)) in &by_name {
+                if roots.len() == 1 && names_in(&w.title, name) && file.is_file() {
+                    named.push((3, roots.iter().next().cloned().unwrap_or_default(), file.clone()));
+                }
+            }
             let mut add = |folder: Option<PathBuf>, weight: u32, why: &'static str| {
                 if let Some(r) = folder.and_then(|f| root_of(&f, &env.home)) {
                     let e = score.entry(r).or_insert((0, why, 0));
@@ -394,7 +411,7 @@ pub fn find_in(env: &Env, procs: &Procs, wins: &[Win]) -> Vec<Found> {
             for p in title_paths(&w.title, &env.home) {
                 add(folder_of(&p), 4, "title");
             }
-            for (name, roots) in &by_name {
+            for (name, (roots, _)) in &by_name {
                 if roots.len() == 1 && names_in(&w.title, name) {
                     add(roots.iter().next().cloned(), 3, "recent");
                 }
@@ -406,6 +423,9 @@ pub fn find_in(env: &Env, procs: &Procs, wins: &[Win]) -> Vec<Found> {
             files.dedup();
             for f in files.iter().take(FILES_COUNTED) {
                 add(f.parent().map(Path::to_path_buf), 2, "files");
+                if let Some(r) = f.parent().and_then(|d| root_of(d, &env.home)) {
+                    named.push((2, r, f.clone()));
+                }
             }
             let mut child_dirs: Vec<PathBuf> = tree.iter().skip(1).filter_map(|p| procs.cwd.get(p).cloned()).collect();
             child_dirs.sort();
@@ -421,8 +441,12 @@ pub fn find_in(env: &Env, procs: &Procs, wins: &[Win]) -> Vec<Found> {
                 (a.1 .0, a.0.components().count()).cmp(&(b.1 .0, b.0.components().count())).then_with(|| b.0.cmp(&a.0))
             });
             match best {
-                Some((root, (_, why, _))) => Found { id: w.id.clone(), project: Some(root), why },
-                None => Found { id: w.id.clone(), project: None, why: "" },
+                Some((root, (_, why, _))) => {
+                    // the strongest clue's file in that project
+                    let file = named.iter().filter(|(_, r, _)| *r == root).max_by_key(|(wt, _, _)| *wt).map(|(_, _, f)| f.clone());
+                    Found { id: w.id.clone(), project: Some(root), why, file }
+                }
+                None => Found { id: w.id.clone(), project: None, why: "", file: None },
             }
         })
         .collect()
@@ -439,6 +463,7 @@ pub fn to_json(found: &[Found], home: &Path) -> String {
                 "name": p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                 "place": p.strip_prefix(home).map(|r| format!("~/{}", r.to_string_lossy())).unwrap_or_default(),
                 "why": f.why,
+                "file": f.file.as_ref().map(|x| x.to_string_lossy().into_owned()),
             }),
             None => serde_json::json!({"id": f.id, "project": null}),
         })

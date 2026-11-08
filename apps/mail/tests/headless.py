@@ -98,6 +98,58 @@ def start():
     return wait(lambda s: s.get("page"), 15)
 
 
+def signals():
+    """Every Signal so far (Nexa Signals' history: newest first)."""
+    r = subprocess.run(["nexa-signalctl", "history"], capture_output=True, text=True)
+    try:
+        items = json.loads(r.stdout)["data"][0]
+    except (ValueError, KeyError, IndexError):
+        return []
+    return [{k: i[k]["data"] for k in ("id", "app-name", "summary", "body")} for i in items]
+
+
+class Other:
+    """Another Mail started for one thing (a link, --write, --search), with
+    its own test folder."""
+    def __init__(self, name, *args):
+        self.dir = os.path.join("/tmp", "mt-" + name)
+        os.makedirs(self.dir, exist_ok=True)
+        if not os.path.exists(os.path.join(self.dir, "cmd")):
+            os.mkfifo(os.path.join(self.dir, "cmd"))
+        self.proc = subprocess.Popen(["nexa-run", "mail", *args], env=dict(os.environ, MAIL_TEST=self.dir, MAIL_CA_FILE=CA),
+                                     stderr=open("/tmp/mail.err", "a"))
+
+    def state(self):
+        try:
+            return json.load(open(os.path.join(self.dir, "state.json")))
+        except (OSError, ValueError):
+            return {}
+
+    def wait(self, cond, secs=15.0):
+        end = time.time() + secs
+        while time.time() < end:
+            try:
+                if cond(self.state()):
+                    return True
+            except (KeyError, TypeError, IndexError):
+                pass
+            time.sleep(0.05)
+        return False
+
+    def send(self, *lines):
+        with open(os.path.join(self.dir, "cmd"), "w") as f:
+            for line in lines:
+                f.write(line + "\n")
+        time.sleep(0.25)
+
+    def ended(self, secs=15):
+        try:
+            return self.proc.wait(secs) == 0
+        except subprocess.TimeoutExpired:
+            self.proc.terminate()
+            return False
+
+
 def stop():
     proc.terminate()
     proc.wait(5)
@@ -134,6 +186,8 @@ check(wait(lambda s: "didn't accept the email address or password" in s["setup_m
 shot("mail-wrong-password.png")
 send("setup Ama Bôa|ama@test.local|hunter2", "signin")
 check(wait(lambda s: s["page"] == "mail" and len(s["list"]) == 5, 30), "signed in: the Inbox's five messages", state().get("setup_msg"))
+check(wait(lambda s: s["title"] == "Mail · 5 unread", 5), "the window's title says how many are unread (Orbit, Constellation)", state().get("title"))
+check(not [x for x in signals() if x["app-name"] == "Mail"], "the first check: no Signal for mail that was already there", signals())
 s = state()
 names = [f["name"] for f in s["folders"]]
 check({"Inbox", "Sent", "Trash", "Drafts", "Junk"} <= set(names), "the folders, known by their roles", names)
@@ -160,6 +214,9 @@ send("save 0")
 saved = os.path.join(HOME, "Documents", "Mail attachments", "invoice.pdf")
 check(wait(lambda s: "Saved to Documents/Mail attachments" in s["status"]) and open(saved, "rb").read().startswith(b"%PDF-1.4"),
       "saved into Documents, decoded", state().get("status"))
+rec = [json.loads(l) for l in open(os.path.join(HOME, ".local/share/mail/nexa-saved.jsonl"))] if os.path.exists(
+    os.path.join(HOME, ".local/share/mail/nexa-saved.jsonl")) else []
+check(rec and rec[-1]["path"] == saved and rec[-1]["at"] > 1.7e9, "FileTrail can find it: Mail's own record of the saved file", rec)
 send("flag")
 time.sleep(1.5)
 check("\\Flagged" in imap("UID FETCH 1:* (UID FLAGS)", "INBOX"), "flagged on the server too")
@@ -225,6 +282,8 @@ send(f"open {i}")
 time.sleep(0.5)
 send("delete")
 check(wait(lambda s: "Moved to Trash" in s["status"] and len(s["list"]) == 5), "Delete: moved to Trash")
+check(wait(lambda s: s["reading"] and s["reading"]["subject"] == "Lunch on Friday?", 5), "and the next one down opens",
+      state().get("reading"))
 check(wait(lambda s: "MESSAGES 1" in imap('STATUS "Trash" (MESSAGES)'), 5), "on the server too")
 send("folder Trash")
 check(wait(lambda s: s["folder"] == "Trash" and len(s["list"]) == 1, 15), "Trash has it")
@@ -234,13 +293,67 @@ send("delete")
 check(wait(lambda s: "MESSAGES 0" in imap('STATUS "Trash" (MESSAGES)'), 8), "in Trash: deleted for good")
 send("folder Inbox")
 wait(lambda s: s["folder"] == "Inbox")
+
+# ---- new mail while you're elsewhere: a Signal; clicking it opens the message
+other = subprocess.Popen(["python3", "-c", "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk, GLib; "
+                          "GLib.set_prgname('elsewhere'); w = Gtk.Window(title='Elsewhere'); w.connect('destroy', Gtk.main_quit); "
+                          "w.show_all(); Gtk.main()"], stderr=subprocess.DEVNULL)
+time.sleep(1.5)
+before = len([x for x in signals() if x["app-name"] == "Mail"])
+seed(6, "Kofi Mensah <kofi@test.local>", "Exam results", "\r\nThey're out: well done!\r\n")
+send("refresh")
+check(wait(lambda s: len([x for x in signals() if x["app-name"] == "Mail"]) > before, 20), "new mail while you're in another window: a Signal",
+      signals()[:3])
+note = next((x for x in signals() if x["app-name"] == "Mail"), {})
+check(note.get("summary") == "Kofi Mensah" and note.get("body") == "Exam results", "from whom, about what", note)
+subprocess.run(["nexa-signalctl", "invoke", str(note.get("id", 0))], capture_output=True)
+check(wait(lambda s: s["reading"] and s["reading"]["subject"] == "Exam results", 8), "clicking it opens that message",
+      state().get("reading"))
+def focused_app():
+    todo = [json.loads(subprocess.run(["swaymsg", "-t", "get_tree"], capture_output=True, text=True).stdout)]
+    while todo:
+        n = todo.pop()
+        if n.get("focused"):
+            return n.get("app_id")
+        todo.extend(n.get("nodes", []) + n.get("floating_nodes", []))
+    return None
+check(wait(lambda s: focused_app() == "mail", 5), "and Mail comes forward", focused_app())
+other.terminate()
+
+# ---- a mailto: link (the Browser, a PDF): just a new message
+sent_before = imap('STATUS "Sent" (MESSAGES)')
+link = Other("link", "mailto:kofi@test.local?subject=From%20a%20link&body=Hello%0D%0Athere&cc=yaw@test.local&bcc=spy@test.local")
+check(link.wait(lambda s: s["compose"]["to"] == "kofi@test.local" and s["compose"]["cc"] == "yaw@test.local"
+                and s["compose"]["subject"] == "From a link" and s["compose"]["body"] == "Hello\nthere", 10),
+      "a mailto: link fills in a new message (the bcc is left out)", link.state().get("compose"))
+check(link.state().get("main_shown") == 0, "only the message: no mail window behind it")
+shot("mail-link.png")
+link.send("send")
+check(link.ended(20), "sent, and that Mail ends by itself")
+outbox = sorted(os.listdir("/tmp/outbox"), key=lambda f: int(f.split(".")[0]))
+last = open(os.path.join("/tmp/outbox", outbox[-1]), errors="replace").read()
+check("To: kofi@test.local" in last and "Cc: yaw@test.local" in last and "spy@" not in last and "Subject: From a link" in last,
+      "on the wire: to, cc, subject, no hidden bcc", last[:300])
+check(wait(lambda s: imap('STATUS "Sent" (MESSAGES)') != sent_before, 5), "a copy in Sent", (sent_before, imap('STATUS "Sent" (MESSAGES)')))
+
+# ---- Nexa Mind: "write to Abena", "find the email about the new place"
+w = Other("write", "--write", "Abena")
+check(w.wait(lambda s: s["compose"]["to"] == "Abena <abena@test.local>", 10), "--write Abena: her address from mail she sent",
+      w.state().get("compose"))
+w.send("close")
+check(w.ended(10), "closing the message ends it")
+f = Other("search", "--search", "new place near")
+check(f.wait(lambda s: s["main_shown"] == 1 and [m["subject"] for m in s["list"]] == ["Lunch on Friday?"], 25),
+      "--search: the server searches every message", f.state().get("list"))
+f.proc.terminate()
+f.proc.wait(5)
 stop()
 
 # ---- offline
 os.system("pkill -f 'dovecot -c' ; pkill -f imap-login")
 time.sleep(1)
 start()
-check(wait(lambda s: s["page"] == "mail" and len(s["list"]) == 5, 10), "offline: the mail is still listed")
+check(wait(lambda s: s["page"] == "mail" and len(s["list"]) == 6, 10), "offline: the mail is still listed")
 i = [m["subject"] for m in state()["list"]].index("Lunch on Friday?")
 send(f"open {i}")
 check(wait(lambda s: s["reading"] and "free for lunch" in s["reading"]["text"]), "and a message read before still reads")
