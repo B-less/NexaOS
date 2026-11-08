@@ -9,10 +9,11 @@ version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
 image=nexa-rust-apps:${version%.*}
 # Rebuilt when a needed package is missing (linux-pam-dev: nexa-locker;
 # wlr-protocols: nexa-barhide's layer-shell surface; poppler-dev: nexa-pdfdoc;
-# gtk-layer-shell-dev: nexa-orbit; curl-dev, openssl-dev: the Mail app).
-if ! docker run --rm "$image" sh -c 'apk info -e linux-pam-dev && apk info -e wlr-protocols && apk info -e poppler-dev && apk info -e gtk-layer-shell-dev && apk info -e curl-dev && apk info -e openssl-dev' >/dev/null 2>&1; then
+# gtk-layer-shell-dev: nexa-orbit; curl-dev, openssl-dev: the Mail app;
+# onnxruntime-dev: nexa-speak, Nexa's voice).
+if ! docker run --rm "$image" sh -c 'apk info -e linux-pam-dev && apk info -e wlr-protocols && apk info -e poppler-dev && apk info -e gtk-layer-shell-dev && apk info -e curl-dev && apk info -e openssl-dev && apk info -e onnxruntime-dev' >/dev/null 2>&1; then
     docker image inspect "nexa-rust:${version%.*}" >/dev/null 2>&1 || sh "$repo/scripts/build-native.sh" >/dev/null
-    printf 'FROM nexa-rust:%s\nRUN apk add --no-cache gstreamer-dev gst-plugins-base-dev linux-pam-dev wlr-protocols poppler-dev gtk-layer-shell-dev curl-dev openssl-dev\n' "${version%.*}" \
+    printf 'FROM nexa-rust:%s\nRUN apk add --no-cache gstreamer-dev gst-plugins-base-dev linux-pam-dev wlr-protocols poppler-dev gtk-layer-shell-dev curl-dev openssl-dev onnxruntime-dev\n' "${version%.*}" \
         | docker build -q -t "$image" - >/dev/null
 fi
 mkdir -p "$repo/build/native"

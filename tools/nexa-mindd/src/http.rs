@@ -55,17 +55,26 @@ pub fn read_request(r: &mut impl BufRead) -> io::Result<Option<Request>> {
     Err(bad("too many headers"))
 }
 
-pub fn respond(w: &mut impl Write, status: u16, content_type: &str, body: &[u8]) -> io::Result<()> {
-    let reason = match status {
+fn reason(status: u16) -> &'static str {
+    match status {
         200 => "OK", 202 => "Accepted", 400 => "Bad Request", 403 => "Forbidden", 404 => "Not Found",
-        409 => "Conflict", 500 => "Internal Server Error", 503 => "Service Unavailable", _ => "Status",
-    };
+        409 => "Conflict", 500 => "Internal Server Error", 503 => "Service Unavailable", 504 => "Gateway Timeout", _ => "Status",
+    }
+}
+
+pub fn respond(w: &mut (impl Write + ?Sized), status: u16, content_type: &str, body: &[u8]) -> io::Result<()> {
+    let reason = reason(status);
     write!(w, "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())?;
     w.write_all(body)?;
     w.flush()
 }
 
-pub fn respond_json(w: &mut impl Write, status: u16, v: &serde_json::Value) -> io::Result<()> {
+/// The start of a response whose body streams until the connection closes.
+pub fn respond_head(w: &mut dyn Write, status: u16, content_type: &str) -> io::Result<()> {
+    write!(w, "HTTP/1.1 {status} {}\r\nContent-Type: {content_type}\r\nConnection: close\r\n\r\n", reason(status))
+}
+
+pub fn respond_json(w: &mut (impl Write + ?Sized), status: u16, v: &serde_json::Value) -> io::Result<()> {
     respond(w, status, "application/json", v.to_string().as_bytes())
 }
 

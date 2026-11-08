@@ -32,7 +32,7 @@ ROOTFS_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(ROOTFS_DIR))
 DIST_RELDIR := $(patsubst $(BASE_DIR)/%,%,$(DIST_DIR))
 
 .PHONY: help all clean distclean setup build boot iso package docker ci test docs
-.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later test-settings-devices test-bootfix test-editor-app test-viewer-app test-pdf-app test-music-app test-browser-features test-photos-app test-intent test-backup-app test-mail-app test-constellation
+.PHONY: kernel rootfs disk initramfs apps nexa-apps gui-apps stage-gui-rootfs install-deps check-env refresh native test-native test-files-app test-desktop-card test-titlebar test-store-app publish-store iconset test-theme-live test-desktop-drives preload-map test-nexa-later test-settings-devices test-bootfix test-editor-app test-viewer-app test-pdf-app test-music-app test-browser-features test-photos-app test-intent test-backup-app test-mail-app test-constellation test-voice
 .SECONDARY:
 
 # ============================================================================
@@ -328,6 +328,13 @@ test-mail-app: native
 # real keys (wtype) and a real pointer.
 test-constellation: native
 	@sh scripts/test-constellation.sh
+
+# Nexa Mind's voice and ears (tools-c/nexa-speak, tools-c/nexa-voice,
+# tools/nexa-mindd): unit tests, then Kokoro speaking and whisper hearing it
+# back, with the helix on screen in a headless Sway. Downloads the two speech
+# models once (about 400 MB, checked against the catalogue's SHA-256).
+test-voice:
+	@sh scripts/test-voice.sh
 
 # Boot readahead: boot the fresh ISO once, record which parts of nexa.img the
 # boot reads (nexa-preload), and repack the ISO with that map so every later

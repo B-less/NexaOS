@@ -14,6 +14,7 @@ from . import privileged
 from .connections import BluetoothPage, VpnPage
 from .field import CSS as FIELD_CSS, LivingField
 from .link_page import LinkPage
+from .voice_section import VoiceSection
 from .magic_page import MagicPage
 from .privacy_page import PrivacyPage
 from .system_pages import StartupPage, UpdatesPage, UsersPage, ask_broker
@@ -795,6 +796,8 @@ class SettingsWindow(Gtk.Window):
             self.backend_combo.append(key, label)
         self.backend_combo.set_active_id(cfg.get("backend", "auto"))
         page.pack_start(self.backend_combo, False, False, 0)
+        page.pack_start(Gtk.Box(), False, False, 6)
+        page.pack_start(VoiceSection(self._field_label, self._set_label), False, False, 0)
         page.pack_start(Gtk.Box(), False, False, 6)
         self._refresh_mind()
         GLib.timeout_add_seconds(2, self._tick_mind)

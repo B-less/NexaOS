@@ -1176,6 +1176,8 @@ bindsym $mod+space exec nexa-nexus
 bindsym $mod+n exec nexa-deck
 bindsym $mod+o exec pkill -USR1 -u "$(id -u)" -x nexa-orbit
 bindsym $mod+a exec $assistant
+# Talk to Nexa: the assistant opens already listening (the voice helix).
+bindsym $mod+Shift+a exec $assistant --listen
 bindsym $mod+e exec $files
 bindsym $mod+w exec $browser
 bindsym $mod+Shift+c kill
@@ -1407,6 +1409,7 @@ bind = SUPER, Space, exec, nexa-nexus
 bind = SUPER, N, exec, nexa-deck
 bind = SUPER, O, exec, pkill -USR1 -u "$(id -u)" -x nexa-orbit
 bind = SUPER, A, exec, nexa-ai-gui
+bind = SUPER SHIFT, A, exec, nexa-ai-gui --listen
 bind = SUPER, E, exec, nexa-files
 bind = SUPER, W, exec, nexa-browser
 bind = SUPER SHIFT, C, killactive

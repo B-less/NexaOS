@@ -4,7 +4,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, Gdk
 
-from . import agent, client, local_fallback, tools
+from . import agent, client, local_fallback, tools, voice
 from .cli import backend_label, load_config, make_logger, pick_backend
 from nexa_common import actionui, design, magic
 from nexa_common.titlebar import attach_titlebar
@@ -22,6 +22,10 @@ window { background-image: none; background-color: @nexa_bg; }
 #control-toggle.control-on { background-image: none; background-color: @nexa_crit; color: @nexa_on_accent; }
 #activity-toggle { background-image: none; border-radius: 12px; padding: 4px 12px; font-size: 9pt; background-color: @nexa_hover; color: @nexa_text; }
 #activity-toggle:checked { background-color: @nexa_accent; color: @nexa_on_accent; }
+#voice-toggle { background-image: none; border-radius: 12px; padding: 4px 12px; font-size: 9pt; background-color: @nexa_hover; color: @nexa_text; }
+#voice-toggle:checked { background-color: @nexa_accent; color: @nexa_on_accent; }
+#mic { background-image: none; background-color: @nexa_hover; color: @nexa_text; border-radius: 8px; padding: 6px 10px; }
+#mic.listening { background-color: @nexa_crit; color: @nexa_on_accent; }
 
 .bubble { border-radius: 14px; padding: 8px 12px; }
 .bubble-user { background-image: none; background-color: @nexa_selected; color: @nexa_selected_text; }
@@ -50,6 +54,12 @@ class NexaAssistantWindow(Gtk.Window):
         self.log = make_logger()
         self._pending_tools = []     # cards / chips waiting for their tool_result
         self._thinking_row = None
+        # Voice: nexa-voice shows the helix, hears (whisper) and speaks
+        # (Kokoro). A spoken question is always answered aloud.
+        self.voice = voice.VoiceLink(lambda ev: GLib.idle_add(self._on_voice_event, ev))
+        self._listening = False
+        self._spoken_turn = False
+        self._turn_text = []
 
         self._build_ui()
         self._add_bubble("NexaOS Assistant ready. Toggle Control to let it act on the machine.", "sys")
@@ -77,6 +87,12 @@ class NexaAssistantWindow(Gtk.Window):
         self.activity_toggle.set_tooltip_text("Everything the assistant changed, with Undo")
         self.activity_toggle.connect("toggled", self._on_activity_toggled)
         header.pack_end(self.activity_toggle, False, False, 0)
+        self.voice_toggle = Gtk.ToggleButton(label="Voice")
+        self.voice_toggle.set_name("voice-toggle")
+        self.voice_toggle.set_tooltip_text("Read every answer aloud")
+        self.voice_toggle.set_active(bool(self.cfg.get("speak_answers")))
+        self.voice_toggle.connect("toggled", lambda b: b.get_active() or self.voice.stop())
+        header.pack_end(self.voice_toggle, False, False, 0)
         root.pack_start(header, False, False, 0)
 
         self.status = Gtk.Label(label=self._status_text())
@@ -116,11 +132,22 @@ class NexaAssistantWindow(Gtk.Window):
         self.entry.set_placeholder_text("Ask about this machine, or tell it what to do…")
         self.entry.connect("activate", self._on_send)
         entry_row.pack_start(self.entry, True, True, 0)
+        self.mic = Gtk.Button.new_from_icon_name("audio-input-microphone-symbolic", Gtk.IconSize.BUTTON)
+        self.mic.set_name("mic")
+        self.mic.set_tooltip_text("Speak instead of typing (Ctrl+M); click again when you're done")
+        self.mic.connect("clicked", self._on_mic)
+        entry_row.pack_start(self.mic, False, False, 0)
         send_btn = Gtk.Button(label="Send")
         send_btn.set_name("send")
         send_btn.connect("clicked", self._on_send)
         entry_row.pack_start(send_btn, False, False, 0)
         root.pack_start(entry_row, False, False, 0)
+
+        if not self.voice.available:
+            self.mic.set_no_show_all(True)
+            self.voice_toggle.set_no_show_all(True)
+        self.connect("key-press-event", self._on_key)
+        self.connect("destroy", lambda _w: self.voice.close())
 
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
@@ -200,10 +227,61 @@ class NexaAssistantWindow(Gtk.Window):
             self._thinking_row.destroy()
             self._thinking_row = None
 
+    # ---- voice ----
+
+    def _on_key(self, _w, ev):
+        if ev.keyval in (Gdk.KEY_m, Gdk.KEY_M) and ev.state & Gdk.ModifierType.CONTROL_MASK and self.voice.available:
+            self._on_mic(None)
+            return True
+        return False
+
+    def _set_listening(self, on):
+        self._listening = on
+        ctx = self.mic.get_style_context()
+        (ctx.add_class if on else ctx.remove_class)("listening")
+
+    def _on_mic(self, _button):
+        if self._listening:
+            self.voice.stop()          # done talking: what was said is heard now
+            return
+        if not self.entry.get_sensitive():
+            return                     # still answering the last question
+        if self.voice.listen():
+            self._set_listening(True)
+        else:
+            self._add_bubble("The microphone helper (nexa-voice) didn't start.", "sys")
+
+    def _on_voice_event(self, ev):
+        kind = ev.get("event")
+        if kind == "heard":
+            self._set_listening(False)
+            text = (ev.get("text") or "").strip()
+            if text:
+                self.entry.set_text(text)
+                self._spoken_turn = True
+                self._on_send(None)
+            else:
+                self._add_bubble("Didn't catch that. Try again, a little closer to the microphone.", "sys")
+        elif kind == "error":
+            self._set_listening(False)
+            hint = ev.get("hint")
+            self._add_bubble(ev.get("error", "Voice failed") + (f". {hint}." if hint else ""), "sys")
+        return False
+
+    def _speak_answers(self):
+        return self._spoken_turn or self.voice_toggle.get_active()
+
     def _on_send(self, _widget):
         query = self.entry.get_text().strip()
         if not query:
             return
+        if _widget is not None:        # typed: answer in text unless Voice is on
+            self._spoken_turn = False
+        self._turn_text = []
+        if self._speak_answers():
+            self.voice.think()
+        else:
+            self.voice.stop()
         self.entry.set_text("")
         self.entry.set_sensitive(False)
         self._add_bubble(query, "user")
@@ -218,6 +296,7 @@ class NexaAssistantWindow(Gtk.Window):
         self._clear_thinking()
         if kind == "text":
             self._add_bubble(payload, "ai")
+            self._turn_text.append(payload)
         elif kind == "tool_call":
             spec = tools.TOOLS.get(payload["name"])
             if spec and spec["category"] == tools.READ:
@@ -280,6 +359,10 @@ class NexaAssistantWindow(Gtk.Window):
         self._clear_thinking()
         self.entry.set_sensitive(True)
         self.entry.grab_focus()
+        if self._speak_answers():
+            if not self.voice.say("\n".join(self._turn_text)):
+                self.voice.hide()
+        self._spoken_turn = False
         return False
 
     def _confirm_blocking(self, name, args):
@@ -312,6 +395,9 @@ def main():
     win = NexaAssistantWindow()
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
+    # `nexa-ai-gui --listen` (Super+Shift+A) opens listening: say your question.
+    if "--listen" in sys.argv[1:] and win.voice.available:
+        GLib.idle_add(lambda: win._on_mic(None) and False)
     # `nexa-ai-gui --ask "question"` (from Nexus's search) asks straight away.
     if "--ask" in sys.argv[1:]:
         i = sys.argv.index("--ask")

@@ -69,8 +69,9 @@ checked before first use. Only permissively licensed models.
 | Chat + tools, default | Qwen2.5-1.5B-Instruct Q4_K_M | 1.1 GB | Apache-2.0 | 8 GB laptops |
 | Chat + tools, larger | Qwen2.5-7B-Instruct Q4_K_M / Phi-3.5-mini (MIT) | 4.7 / 2.4 GB | Apache-2.0 / MIT | 16 GB+ |
 | Embeddings (search) | nomic-embed-text-v1.5 Q8_0 | 0.14 GB | Apache-2.0 | all |
-| Speech to text | whisper base.en | 0.14 GB | MIT | all |
-| Voice out | espeak-ng (no model) | — | GPL-3 | all |
+| Speech to text | whisper base.en (q8_0) | 0.08 GB | MIT | all |
+| Voice out | Kokoro-82M v1.0 (ONNX) + 4 voices | 0.33 GB | Apache-2.0 | all |
+| Voice fallback | espeak-ng (no model; also turns words into phonemes for Kokoro, run as its own program) | — | GPL-3 | all |
 
 ### Measured on the reference machine
 
@@ -167,7 +168,7 @@ The assistant acts through the same tool layer NexaOS already has
 | **Assistant window** | conversations, tool actions with approvals, model switch (local / Claude) |
 | **Super+Shift+Space** | quick-ask bubble over any app |
 | **Screen** | "Copy text from screen" and "Ask about this screen": a region screenshot (grim) → OCR → into the question |
-| **Voice** | hold a key: whisper transcribes, Nexa answers, espeak-ng speaks (all offline) |
+| **Voice** | the mic button (Ctrl+M) or Super+Shift+A: whisper hears, Nexa answers, Kokoro speaks, the helix shows it (all offline); see "M6 as built" |
 | **Files / PDF / Mail** | "Summarise", "Find similar", "Explain" in the apps' menus |
 
 ---
@@ -264,6 +265,43 @@ Still to do in M3: documents (PDF/Office text), and settings and system
 control (Wi-Fi, Bluetooth, brightness, services) through a Rust
 permission broker instead of the Python root helper.
 
+## M6 as built (voice)
+
+Three programs, each doing one job:
+
+- **nexa-speak** (C, `tools-c/nexa-speak`): Kokoro-82M through onnxruntime.
+  Text is cleaned (no Markdown, code blocks or links read out), cut at
+  punctuation, turned into phonemes by espeak-ng (a separate program: it
+  is GPL-3 and NexaOS code is MIT, so it is never linked), converted to
+  Kokoro's own phoneme alphabet (misaki's rules), and spoken sentence by
+  sentence. The first chunk ends at its first pause so speech starts
+  sooner. Run by nexa-mindd as the `nexa-mind` user under its Landlock
+  rules, kept loaded while you talk, unloaded when idle like the chat model.
+- **nexa-mindd** (Rust): `POST /v1/audio/speech` streams nexa-speak's
+  sentence frames; `POST /v1/audio/transcriptions` takes a 16 kHz mono WAV
+  (at most two minutes), writes it to the private folder, runs `whisper-cli`
+  on it and deletes it. Both models are in the catalogue, pinned by
+  revision, size and SHA-256 (Kokoro's four voices are extra files of its
+  entry), and are downloaded in Settings > Assistant > Voice.
+- **nexa-voice** (C, `tools-c/nexa-voice`): the desktop side. Plays the
+  voice through GStreamer (PipeWire), records the microphone, and shows
+  the **helix**: two strands that turn, swell with the loudness, pop out
+  and throw sparks on each syllable, and change colour with the sound.
+  It follows the audio itself (loudness, syllables and brightness measured
+  from the samples at the moment they play), so it is in step with the
+  voice, not with a guess. Listening ends after a pause, on the mic button,
+  or `nexa-voice stop`. Without Kokoro it falls back to espeak-ng; with
+  neither, the helix still moves. Reduce animations keeps the strands still.
+- **The assistant** (Python, thin): a mic button, Ctrl+M, a Voice switch
+  (read every answer aloud); a spoken question is always answered aloud.
+  `nexa-ai-gui --listen` opens listening (Super+Shift+A).
+
+Measured on the reference machine (i5-8365U, WSL2, 2026-11-08): Kokoro
+loads in about 2 s and makes speech at roughly the speed it plays
+(0.9 s of work per second of audio with 4 threads); the 8-bit and 4-bit
+exports were not faster on this CPU, so the full model is used. Tests:
+`make test-voice`.
+
 ## The kernel link (nexa-kerneld)
 
 The model never runs inside the kernel: a crash there would take the whole
@@ -304,4 +342,4 @@ daemon), and the `KERNELD=` live-boot check.
 | M3 | **Rust tool runner** (`nexa-tools`) + **permission broker** + audit log + untrusted-content guard. Tools: files (read, write/edit with **undo**, since every write keeps the previous version; create, rename, move, copy, delete to a recoverable Nexa trash, search by name and by meaning), documents (summarise, extract text from PDF/Office/images), organise (sort a folder, batch rename, duplicates; shows the whole plan first), apps and web (open, read a page as untrusted), settings (Wi-Fi, Bluetooth, VPN, theme, brightness, volume, Do Not Disturb via the same services Settings uses), system (status, logs, services, packages, power), screen (copy text, ask about it). Each call runs under Landlock limited to the folders it names. | tests: injected file text can't trigger a silent action; a write is undoable; a sandboxed call can't read `~/.ssh` |
 | M4 | **Context index** (text, PDF) + Nexus file search by meaning | finds a file by describing it |
 | M5 | **Screen**: copy text from screen, ask about screen | OCR round trip test |
-| M6 | **Voice**: push-to-talk in and out | spoken question answered offline |
+| M6 🔧 | **Voice** (built 2026-11-08, see "M6 as built"): push-to-talk in and out, the helix | spoken question answered offline (tested in a headless Sway; to try on the HP with a real microphone) |

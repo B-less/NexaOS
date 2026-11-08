@@ -89,7 +89,8 @@ BUILD_CHECKLIST.md. Last checked against the code: 2026-10-15.
 - [ ] M3 (rest): documents (PDF/Office)
 - [x] Settings > Users (people, administrators, change my password, add / remove a person with their files kept), Updates (check, see what changes, update now) and Startup (switch services on/off at startup; the system's own services aren't listed): all through the broker, password where it needs one
 - [ ] Move the OS installer and persistence partition helpers last
-- [ ] M4-M6: private index, screen OCR, offline voice
+- [~] M6 voice (2026-11-08): nexa-speak (Kokoro, C/onnxruntime), nexa-mindd speech + whisper endpoints, nexa-voice (the helix overlay, C), mic button / Voice switch / Super+Shift+A in the assistant, Settings > Assistant > Voice; `make test-voice`. To do: try with a real microphone and speakers on the HP; speak answers as they stream
+- [ ] M4-M5: private index, screen OCR
 - [ ] Download the model on the HP and time real answers there
 
 ## 4c2. Nexa MicroBrain, Nexa Defender, Files (plan: TODOnexa_inter.md, 2026-10-25)

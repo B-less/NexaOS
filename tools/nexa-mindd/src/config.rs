@@ -11,6 +11,10 @@ pub struct Config {
     /// Sockets: mind.sock (for the desktop) and private/llm.sock.
     pub run_dir: PathBuf,
     pub llama_server: PathBuf,
+    /// Kokoro, Nexa's voice (tools-c/nexa-speak).
+    pub nexa_speak: PathBuf,
+    /// whisper.cpp's command line, for hearing.
+    pub whisper: PathBuf,
     pub curl: PathBuf,
     /// Unload the model after this long without a request.
     pub idle: Duration,
@@ -30,6 +34,8 @@ impl Config {
             state_dir: env_path("NEXA_MIND_STATE", "/var/lib/nexa-mind"),
             run_dir: env_path("NEXA_MIND_RUN", "/run/nexa-mind"),
             llama_server: env_path("NEXA_MIND_LLAMA_SERVER", "/usr/bin/llama-server"),
+            nexa_speak: env_path("NEXA_MIND_SPEAK", "/usr/local/bin/nexa-speak"),
+            whisper: env_path("NEXA_MIND_WHISPER", "/usr/bin/whisper-cli"),
             curl: env_path("NEXA_MIND_CURL", "/usr/bin/curl"),
             idle: Duration::from_secs(idle),
             context: 8192,

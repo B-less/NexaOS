@@ -17,6 +17,10 @@
 //!   POST /v1/unload                    free the model's memory now
 //!   POST /v1/warm                      load the default model ahead of use
 //!   POST /v1/chat/completions          OpenAI-style chat (tools, streaming)
+//!   POST /v1/audio/speech {"text", "voice", "speed"}
+//!                                      Kokoro speaks: sentence frames, streamed
+//!   POST /v1/audio/transcriptions      body: WAV 16 kHz mono; {"text"} back
+//!   POST /v1/audio/warm                load the voice now (you are talking)
 
 mod catalog;
 mod config;
@@ -25,6 +29,7 @@ mod http;
 mod llm;
 mod models;
 mod peer;
+mod speech;
 
 use nexa_sys::sandbox;
 
@@ -39,6 +44,7 @@ use std::time::Duration;
 struct Service {
     cfg: Config,
     sup: llm::Supervisor,
+    speech: speech::Speech,
     downloads: models::Downloads,
     landlock: i64,
     own_uid: u32,
@@ -55,6 +61,8 @@ fn status(svc: &Service) -> Value {
         "downloads": *svc.downloads.lock().unwrap(),
         "landlock_abi": svc.landlock,
         "idle_unload_secs": svc.cfg.idle.as_secs(),
+        "voice_loaded": svc.speech.voice_loaded(),
+        "default_voice": catalog::DEFAULT_VOICE_NAME,
     })
 }
 
@@ -105,6 +113,17 @@ fn handle(svc: &Service, mut stream: UnixStream) {
             }
         }
         ("POST", "/v1/chat/completions") => chat(svc, req, &mut stream),
+        ("POST", "/v1/audio/speech") => speak(svc, &req, &mut stream),
+        ("POST", "/v1/audio/warm") => {
+            let r = http::respond_json(&mut stream, 202, &json!({"ok": true}));
+            drop(stream);
+            svc.speech.warm();
+            r
+        }
+        ("POST", "/v1/audio/transcriptions") => match svc.speech.hear(&req.body) {
+            Ok(text) => http::respond_json(&mut stream, 200, &json!({"text": text})),
+            Err((code, e)) => http::respond_json(&mut stream, code, &refusal(code, &e)),
+        },
         // Nexa Patterns expects you to ask soon: load the default model now
         // (answers at once; loads in this connection's thread). It is
         // unloaded again after the usual idle time if nothing asks.
@@ -124,6 +143,28 @@ fn handle(svc: &Service, mut stream: UnixStream) {
     if let Err(e) = result {
         eprintln!("nexa-mindd: uid {}: {e}", peer.uid);
     }
+}
+
+fn refusal(code: u16, e: &str) -> Value {
+    if code == 409 {
+        json!({"error": e, "hint": "POST /v1/models/download"})
+    } else {
+        json!({"error": e})
+    }
+}
+
+/// Kokoro speaks; frames stream back as each sentence is made (speech.rs).
+fn speak(svc: &Service, req: &http::Request, stream: &mut UnixStream) -> std::io::Result<()> {
+    let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+    let text = body["text"].as_str().unwrap_or("");
+    let voice = body["voice"].as_str().unwrap_or(catalog::DEFAULT_VOICE_NAME);
+    let speed = body["speed"].as_f64().unwrap_or(1.0);
+    let m = match svc.speech.check_speak(text, voice, speed) {
+        Ok(m) => m,
+        Err((code, e)) => return http::respond_json(stream, code, &refusal(code, &e)),
+    };
+    stream.set_write_timeout(Some(Duration::from_secs(60))).ok();
+    svc.speech.speak(m, text, voice, speed, stream, |w| http::respond_head(w, 200, "application/x-nexa-speech"))
 }
 
 fn chat(svc: &Service, mut req: http::Request, stream: &mut UnixStream) -> std::io::Result<()> {
@@ -168,13 +209,18 @@ fn serve() -> ! {
     std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o660)).ok();
     // SAFETY: getuid can't fail.
     let own_uid = unsafe { libc::getuid() };
-    let svc = Arc::new(Service { sup: llm::Supervisor::new(cfg.clone()), cfg, downloads: Default::default(), landlock, own_uid });
+    let sup = llm::Supervisor::new(cfg.clone());
+    let speech = speech::Speech::new(cfg.clone(), sup.threads);
+    let svc = Arc::new(Service { sup, speech, cfg, downloads: Default::default(), landlock, own_uid });
     eprintln!("nexa-mindd: listening on {} ({} threads, Landlock ABI {landlock})", sock.display(), svc.sup.threads);
     let reaper = svc.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(15));
         if reaper.sup.reap_if_idle() {
             eprintln!("nexa-mindd: model unloaded after {} s idle", reaper.cfg.idle.as_secs());
+        }
+        if reaper.speech.reap_if_idle() {
+            eprintln!("nexa-mindd: voice unloaded after {} s idle", reaper.cfg.idle.as_secs());
         }
     });
     for conn in listener.incoming() {
