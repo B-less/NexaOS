@@ -98,6 +98,8 @@ static struct {
     vp_state rvp;
     long voiced, silent_run, rec_frames;
     int max_s, rec_eos;
+    int rec_peak;               /* loudest sample so far: 0 is a muted microphone */
+    gint64 rec_start;
     /* what happened, for tests */
     GPtrArray *spoken;
     char *heard, *error;
@@ -782,7 +784,12 @@ static GstFlowReturn on_rec_sample(GstAppSink *sink, gpointer gen)
         if (GPOINTER_TO_INT(gen) == g_atomic_int_get(&V.gen) && V.pcm->len < (guint)(LISTEN_RATE * 2 * 125)) {
             g_byte_array_append(V.pcm, mi.data, mi.size);
             vp_frame fr[256];
-            int n = vp_feed(&V.rvp, (const int16_t *)mi.data, mi.size / 2, fr, 256);
+            const int16_t *x = (const int16_t *)mi.data;
+            for (gsize i = 0; i < mi.size / 2; i++) {
+                int a = x[i] < 0 ? -(int)x[i] : x[i];
+                if (a > V.rec_peak) V.rec_peak = a;
+            }
+            int n = vp_feed(&V.rvp, x, mi.size / 2, fr, 256);
             g_array_append_vals(V.rframes, fr, n);
         }
         g_mutex_unlock(&V.lock);
@@ -790,6 +797,52 @@ static GstFlowReturn on_rec_sample(GstAppSink *sink, gpointer gen)
     }
     gst_sample_unref(smp);
     return GST_FLOW_OK;
+}
+
+#define MIC_HINT "Check the microphone in Settings > Sound"
+
+static int have_microphone(void);
+
+/* Listening can't go on: say why, and put the helix away. When the
+ * microphone is the system's own (no NEXA_VOICE_SOURCE) and the sound
+ * server has none at all, that is the reason, whatever failed. */
+static void mic_trouble(const char *what, const char *hint)
+{
+    const char *src = g_getenv("NEXA_VOICE_SOURCE");
+    if ((!src || !*src) && !have_microphone()) {
+        what = "No microphone found";
+        hint = "Plug in a headset or USB microphone, or check Settings > Sound";
+    }
+    g_free(V.error);
+    V.error = g_strdup(what);
+    event("error", "error", what, "hint", hint);
+    stop_all(0);
+    V.task = T_NONE;
+    V.hx.mode = HELIX_IDLE;
+    hide();
+    finish_oneshot();
+}
+
+/* Is there any microphone at all? (Sound servers list the sound of the
+ * speakers as a source too, a "monitor"; that one doesn't count.) */
+static int have_microphone(void)
+{
+    GstDeviceMonitor *mon = gst_device_monitor_new();
+    gst_device_monitor_add_filter(mon, "Audio/Source", NULL);
+    int found = 0;
+    if (gst_device_monitor_start(mon)) {
+        GList *devs = gst_device_monitor_get_devices(mon);
+        for (GList *l = devs; l; l = l->next) {
+            GstStructure *p = gst_device_get_properties(GST_DEVICE(l->data));
+            const char *cls = p ? gst_structure_get_string(p, "device.class") : NULL;
+            if (!cls || strcmp(cls, "monitor") != 0) found = 1;
+            if (p) gst_structure_free(p);
+        }
+        g_list_free_full(devs, gst_object_unref);
+        gst_device_monitor_stop(mon);
+    }
+    gst_object_unref(mon);
+    return found;
 }
 
 static gboolean on_rec_bus(GstBus *bus, GstMessage *m, gpointer gen)
@@ -802,14 +855,10 @@ static gboolean on_rec_bus(GstBus *bus, GstMessage *m, gpointer gen)
     if (GST_MESSAGE_TYPE(m) == GST_MESSAGE_ERROR) {
         GError *e = NULL;
         gst_message_parse_error(m, &e, NULL);
-        g_free(V.error);
-        V.error = g_strdup_printf("can't hear the microphone: %s", e ? e->message : "?");
+        char *what = g_strdup_printf("can't hear the microphone: %s", e ? e->message : "?");
         if (e) g_error_free(e);
-        event("error", "error", V.error, "hint", "Check the microphone in Settings > Sound");
-        stop_all(0);
-        V.hx.mode = HELIX_IDLE;
-        hide();
-        finish_oneshot();
+        mic_trouble(what, MIC_HINT);
+        g_free(what);
         return G_SOURCE_REMOVE;
     }
     return G_SOURCE_CONTINUE;
@@ -826,7 +875,7 @@ static void start_listening(void)
     V.rec = gst_parse_launch(desc, &e);
     g_free(desc);
     if (e || !V.rec) {
-        event("error", "error", e ? e->message : "no microphone", "hint", "Check the microphone in Settings > Sound");
+        event("error", "error", e ? e->message : "no microphone", "hint", MIC_HINT);
         if (e) g_error_free(e);
         if (V.rec) { gst_object_unref(V.rec); V.rec = NULL; }
         finish_oneshot();
@@ -838,7 +887,8 @@ static void start_listening(void)
     vp_init(&V.rvp, LISTEN_RATE);
     g_mutex_unlock(&V.lock);
     V.voiced = V.silent_run = V.rec_frames = 0;
-    V.rec_eos = 0;
+    V.rec_eos = V.rec_peak = 0;
+    V.rec_start = g_get_monotonic_time();
     int gen = g_atomic_int_get(&V.gen);
     GstElement *sink = gst_bin_get_by_name(GST_BIN(V.rec), "sink");
     g_signal_connect(sink, "new-sample", G_CALLBACK(on_rec_sample), GINT_TO_POINTER(gen));
@@ -849,9 +899,7 @@ static void start_listening(void)
     g_free(V.heard);
     V.heard = NULL;
     if (gst_element_set_state(V.rec, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
-        event("error", "error", "can't open the microphone", "hint", "Check the microphone in Settings > Sound");
-        stop_all(0);
-        finish_oneshot();
+        mic_trouble("can't open the microphone", MIC_HINT);
         return;
     }
     V.task = T_LISTEN;
@@ -971,6 +1019,12 @@ static void finish_listening(void)
     wav_header(wav, V.pcm->len);
     g_byte_array_append(wav, V.pcm->data, V.pcm->len);
     g_mutex_unlock(&V.lock);
+    if (V.voiced < 25 && V.rec_frames >= 100 && V.rec_peak == 0) {
+        /* a second or more of exact zeros: nothing is listening at all */
+        g_byte_array_free(wav, TRUE);
+        mic_trouble("The microphone is muted or turned all the way down", MIC_HINT);
+        return;
+    }
     if (V.voiced < 25) {     /* under a quarter of a second of voice */
         g_byte_array_free(wav, TRUE);
         g_free(V.heard);
@@ -1006,6 +1060,12 @@ static void listening_now(double *level, double *onset, double *bright)
     }
     g_array_set_size(V.rframes, 0);
     g_mutex_unlock(&V.lock);
+    /* no sound coming in at all: there is no microphone, or the sound
+     * server has nothing to give (it waits for one rather than failing) */
+    if (!V.rec_frames && !V.rec_eos && g_get_monotonic_time() - V.rec_start > 3 * G_USEC_PER_SEC) {
+        mic_trouble("The microphone isn't sending any sound", MIC_HINT);
+        return;
+    }
     /* the end of what you said: a pause after speech, nothing at all for
      * eight seconds, the time limit, or the end of a test recording */
     if ((V.voiced >= 30 && V.silent_run >= 120) || (!V.voiced && V.rec_frames >= 800) ||

@@ -76,7 +76,7 @@ mkdir -p "$STAGE/boot/isolinux"
 cp "$DIST_DIR/bzImage" "$STAGE/boot/vmlinuz"
 # The initramfs in three pieces (see build-initramfs.sh) so the boot loader
 # reads only the GPU firmware this machine can use.
-for f in initramfs-core.cpio.gz initramfs-i915.cpio initramfs-amdgpu.cpio initramfs-iwlwifi.cpio; do
+for f in initramfs-core.cpio.gz initramfs-i915.cpio initramfs-amdgpu.cpio initramfs-iwlwifi.cpio initramfs-sof.cpio; do
     cp "$DIST_DIR/$f" "$STAGE/boot/$f"
 done
 # Boot readahead map, checked against nexa.img at the top.
@@ -103,12 +103,12 @@ PROMPT 1
 LABEL nexa
   MENU LABEL NexaOS (live)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio,/boot/initramfs-iwlwifi.cpio nexa.live mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio,/boot/initramfs-iwlwifi.cpio,/boot/initramfs-sof.cpio nexa.live mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
 
 LABEL fresh
   MENU LABEL NexaOS (live, don't load saved changes)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio,/boot/initramfs-iwlwifi.cpio nexa.live nexa.nopersist mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
+  APPEND initrd=/boot/initramfs-core.cpio.gz,/boot/initramfs-i915.cpio,/boot/initramfs-amdgpu.cpio,/boot/initramfs-iwlwifi.cpio,/boot/initramfs-sof.cpio nexa.live nexa.nopersist mac80211_hwsim.radios=0 usb-storage.delay_use=200ms quiet splash loglevel=3 vt.global_cursor_default=0 console=ttyS0 console=tty0
 CFG_EOF
 
 # UEFI. The volume label can't be used to find the boot files: Rufus's ISO
@@ -122,7 +122,8 @@ cat > "$STAGE/boot/grub/grub.cfg" << 'CFG_EOF'
 insmod all_video
 # GPU firmware: Intel's with an Intel CPU, AMD's with an AMD one (read from
 # the firmware's SMBIOS tables), both when that can't be told. Intel Wi-Fi
-# firmware always: AMD laptops often have Intel Wi-Fi cards too.
+# firmware always: AMD laptops often have Intel Wi-Fi cards too. Intel
+# audio DSP firmware (SOF) with an Intel CPU, or when that can't be told.
 set nexa_gpu=both
 if smbios --type 4 --get-string 7 --set nexa_cpu; then
     if regexp Intel "$nexa_cpu"; then set nexa_gpu=intel; fi
@@ -131,11 +132,11 @@ fi
 export nexa_gpu
 function nexa_initrd {
     if [ "$nexa_gpu" = intel ]; then
-        initrd /boot/initramfs-core.cpio.gz /boot/initramfs-i915.cpio /boot/initramfs-iwlwifi.cpio
+        initrd /boot/initramfs-core.cpio.gz /boot/initramfs-i915.cpio /boot/initramfs-iwlwifi.cpio /boot/initramfs-sof.cpio
     elif [ "$nexa_gpu" = amd ]; then
         initrd /boot/initramfs-core.cpio.gz /boot/initramfs-amdgpu.cpio /boot/initramfs-iwlwifi.cpio
     else
-        initrd /boot/initramfs-core.cpio.gz /boot/initramfs-i915.cpio /boot/initramfs-amdgpu.cpio /boot/initramfs-iwlwifi.cpio
+        initrd /boot/initramfs-core.cpio.gz /boot/initramfs-i915.cpio /boot/initramfs-amdgpu.cpio /boot/initramfs-iwlwifi.cpio /boot/initramfs-sof.cpio
     fi
 }
 # Boot straight away, no menu and no waiting (the boot animation takes the

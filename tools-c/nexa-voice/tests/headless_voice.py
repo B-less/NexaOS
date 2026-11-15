@@ -335,10 +335,23 @@ heard = evs[-1].get("text", "") if evs else ""
 check(evs and evs[-1]["event"] == "heard" and similar(SAID, heard) >= 0.85, "and whisper hears it", f"{evs}")
 info(f"heard: {heard!r}")
 
+p = voice("listen", "--max", "3", env={"NEXA_VOICE_SOURCE": "audiotestsrc wave=white-noise volume=0.002 is-live=true"})
+evs = events(p, secs=10)
+p.wait(5)
+check(evs and evs[-1] == {"event": "heard", "text": ""}, "a quiet room: nothing heard, nothing sent", f"{evs}")
+
+# --- microphones that don't work ---
 p = voice("listen", "--max", "3", env={"NEXA_VOICE_SOURCE": "audiotestsrc wave=silence is-live=true"})
 evs = events(p, secs=10)
 p.wait(5)
-check(evs and evs[-1] == {"event": "heard", "text": ""}, "silence: nothing heard, nothing sent", f"{evs}")
+check(evs and evs[-1]["event"] == "error" and "muted" in evs[-1]["error"] and not state()["shown"],
+      "exact zeros: says the microphone is muted", f"{evs}")
+t0 = time.time()
+p = voice("listen", env={"NEXA_VOICE_SOURCE": "audiotestsrc is-live=true ! valve drop=true"})
+evs = events(p, secs=15)
+p.wait(5)
+check(evs and evs[-1]["event"] == "error" and "isn't sending any sound" in evs[-1]["error"] and time.time() - t0 < 6,
+      "no sound coming in: says so after 3 s (it used to listen forever)", f"{evs} {time.time() - t0:.1f} s")
 
 p = voice("listen", env={"NEXA_VOICE_SOURCE": "audiotestsrc wave=silence is-live=true"})
 wait(lambda: state()["mode"] == "listening", 5)
@@ -422,6 +435,36 @@ p.wait(5)
 check(abs(st.get("accent_hue", 0) - 32) < 3, "colours start from the theme's accent", f"{st.get('accent_hue')}")
 check(st.get("voice") == "am_michael" and st.get("speed") == 1.2 and st.get("palette") == 3, "voice.conf picks the voice, speed and colours")
 check(st.get("animations") == 0, "reduce animations is respected")
+
+# --- the HP EliteBook's case: a sound server with no microphone in it ---
+# (its microphone array needs the SOF driver; without it PipeWire has
+# speakers but no source, and a recording waits for one forever)
+os.makedirs(os.environ["XDG_RUNTIME_DIR"], exist_ok=True)
+pw = subprocess.Popen(["pipewire"], stdout=subprocess.DEVNULL, stderr=open("/tmp/pipewire.log", "w"))
+wp = subprocess.Popen(["wireplumber"], stdout=subprocess.DEVNULL, stderr=open("/tmp/wireplumber.log", "w"))
+pp = subprocess.Popen(["pipewire-pulse"], stdout=subprocess.DEVNULL, stderr=open("/tmp/pipewire-pulse.log", "w"))
+check(wait(lambda: subprocess.run(["wpctl", "status"], capture_output=True).returncode == 0, 10), "PipeWire runs")
+t0 = time.time()
+p = voice("listen", env={"NEXA_VOICE_SOURCE": ""})
+evs = events(p, secs=15)
+p.wait(5)
+check(evs and evs[-1]["event"] == "error" and evs[-1]["error"] == "No microphone found" and "headset" in evs[-1].get("hint", ""),
+      "no microphone: says so, and what to plug in", f"{evs} {time.time() - t0:.1f} s")
+# A microphone appears (a virtual one, silent): it is found and recorded
+subprocess.run(["pw-cli", "create-node", "adapter",
+                "{ factory.name=support.null-audio-sink node.name=test-mic media.class=Audio/Source/Virtual "
+                "audio.position=[ MONO ] object.linger=true }"], capture_output=True)
+check(wait(lambda: "test-mic" in subprocess.run(["pw-cli", "ls", "Node"], capture_output=True, text=True).stdout, 5),
+      "a microphone appears")
+p = voice("listen", "--max", "3", env={"NEXA_VOICE_SOURCE": ""})
+evs = events(p, secs=15)
+p.wait(5)
+# (a virtual microphone with nothing playing into it sends exact zeros)
+check(evs and evs[-1].get("error", "").startswith("The microphone is muted") and state().get("recorded_ms", 0) >= 2900,
+      "and the voice records from it (silence: muted)", f"{evs} recorded {state().get('recorded_ms')} ms")
+info(f"through PipeWire: {evs} recorded {state().get('recorded_ms')} ms")
+for proc in (pp, wp, pw):
+    proc.terminate()
 
 mind.terminate()
 mind.wait(5)

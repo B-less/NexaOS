@@ -302,6 +302,22 @@ loads in about 2 s and makes speech at roughly the speed it plays
 exports were not faster on this CPU, so the full model is used. Tests:
 `make test-voice`.
 
+**Microphones.** Most laptops since about 2018 (the HP EliteBook 840 G6
+among them) have a digital microphone array wired to Intel's audio DSP,
+not to the HDA codec. The classic HDA driver plays sound on those but
+can't see the microphones, so PipeWire has speakers and no source. The
+kernel therefore has Intel's SOF driver built in (`SND_SOC_SOF_*`, the
+`skl_hda_dsp_generic` machine driver with DMIC support); the kernel picks
+it only when the ACPI tables list a digital microphone, so other machines
+keep the classic driver. The DSP firmware and topologies (`sof-firmware`)
+ride in their own initramfs archive (`initramfs-sof.cpio`), since the
+driver is built in and loads them before the system disk is mounted;
+`alsa-ucm-conf` tells PipeWire how to route the card. If a machine loses
+all sound with SOF, boot with `snd_intel_dspcfg.dsp_driver=1` to go back
+to the classic driver. nexa-voice says what is wrong instead of waiting:
+"No microphone found" (the sound server has no source), "The microphone
+isn't sending any sound" (nothing for 3 s) or "muted" (exact zeros).
+
 ## The kernel link (nexa-kerneld)
 
 The model never runs inside the kernel: a crash there would take the whole

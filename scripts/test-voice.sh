@@ -42,8 +42,8 @@ if ! docker image inspect "nexa-voicebuild:${version%.*}" >/dev/null 2>&1; then
     printf 'FROM nexa-rust-apps:%s\nRUN apk add --no-cache onnxruntime-dev espeak-ng whisper.cpp\n' "${version%.*}" \
         | docker build -q -t "nexa-voicebuild:${version%.*}" - >/dev/null
 fi
-if ! docker run --rm "nexa-voicetest:${version%.*}" sh -c 'command -v whisper-cli && command -v wtype' >/dev/null 2>&1; then
-    printf 'FROM nexa-apptest:%s\nRUN apk add -q wtype gst-plugins-good espeak-ng onnxruntime whisper.cpp\n' "${version%.*}" \
+if ! docker run --rm "nexa-voicetest:${version%.*}" sh -c 'command -v whisper-cli && command -v wtype && command -v pw-cli' >/dev/null 2>&1; then
+    printf 'FROM nexa-apptest:%s\nRUN apk add -q wtype gst-plugins-good espeak-ng onnxruntime whisper.cpp pipewire pipewire-tools wireplumber pipewire-pulse gst-plugin-pipewire\n' "${version%.*}" \
         | docker build -q -t "nexa-voicetest:${version%.*}" - >/dev/null
 fi
 

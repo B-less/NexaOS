@@ -95,6 +95,43 @@ done
 for f in "$ROOTFS_DIR"/lib/firmware/iwlwifi-*.pnvm*; do
     [ -e "$f" ] && cp -L "$f" "$FW_STAGE/iwlwifi/lib/firmware/"
 done
+# Intel audio DSP firmware (Sound Open Firmware), for the same reason: on
+# laptops with a digital microphone array the built-in SOF driver runs the
+# sound card, and it loads the DSP firmware and topology while probing.
+# Without them here the probe fails and the laptop has no sound at all.
+# Only what the drivers in the kernel can use: the Intel-signed DSP images
+# (SOF_ACPI is off, so no Baytrail/Broadwell ones), the HDA+DMIC
+# topologies (the only machine driver built in) and the IPC4 libraries.
+SOF_SRC="$ROOTFS_DIR/lib/firmware/intel"
+SOF_DST="$FW_STAGE/sof/lib/firmware/intel"
+mkdir -p "$FW_STAGE/sof"
+if [ -d "$SOF_SRC/sof" ]; then
+    mkdir -p "$SOF_DST/sof" "$SOF_DST/sof-tplg" "$SOF_DST/sof-ipc4-tplg"
+    for f in "$SOF_SRC"/sof/sof-*.ri; do
+        case "$(basename "$f")" in sof-bdw.ri|sof-byt.ri|sof-cht.ri) continue ;; esac
+        [ -e "$f" ] && cp -L "$f" "$SOF_DST/sof/"
+    done
+    for d in "$SOF_SRC"/sof-ipc4/*/; do
+        p=$(basename "$d")
+        for f in "$d"sof-*.ri; do
+            [ -e "$f" ] || continue
+            mkdir -p "$SOF_DST/sof-ipc4/$p"
+            cp -L "$f" "$SOF_DST/sof-ipc4/$p/"
+        done
+    done
+    [ -d "$SOF_SRC/sof-ipc4-lib" ] && cp -a "$SOF_SRC/sof-ipc4-lib" "$SOF_DST/"
+    for t in sof-tplg sof-ipc4-tplg; do
+        for f in "$SOF_SRC/$t"/sof-hda-generic*.tplg; do
+            [ -e "$f" ] && cp -L "$f" "$SOF_DST/$t/"
+        done
+    done
+    # Meteor Lake and newer look in sof-ace-tplg (a link in the package)
+    [ -L "$SOF_SRC/sof-ace-tplg" ] && cp -a "$SOF_SRC/sof-ace-tplg" "$SOF_DST/"
+    # xz'd one by one (20 MB -> a third of that to read at boot); the
+    # kernel's loader takes NAME.xz when NAME isn't there, and its xz
+    # decoder needs the crc32 check.
+    find "$SOF_DST" -type f -exec xz -9 -C crc32 {} +
+fi
 # Same timing for the Wi-Fi regulatory database: cfg80211 is built in and
 # reads it at startup, so without it Wi-Fi falls back to the most
 # restrictive worldwide channel rules.
@@ -407,15 +444,16 @@ exec /bin/sh
 INIT_EOF
 chmod +x "$STAGE/init"
 
-# Three archives: the core (gzip), and Intel and AMD GPU firmware (already
-# zstd-compressed files, so stored as plain cpio). The kernel unpacks
-# archives laid end to end, so $OUT - the one installed systems and direct
-# QEMU boots use - is simply all three together.
+# Five archives: the core (gzip), and Intel and AMD GPU, Intel Wi-Fi and
+# Intel audio DSP firmware (stored as plain cpio: the GPU and Wi-Fi files
+# are zstd-compressed already). The kernel unpacks archives laid end to
+# end, so $OUT - the one installed systems and direct QEMU boots use - is
+# simply all of them together.
 dir=$(dirname "$OUT")
 ( cd "$STAGE" && find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 ) > "$dir/initramfs-core.cpio.gz"
-for fwdir in i915 amdgpu iwlwifi; do
+for fwdir in i915 amdgpu iwlwifi sof; do
     mkdir -p "$FW_STAGE/$fwdir"
     ( cd "$FW_STAGE/$fwdir" && find . -print0 | cpio --null -o --format=newc 2>/dev/null ) > "$dir/initramfs-$fwdir.cpio"
 done
-cat "$dir/initramfs-core.cpio.gz" "$dir/initramfs-i915.cpio" "$dir/initramfs-amdgpu.cpio" "$dir/initramfs-iwlwifi.cpio" > "$OUT"
-echo "[OK] initramfs: core $(du -h "$dir/initramfs-core.cpio.gz" | cut -f1), Intel GPU firmware $(du -h "$dir/initramfs-i915.cpio" | cut -f1), AMD $(du -h "$dir/initramfs-amdgpu.cpio" | cut -f1), Intel Wi-Fi $(du -h "$dir/initramfs-iwlwifi.cpio" | cut -f1); all together $(du -h "$OUT" | cut -f1)"
+cat "$dir/initramfs-core.cpio.gz" "$dir/initramfs-i915.cpio" "$dir/initramfs-amdgpu.cpio" "$dir/initramfs-iwlwifi.cpio" "$dir/initramfs-sof.cpio" > "$OUT"
+echo "[OK] initramfs: core $(du -h "$dir/initramfs-core.cpio.gz" | cut -f1), Intel GPU firmware $(du -h "$dir/initramfs-i915.cpio" | cut -f1), AMD $(du -h "$dir/initramfs-amdgpu.cpio" | cut -f1), Intel Wi-Fi $(du -h "$dir/initramfs-iwlwifi.cpio" | cut -f1), Intel audio DSP $(du -h "$dir/initramfs-sof.cpio" | cut -f1); all together $(du -h "$OUT" | cut -f1)"
