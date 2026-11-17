@@ -1,0 +1,23 @@
+no notes yet
+added note 1
+added note 2
+1. buy milk
+2. fix the "Wi-Fi" icon
+{
+  "version": 1,
+  "notes": [
+    {
+      "id": 1,
+      "text": "buy milk"
+    },
+    {
+      "id": 2,
+      "text": "fix the \"Wi-Fi\" icon"
+    }
+  ]
+}
+
+cleared
+no notes yet
+error: unknown command `frob`
+error: can't read DIR/nothing.txt: it doesn't exist

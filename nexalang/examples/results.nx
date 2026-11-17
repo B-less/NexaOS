@@ -1,0 +1,98 @@
+// !T results, the ? operator, and match on numbers and text.
+enum Op {
+    Add
+    Sub
+    Mul
+    Div
+}
+
+fn parse_op(s: str) -> !Op {
+    match s {
+        "+" => { return ok(Op.Add) }
+        "-" => { return ok(Op.Sub) }
+        "*" => { return ok(Op.Mul) }
+        "/" => { return ok(Op.Div) }
+        _ => { return err("unknown operator `{s}`") }
+    }
+}
+
+fn number(s: str) -> !int {
+    match parse_int(s) {
+        some(n) => { return ok(n) }
+        none => { return err("`{s}` isn't a whole number") }
+    }
+}
+
+// `?` hands any error straight back to the caller
+fn calc(line: str) -> !int {
+    let parts = split(trim(line), " ")
+    if len(parts) != 3 {
+        return err("write it as: number operator number")
+    }
+    let a = number(parts[0])?
+    let op = parse_op(parts[1])?
+    let b = number(parts[2])?
+    match op {
+        Add => { return ok(a + b) }
+        Sub => { return ok(a - b) }
+        Mul => { return ok(a * b) }
+        Div => {
+            if b == 0 {
+                return err("can't divide by zero")
+            }
+            return ok(a / b)
+        }
+    }
+}
+
+fn first_word(s: str) -> ?str {
+    let w = split(trim(s), " ")
+    if w[0] == "" {
+        return none
+    }
+    return some(w[0])
+}
+
+fn shout(s: str) -> ?str {
+    let w = first_word(s)?
+    return some(to_upper(w))
+}
+
+fn grade(n: int) -> str {
+    match n {
+        10 => { return "perfect" }
+        0 => { return "zero" }
+        -1 => { return "not marked" }
+        _ => { return "{n}/10" }
+    }
+}
+
+fn save(name: str) -> !void {
+    if name == "" {
+        return err("a name is needed")
+    }
+    print("saved {name}")
+    return ok()
+}
+
+fn main() -> !void {
+    for line in ["2 + 3", "10 / 0", "7 x 2", "six * 2", "4 * 5 6", "100 - 1"] {
+        match calc(line) {
+            ok(v) => { print("{line} = {v}") }
+            err(e) => { print("{line}: {e}") }
+        }
+    }
+    print(unwrap_or(shout("  hello world"), "(nothing)"))
+    print(unwrap_or(shout("   "), "(nothing)"))
+    print("{grade(10)}, {grade(7)}, {grade(-1)}")
+    match save("") {
+        ok => { print("?") }
+        err(e) => { print("not saved: {e}") }
+    }
+    save("notes")?
+    let word = "Añb"
+    print("{byte_at(word, 0)} {byte_at(word, 1)} {len(word)} {char_from_code(241)}{char_from_code(128512)}")
+    let total = calc("6 * 7")?
+    print("total {total}")
+    return ok()
+}

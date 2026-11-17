@@ -1,0 +1,28 @@
+3 parts
+[name] -> [NexaOS]
+[version] -> [3.2]
+[kernel] -> [linux]
+HEXAGON hexagon Hex
+has 'gon': true, starts with He: true, ends with x: false
+'a' at 3
+a + b + c
+one, two, three
+[=-=-=-=-=-]
+int 42 -> 42
+int -17 -> -17
+int +8 -> 8
+int 9223372036854775807 -> 9223372036854775807
+int 9223372036854775808 -> not a number
+int -9223372036854775808 -> -9223372036854775808
+int 12a -> not a number
+int  -> not a number
+int - -> not a number
+float 3.5 -> 3.5
+float -0.25 -> -0.25
+float 1e3 -> 1000.0
+float nan -> -1.0
+float inf -> -1.0
+float  2 -> -1.0
+float 0x10 -> -1.0
+float 1.5.2 -> -1.0
+6 bytes, first letter α

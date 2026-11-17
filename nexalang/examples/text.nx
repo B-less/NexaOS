@@ -1,0 +1,35 @@
+// Text functions.
+fn main() {
+    let line = "  name=NexaOS, version=3.2 ,  kernel = linux  "
+    let parts = split(trim(line), ",")
+    print("{len(parts)} parts")
+    for p in parts {
+        let kv = split(p, "=")
+        if len(kv) == 2 {
+            print("[{trim(kv[0])}] -> [{trim(kv[1])}]")
+        }
+    }
+
+    let word = "Hexagon"
+    print("{to_upper(word)} {to_lower(word)} {slice(word, 0, 3)}")
+    print("has 'gon': {contains(word, "gon")}, starts with He: {starts_with(word, "He")}, ends with x: {ends_with(word, "x")}")
+    match find(word, "a") {
+        some(i) => { print("'a' at {i}") }
+        none => { print("no 'a'") }
+    }
+    print(replace("a-b-c", "-", " + "))
+    print(join(["one", "two", "three"], ", "))
+    print("[{repeat("=-", 5)}]")
+
+    for s in ["42", "-17", "+8", "9223372036854775807", "9223372036854775808", "-9223372036854775808", "12a", "", "-"] {
+        match parse_int(s) {
+            some(n) => { print("int {s} -> {n}") }
+            none => { print("int {s} -> not a number") }
+        }
+    }
+    for s in ["3.5", "-0.25", "1e3", "nan", "inf", " 2", "0x10", "1.5.2"] {
+        print("float {s} -> {unwrap_or(parse_float(s), -1.0)}")
+    }
+    let greek = "αβγ"
+    print("{len(greek)} bytes, first letter {slice(greek, 0, 2)}")
+}

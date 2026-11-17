@@ -1,0 +1,4 @@
+// error: on an `int` and a `float`
+fn main() {
+    let x = 1 + 2.5
+}

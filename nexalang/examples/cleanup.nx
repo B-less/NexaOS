@@ -1,0 +1,61 @@
+// Leaving blocks early (return, break, continue) must free everything.
+struct Item {
+    name: str
+    tags: [str]
+}
+
+fn first_long(words: [str]) -> str {
+    for w in words {
+        let upper = to_upper(w)
+        if len(w) > 4 {
+            return "{upper}!"
+        }
+    }
+    return "none"
+}
+
+fn count_until_stop(words: [str]) -> int {
+    var n = 0
+    for w in words {
+        let copy = "{w}{w}"
+        if w == "skip" {
+            continue
+        }
+        if w == "stop" {
+            break
+        }
+        n += len(copy)
+    }
+    return n
+}
+
+fn make(n: int) -> [Item] {
+    var items: [Item] = []
+    for i in 0..n {
+        push(items, Item { name: "item{i}", tags: split("a,b,c", ",") })
+    }
+    return items
+}
+
+fn main() {
+    print(first_long(["hi", "there", "world"]))
+    print("{count_until_stop(["ab", "skip", "cd", "stop", "ef"])}")
+    var items = make(3)
+    items[1].name = "changed"
+    items[2].tags[0] = "z"
+    push(items[0].tags, "d")
+    for it in items {
+        print("{it.name}: {join(it.tags, "")}")
+    }
+    var i = 0
+    while true {
+        let msg = "round {i}"
+        i += 1
+        if i == 3 {
+            print(msg)
+            break
+        }
+    }
+    let ok = len(items) == 3 and starts_with(items[0].name, "item")
+    print("{ok}")
+}

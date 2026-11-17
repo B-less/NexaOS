@@ -1,0 +1,8 @@
+// error: never reached
+enum Light { Red, Green }
+fn main() {
+    match Light.Red {
+        _ => { }
+        Red => { }
+    }
+}

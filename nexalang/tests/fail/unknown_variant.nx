@@ -1,0 +1,5 @@
+// error: has no variant `Square`
+enum Shape { Circle(float) }
+fn main() {
+    let s = Shape.Square(1.0)
+}

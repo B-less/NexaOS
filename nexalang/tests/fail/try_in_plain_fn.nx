@@ -1,0 +1,14 @@
+// error: so this function must return a `!` value
+fn f() -> int {
+    let n = parse_int("4")
+    let x = ok_or(n)?
+    return x
+}
+fn ok_or(n: ?int) -> !int {
+    match n {
+        some(v) => { return ok(v) }
+        none => { return err("none") }
+    }
+}
+fn main() {
+}

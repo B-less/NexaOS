@@ -1,0 +1,17 @@
+// Reads JSON documents, one per line, and prints each back compactly,
+// or ERR and the message.
+use json
+
+fn main() {
+    while true {
+        match read_line() {
+            none => { break }
+            some(line) => {
+                match json.parse(line) {
+                    ok(j) => { print(json.to_text(j)) }
+                    err(e) => { print("ERR {e}") }
+                }
+            }
+        }
+    }
+}

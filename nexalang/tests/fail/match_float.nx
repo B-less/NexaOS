@@ -1,0 +1,6 @@
+// error: can't `match` on a `float`
+fn main() {
+    match 1.5 {
+        _ => { }
+    }
+}

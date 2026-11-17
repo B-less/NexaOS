@@ -1,0 +1,8 @@
+circle of radius 1.0: area 3.14159
+rectangle 2.0 wide: area 7.0
+label "hi": area 0.0
+nothing: area 0.0
+after 4 steps the light is green
+grace is at 2
+bob is at -1
+longest name: linus

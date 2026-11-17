@@ -1,0 +1,4 @@
+// error: only work inside a loop
+fn main() {
+    break
+}

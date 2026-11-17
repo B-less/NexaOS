@@ -1,0 +1,4 @@
+// trap: slice(2, 10) is outside the text (length 5)
+fn main() {
+    let s = slice("hello", 2, 10)
+}

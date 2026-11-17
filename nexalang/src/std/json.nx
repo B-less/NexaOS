@@ -1,0 +1,576 @@
+// Standard module `json`: read and write JSON (RFC 8259).
+//
+//   let config = json.parse(text)?
+//   let name = unwrap_or(json.as_text(unwrap_or(json.get(config, "name"), Json.Null)), "?")
+//   print(json.pretty(config))
+//
+// Parsing never stops the program: anything that isn't valid JSON gives an
+// error with its line and column. Nesting deeper than 200 levels is refused.
+
+pub enum Json {
+    Null
+    Bool(bool)
+    Num(float)
+    Text(str)
+    List([Json])
+    Obj([Field])
+}
+
+pub struct Field {
+    key: str
+    value: Json
+}
+
+// ---------- building ----------
+
+pub fn field(key: str, value: Json) -> Field {
+    return Field { key: key, value: value }
+}
+
+pub fn obj(fields: [Field]) -> Json {
+    return Json.Obj(fields)
+}
+
+// A copy of the object with `key` set to `value` (added if it's missing).
+pub fn set(j: Json, key: str, value: Json) -> Json {
+    var out: [Field] = []
+    var found = false
+    match j {
+        Obj(fields) => {
+            for f in fields {
+                if f.key == key {
+                    push(out, Field { key: key, value: value })
+                    found = true
+                } else {
+                    push(out, f)
+                }
+            }
+        }
+        _ => { }
+    }
+    if not found {
+        push(out, Field { key: key, value: value })
+    }
+    return Json.Obj(out)
+}
+
+// ---------- reading values ----------
+
+// The value for `key` in an object (the last one, if a key appears twice).
+pub fn get(j: Json, key: str) -> ?Json {
+    match j {
+        Obj(fields) => {
+            var i = len(fields) - 1
+            while i >= 0 {
+                if fields[i].key == key {
+                    return some(fields[i].value)
+                }
+                i -= 1
+            }
+            return none
+        }
+        _ => { return none }
+    }
+}
+
+// The item at position `i` in a list.
+pub fn at(j: Json, i: int) -> ?Json {
+    match j {
+        List(items) => {
+            if i >= 0 and i < len(items) {
+                return some(items[i])
+            }
+            return none
+        }
+        _ => { return none }
+    }
+}
+
+pub fn as_text(j: Json) -> ?str {
+    match j {
+        Text(s) => { return some(s) }
+        _ => { return none }
+    }
+}
+
+pub fn as_num(j: Json) -> ?float {
+    match j {
+        Num(n) => { return some(n) }
+        _ => { return none }
+    }
+}
+
+// Only whole numbers that fit in an `int` exactly.
+pub fn as_int(j: Json) -> ?int {
+    match j {
+        Num(n) => {
+            if n >= -9007199254740992.0 and n <= 9007199254740992.0 {
+                let i = to_int(n)
+                if to_float(i) == n {
+                    return some(i)
+                }
+            }
+            return none
+        }
+        _ => { return none }
+    }
+}
+
+pub fn as_bool(j: Json) -> ?bool {
+    match j {
+        Bool(b) => { return some(b) }
+        _ => { return none }
+    }
+}
+
+// The items of a list (empty for anything else).
+pub fn items(j: Json) -> [Json] {
+    match j {
+        List(xs) => { return xs }
+        _ => {
+            let empty: [Json] = []
+            return empty
+        }
+    }
+}
+
+// The keys of an object, in order (empty for anything else).
+pub fn keys(j: Json) -> [str] {
+    var out: [str] = []
+    match j {
+        Obj(fields) => {
+            for f in fields {
+                push(out, f.key)
+            }
+        }
+        _ => { }
+    }
+    return out
+}
+
+// ---------- writing ----------
+
+// Compact JSON on one line.
+pub fn to_text(j: Json) -> str {
+    return emit(j, -1, 0)
+}
+
+// Indented with two spaces, one item per line.
+pub fn pretty(j: Json) -> str {
+    return emit(j, 2, 0)
+}
+
+// indent < 0 means compact
+fn emit(j: Json, indent: int, level: int) -> str {
+    match j {
+        Null => { return "null" }
+        Bool(b) => { return to_str(b) }
+        Num(n) => { return number_text(n) }
+        Text(s) => { return quote(s) }
+        List(xs) => {
+            if len(xs) == 0 {
+                return "[]"
+            }
+            var parts: [str] = []
+            for x in xs {
+                push(parts, emit(x, indent, level + 1))
+            }
+            return wrap("[", parts, "]", indent, level)
+        }
+        Obj(fields) => {
+            if len(fields) == 0 {
+                return "\{}"
+            }
+            let colon = if_text(indent >= 0, ": ", ":")
+            var parts: [str] = []
+            for f in fields {
+                push(parts, "{quote(f.key)}{colon}{emit(f.value, indent, level + 1)}")
+            }
+            return wrap("\{", parts, "}", indent, level)
+        }
+    }
+}
+
+fn if_text(cond: bool, a: str, b: str) -> str {
+    if cond {
+        return a
+    }
+    return b
+}
+
+fn wrap(open: str, parts: [str], close: str, indent: int, level: int) -> str {
+    if indent < 0 {
+        return "{open}{join(parts, ",")}{close}"
+    }
+    let inner = repeat(" ", indent * (level + 1))
+    let outer = repeat(" ", indent * level)
+    return "{open}\n{inner}{join(parts, ",\n{inner}")}\n{outer}{close}"
+}
+
+fn number_text(n: float) -> str {
+    // JSON has no infinity or NaN
+    if n != n or n > 1.7976931348623157e308 or n < -1.7976931348623157e308 {
+        return "null"
+    }
+    if n >= -1e15 and n <= 1e15 {
+        let i = to_int(n)
+        if to_float(i) == n {
+            return to_str(i)
+        }
+    }
+    return to_str(n)
+}
+
+fn quote(s: str) -> str {
+    var parts: [str] = ["\""]
+    var start = 0
+    for i in 0..len(s) {
+        let b = byte_at(s, i)
+        if b == 34 or b == 92 or b < 32 {
+            if i > start {
+                push(parts, slice(s, start, i))
+            }
+            push(parts, escape(b))
+            start = i + 1
+        }
+    }
+    if len(s) > start {
+        push(parts, slice(s, start, len(s)))
+    }
+    push(parts, "\"")
+    return join(parts, "")
+}
+
+fn escape(b: int) -> str {
+    match b {
+        34 => { return "\\\"" }
+        92 => { return "\\\\" }
+        10 => { return "\\n" }
+        13 => { return "\\r" }
+        9 => { return "\\t" }
+        8 => { return "\\b" }
+        12 => { return "\\f" }
+        _ => { return "\\u00{hex_digit(b / 16)}{hex_digit(b % 16)}" }
+    }
+}
+
+fn hex_digit(d: int) -> str {
+    return slice("0123456789abcdef", d, d + 1)
+}
+
+// ---------- parsing ----------
+
+struct Step {
+    value: Json
+    next: int
+}
+
+fn max_depth() -> int {
+    return 200
+}
+
+// Read JSON text: one value, with only spaces around it.
+pub fn parse(text: str) -> !Json {
+    let start = skip_space(text, 0)
+    let step = value(text, start, 0)?
+    let end = skip_space(text, step.next)
+    if end < len(text) {
+        return err(problem(text, end, "unexpected text after the value"))
+    }
+    return ok(step.value)
+}
+
+// "JSON error at line 3, column 7: expected `:` after the key"
+fn problem(text: str, pos: int, what: str) -> str {
+    var line = 1
+    var col = 1
+    var i = 0
+    while i < pos and i < len(text) {
+        let b = byte_at(text, i)
+        if b == 10 {
+            line += 1
+            col = 1
+        } else if b < 128 or b >= 192 {
+            // count letters, not the extra bytes of a UTF-8 letter
+            col += 1
+        }
+        i += 1
+    }
+    return "JSON error at line {line}, column {col}: {what}"
+}
+
+fn skip_space(text: str, pos: int) -> int {
+    var i = pos
+    while i < len(text) {
+        let b = byte_at(text, i)
+        if b != 32 and b != 9 and b != 10 and b != 13 {
+            return i
+        }
+        i += 1
+    }
+    return i
+}
+
+fn value(text: str, pos: int, depth: int) -> !Step {
+    if pos >= len(text) {
+        return err(problem(text, pos, "the text ends where a value was expected"))
+    }
+    if depth >= max_depth() {
+        return err(problem(text, pos, "nested more than 200 levels deep"))
+    }
+    let b = byte_at(text, pos)
+    match b {
+        123 => { return object(text, pos, depth) }
+        91 => { return list(text, pos, depth) }
+        34 => {
+            let s = string(text, pos)?
+            return ok(Step { value: Json.Text(s.text), next: s.next })
+        }
+        116 => { return word(text, pos, "true", Json.Bool(true)) }
+        102 => { return word(text, pos, "false", Json.Bool(false)) }
+        110 => { return word(text, pos, "null", Json.Null) }
+        _ => {
+            if b == 45 or (b >= 48 and b <= 57) {
+                return number(text, pos)
+            }
+            return err(problem(text, pos, "expected a value (a number, text, list, object, true, false or null)"))
+        }
+    }
+}
+
+// Compare byte by byte: slicing here could cut a letter of bad input in half.
+fn word(text: str, pos: int, w: str, v: Json) -> !Step {
+    if pos + len(w) > len(text) {
+        return err(problem(text, pos, "expected `{w}`"))
+    }
+    for i in 0..len(w) {
+        if byte_at(text, pos + i) != byte_at(w, i) {
+            return err(problem(text, pos, "expected `{w}`"))
+        }
+    }
+    return ok(Step { value: v, next: pos + len(w) })
+}
+
+fn is_digit(text: str, i: int) -> bool {
+    if i >= len(text) {
+        return false
+    }
+    let b = byte_at(text, i)
+    return b >= 48 and b <= 57
+}
+
+// -?(0|[1-9][0-9]*)(.[0-9]+)?([eE][+-]?[0-9]+)?
+fn number(text: str, pos: int) -> !Step {
+    var i = pos
+    if byte_at(text, i) == 45 {
+        i += 1
+    }
+    if not is_digit(text, i) {
+        return err(problem(text, i, "expected a digit"))
+    }
+    if byte_at(text, i) == 48 {
+        i += 1
+        if is_digit(text, i) {
+            return err(problem(text, i, "numbers can't start with 0"))
+        }
+    } else {
+        while is_digit(text, i) {
+            i += 1
+        }
+    }
+    if i < len(text) and byte_at(text, i) == 46 {
+        i += 1
+        if not is_digit(text, i) {
+            return err(problem(text, i, "expected a digit after `.`"))
+        }
+        while is_digit(text, i) {
+            i += 1
+        }
+    }
+    if i < len(text) and (byte_at(text, i) == 101 or byte_at(text, i) == 69) {
+        i += 1
+        if i < len(text) and (byte_at(text, i) == 43 or byte_at(text, i) == 45) {
+            i += 1
+        }
+        if not is_digit(text, i) {
+            return err(problem(text, i, "expected a digit in the exponent"))
+        }
+        while is_digit(text, i) {
+            i += 1
+        }
+    }
+    match parse_float(slice(text, pos, i)) {
+        some(n) => { return ok(Step { value: Json.Num(n), next: i }) }
+        none => { return err(problem(text, pos, "this number is too big")) }
+    }
+}
+
+struct TextStep {
+    text: str
+    next: int
+}
+
+fn hex_value(text: str, pos: int) -> ?int {
+    if pos + 4 > len(text) {
+        return none
+    }
+    var v = 0
+    for i in pos..pos + 4 {
+        let b = byte_at(text, i)
+        var d = -1
+        if b >= 48 and b <= 57 {
+            d = b - 48
+        } else if b >= 97 and b <= 102 {
+            d = b - 87
+        } else if b >= 65 and b <= 70 {
+            d = b - 55
+        }
+        if d < 0 {
+            return none
+        }
+        v = v * 16 + d
+    }
+    return some(v)
+}
+
+// At the opening quote.
+fn string(text: str, pos: int) -> !TextStep {
+    var parts: [str] = []
+    var i = pos + 1
+    var start = i
+    while i < len(text) {
+        let b = byte_at(text, i)
+        if b == 34 {
+            if i > start {
+                push(parts, slice(text, start, i))
+            }
+            return ok(TextStep { text: join(parts, ""), next: i + 1 })
+        }
+        if b < 32 {
+            return err(problem(text, i, "control characters must be escaped in JSON text"))
+        }
+        if b == 92 {
+            if i > start {
+                push(parts, slice(text, start, i))
+            }
+            if i + 1 >= len(text) {
+                return err(problem(text, i, "the text ends inside an escape"))
+            }
+            let e = byte_at(text, i + 1)
+            i += 2
+            match e {
+                34 => { push(parts, "\"") }
+                92 => { push(parts, "\\") }
+                47 => { push(parts, "/") }
+                98 => { push(parts, char_from_code(8)) }
+                102 => { push(parts, char_from_code(12)) }
+                110 => { push(parts, "\n") }
+                114 => { push(parts, "\r") }
+                116 => { push(parts, "\t") }
+                117 => {
+                    let code = unicode_escape(text, i)?
+                    push(parts, char_from_code(code.value))
+                    i = code.next
+                }
+                _ => { return err(problem(text, i - 2, "unknown escape")) }
+            }
+            start = i
+        } else {
+            i += 1
+        }
+    }
+    return err(problem(text, pos, "this text is never closed with `\"`"))
+}
+
+struct CodeStep {
+    value: int
+    next: int
+}
+
+// After `\u`: four hex digits, or a surrogate pair for letters past U+FFFF.
+fn unicode_escape(text: str, pos: int) -> !CodeStep {
+    let hi = match_hex(text, pos)?
+    if hi >= 55296 and hi <= 56319 {
+        // first half of a pair: \uD83D\uDE00
+        if pos + 10 <= len(text) and byte_at(text, pos + 4) == 92 and byte_at(text, pos + 5) == 117 {
+            let lo = match_hex(text, pos + 6)?
+            if lo >= 56320 and lo <= 57343 {
+                return ok(CodeStep { value: 65536 + (hi - 55296) * 1024 + (lo - 56320), next: pos + 10 })
+            }
+        }
+        return err(problem(text, pos, "a \\u escape is half of a pair with no second half"))
+    }
+    if hi >= 56320 and hi <= 57343 {
+        return err(problem(text, pos, "a \\u escape is the second half of a pair with no first half"))
+    }
+    return ok(CodeStep { value: hi, next: pos + 4 })
+}
+
+fn match_hex(text: str, pos: int) -> !int {
+    match hex_value(text, pos) {
+        some(v) => { return ok(v) }
+        none => { return err(problem(text, pos, "expected 4 hex digits after \\u")) }
+    }
+}
+
+
+
+// At `[`.
+fn list(text: str, pos: int, depth: int) -> !Step {
+    var items: [Json] = []
+    var i = skip_space(text, pos + 1)
+    if i < len(text) and byte_at(text, i) == 93 {
+        return ok(Step { value: Json.List(items), next: i + 1 })
+    }
+    while true {
+        let item = value(text, i, depth + 1)?
+        push(items, item.value)
+        i = skip_space(text, item.next)
+        if i >= len(text) {
+            return err(problem(text, i, "the list is never closed with `]`"))
+        }
+        let b = byte_at(text, i)
+        if b == 93 {
+            return ok(Step { value: Json.List(items), next: i + 1 })
+        }
+        if b != 44 {
+            return err(problem(text, i, "expected `,` or `]`"))
+        }
+        i = skip_space(text, i + 1)
+    }
+    return err(problem(text, i, "unreachable"))
+}
+
+// At `\{`.
+fn object(text: str, pos: int, depth: int) -> !Step {
+    var fields: [Field] = []
+    var i = skip_space(text, pos + 1)
+    if i < len(text) and byte_at(text, i) == 125 {
+        return ok(Step { value: Json.Obj(fields), next: i + 1 })
+    }
+    while true {
+        if i >= len(text) or byte_at(text, i) != 34 {
+            return err(problem(text, i, "expected a key in quotes"))
+        }
+        let key = string(text, i)?
+        i = skip_space(text, key.next)
+        if i >= len(text) or byte_at(text, i) != 58 {
+            return err(problem(text, i, "expected `:` after the key"))
+        }
+        let v = value(text, skip_space(text, i + 1), depth + 1)?
+        push(fields, Field { key: key.text, value: v.value })
+        i = skip_space(text, v.next)
+        if i >= len(text) {
+            return err(problem(text, i, "the object is never closed with `}`"))
+        }
+        let b = byte_at(text, i)
+        if b == 125 {
+            return ok(Step { value: Json.Obj(fields), next: i + 1 })
+        }
+        if b != 44 {
+            return err(problem(text, i, "expected `,` or `}`"))
+        }
+        i = skip_space(text, i + 1)
+    }
+    return err(problem(text, i, "unreachable"))
+}

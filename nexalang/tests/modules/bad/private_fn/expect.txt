@@ -1,0 +1,1 @@
+main.nx|`secret` is private to module `helper`

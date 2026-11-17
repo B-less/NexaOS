@@ -1,0 +1,4 @@
+// error: can't tell what type this `none` is
+fn main() {
+    let x = none
+}

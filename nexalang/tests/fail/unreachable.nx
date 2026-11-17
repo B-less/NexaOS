@@ -1,0 +1,5 @@
+// error: can never run
+fn main() {
+    return
+    print("x")
+}

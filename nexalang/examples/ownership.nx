@@ -1,0 +1,147 @@
+// The tricky cases for memory safety: a value used and replaced in the
+// same statement, values outliving the variable they came from, and
+// leaving blocks from deep inside.
+struct Box {
+    label: str
+    items: [str]
+}
+
+enum Slot {
+    Full(Box)
+    Note(str)
+    Free
+}
+
+fn label_of(b: Box) -> str {
+    return b.label
+}
+
+fn first_item(b: Box) -> str {
+    return b.items[0]
+}
+
+fn same(s: str) -> str {
+    return s
+}
+
+fn fib(n: int) -> int {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn spell(n: int) -> str {
+    if n == 0 {
+        return ""
+    }
+    return "{spell(n - 1)}{n}"
+}
+
+fn search(grid: [[str]], wanted: str) -> ?str {
+    var r = 0
+    for row in grid {
+        for cell in row {
+            match parse_int(cell) {
+                some(v) => {
+                    if cell == wanted {
+                        return some("row {r} has {wanted} ({v})")
+                    }
+                }
+                none => { continue }
+            }
+        }
+        r += 1
+    }
+    return none
+}
+
+fn main() {
+    // replacing a value with itself or something made from it
+    var s = "ab"
+    s = s
+    s = s + s
+    s += s
+    print(s)
+
+    var xs = ["one", "two"]
+    xs = xs
+    xs[0] = xs[1]
+    push(xs, xs[0])
+    push(xs, pop(xs))
+    print(join(xs, ","))
+
+    // values outliving where they came from
+    var b = Box { label: "crate", items: ["nail", "screw"] }
+    let l = label_of(b)
+    let f = first_item(b)
+    b = Box { label: "new", items: [] }
+    print("{l} {f} {b.label} {len(b.items)}")
+    let fresh = same("{l}!")
+    print(fresh)
+    let inner = Box { label: "x", items: split("p,q", ",") }.items
+    print(join(inner, "+"))
+
+    // a match that replaces the very variable it's looking at
+    var slot = Slot.Full(Box { label: "tools", items: ["saw"] })
+    match slot {
+        Full(bx) => {
+            slot = Slot.Note("emptied {bx.label}")
+            print("had {bx.label} with {bx.items[0]}")
+        }
+        _ => { }
+    }
+    match slot {
+        Note(n) => { print(n) }
+        _ => { print("?") }
+    }
+
+    // copies stay independent through structs and enums
+    var b1 = Box { label: "a", items: ["1"] }
+    var b2 = b1
+    push(b2.items, "2")
+    b2.label = "b"
+    print("{b1.label}{len(b1.items)} {b2.label}{len(b2.items)}")
+    let saved: ?[str] = some(b2.items)
+    b2.items[0] = "changed"
+    match saved {
+        some(it) => { print("saved {it[0]}, now {b2.items[0]}") }
+        none => { }
+    }
+
+    // replacing a list while looping over it
+    var words = ["a", "b", "c"]
+    var seen = ""
+    for w in words {
+        words = [w, w]
+        seen += w
+    }
+    print("{seen} {join(words, "")}")
+
+    // short-circuit with text made only when needed
+    let name = "nexa"
+    if len(name) > 10 and "{name}{name}" == "x" {
+        print("no")
+    }
+    if len(name) > 10 or to_upper(name) == "NEXA" {
+        print("yes")
+    }
+
+    // leaving from deep inside loops and matches
+    let grid = [["a", "1"], ["b", "22", "c"], ["333"]]
+    print(unwrap_or(search(grid, "22"), "not found"))
+    print(unwrap_or(search(grid, "4"), "not found"))
+    print("{fib(15)} {spell(9)}")
+
+    var slots = [Slot.Free, Slot.Note("hi"), Slot.Full(b1)]
+    slots[0] = slots[2]
+    var count = 0
+    for sl in slots {
+        match sl {
+            Full(x) => { count += len(x.items) }
+            Note(t) => { count += len(t) }
+            Free => { }
+        }
+    }
+    print("{count}")
+}

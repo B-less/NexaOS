@@ -1,0 +1,17 @@
+// An error reaching the end of main is printed and the program exits 1.
+fn half(s: str) -> !int {
+    match parse_int(s) {
+        some(n) => { return ok(n / 2) }
+        none => { return err("`{s}` isn't a number") }
+    }
+}
+
+fn main() -> !void {
+    let words = ["10", "x"]
+    for w in words {
+        let h = half(w)?
+        print("half of {w} is {h}")
+    }
+    print("not reached")
+    return ok()
+}

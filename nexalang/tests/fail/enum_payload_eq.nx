@@ -1,0 +1,5 @@
+// error: use `match` to look inside it
+enum Shape { Circle(float) }
+fn main() {
+    let ok = Shape.Circle(1.0) == Shape.Circle(1.0)
+}

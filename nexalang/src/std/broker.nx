@@ -1,0 +1,54 @@
+// Standard module `broker`: ask the NexaOS system broker (nexa-brokerd)
+// to change the system. Apps never run as root; the broker checks every
+// request, asks for the password itself when an action needs one, and
+// logs it. See SYSTEM_BROKER.md for the actions and their arguments.
+//
+//   use broker
+//   use json
+//   let reply = broker.call("set_brightness", json.obj([json.field("percent", Json.Num(40.0))]))?
+//
+// The reply is the broker's JSON answer, unchanged.
+use json
+
+fn socket_path() -> str {
+    // NEXA_BROKER_SOCKET only redirects this program's own requests
+    // (used by tests); the broker still checks who is asking.
+    return unwrap_or(__env("NEXA_BROKER_SOCKET"), "/run/nexa-broker.sock")
+}
+
+// Send one request and wait up to 30 minutes for the answer (installing
+// software can take a while).
+pub fn call(action: str, args: Json) -> !Json {
+    return call_timeout(action, args, 1800000)
+}
+
+pub fn call_timeout(action: str, args: Json, timeout_ms: int) -> !Json {
+    if action == "" {
+        return err("the broker needs an action name")
+    }
+    let request = json.obj([json.field("action", Json.Text(action)), json.field("args", args)])
+    let path = socket_path()
+    match __unix_request(path, "{json.to_text(request)}\n", timeout_ms) {
+        ok(line) => {
+            if trim(line) == "" {
+                return err("the system broker closed the connection without answering")
+            }
+            match json.parse(line) {
+                ok(reply) => { return ok(reply) }
+                err(e) => { return err("the system broker's answer couldn't be read ({e})") }
+            }
+        }
+        err(e) => {
+            if contains(e, "doesn't exist") or contains(e, "Connection refused") {
+                return err("the system broker isn't running ({e})")
+            }
+            return err("couldn't ask the system broker: {e}")
+        }
+    }
+}
+
+// An empty argument object, for actions without arguments.
+pub fn no_args() -> Json {
+    let none_yet: [Field] = []
+    return Json.Obj(none_yet)
+}

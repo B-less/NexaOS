@@ -1,0 +1,4 @@
+// error: start with a lowercase letter
+fn main() {
+    let Total = 1
+}

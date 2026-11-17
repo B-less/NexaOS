@@ -1,0 +1,4 @@
+// error: contains itself
+enum Tree { Leaf, Node(Tree, Tree) }
+fn main() {
+}

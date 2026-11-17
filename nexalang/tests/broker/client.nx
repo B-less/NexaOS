@@ -1,0 +1,19 @@
+use broker
+use json
+
+fn show(action: str, args: Json) {
+    match broker.call_timeout(action, args, 5000) {
+        ok(reply) => { print("{action}: {json.to_text(reply)}") }
+        err(e) => { print("{action}: error: {e}") }
+    }
+}
+
+fn main() {
+    show("set_brightness", json.obj([json.field("percent", Json.Num(40.0))]))
+    show("frobnicate", broker.no_args())
+    show("garbage", broker.no_args())
+    show("silent", broker.no_args())
+    show("", broker.no_args())
+    show("stop", broker.no_args())
+    show("set_brightness", broker.no_args())
+}

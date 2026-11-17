@@ -1,0 +1,9 @@
+// error: already handled above
+enum Light { Red, Green }
+fn main() {
+    match Light.Red {
+        Red => { }
+        Red => { }
+        Green => { }
+    }
+}

@@ -1,0 +1,11 @@
+{"name":"NexaOS","version":3.2,"tags":["os","hexa"],"nested":{"ok":true,"none":null}}
+[1,2.5,0,1000,0.01,123456789012]
+"x\"y\\z\né😀/"
+ERR JSON error at line 1, column 4: expected a value (a number, text, list, object, true, false or null)
+ERR JSON error at line 1, column 6: expected `:` after the key
+ERR JSON error at line 1, column 4: a \u escape is half of a pair with no second half
+ERR JSON error at line 1, column 2: numbers can't start with 0
+ERR JSON error at line 1, column 1: expected `true`
+ERR JSON error at line 1, column 1: the text ends where a value was expected
+ERR JSON error at line 1, column 31: unexpected text after the value
+"  spaces kept  "

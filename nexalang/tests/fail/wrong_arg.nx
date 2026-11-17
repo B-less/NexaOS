@@ -1,0 +1,7 @@
+// error: expected `int`, but this is `str`
+fn sq(n: int) -> int {
+    return n * n
+}
+fn main() {
+    let x = sq("3")
+}

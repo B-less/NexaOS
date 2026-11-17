@@ -1,0 +1,5 @@
+// trap: position 3 is outside the list (length 2)
+fn main() {
+    var grid = [[1, 2], [3, 4]]
+    grid[1][3] = 0
+}

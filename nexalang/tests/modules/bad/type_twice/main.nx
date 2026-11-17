@@ -1,0 +1,4 @@
+use helper
+struct Point { x: int }
+fn main() {
+}

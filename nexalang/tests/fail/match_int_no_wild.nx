@@ -1,0 +1,6 @@
+// error: needs a `_ => { }` case
+fn main() {
+    match 3 {
+        1 => { }
+    }
+}

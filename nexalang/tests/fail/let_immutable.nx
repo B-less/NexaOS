@@ -1,0 +1,5 @@
+// error: made with `let`
+fn main() {
+    let x = 1
+    x = 2
+}

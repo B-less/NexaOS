@@ -1,0 +1,4 @@
+// error: can't add `str` and `int`
+fn main() {
+    let s = "n=" + 5
+}

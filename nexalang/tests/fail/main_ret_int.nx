@@ -1,0 +1,4 @@
+// error: `main` takes no parameters and returns nothing (or `!void`)
+fn main() -> int {
+    return 0
+}

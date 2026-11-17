@@ -1,0 +1,7 @@
+// error: can't change `n`
+fn f(n: int) {
+    n += 1
+}
+fn main() {
+    f(1)
+}

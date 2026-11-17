@@ -1,0 +1,5 @@
+// trap: too big for an int
+fn main() {
+    var x = 9223372036854775807
+    x += 1
+}

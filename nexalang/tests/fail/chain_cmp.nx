@@ -1,0 +1,4 @@
+// error: can't be chained
+fn main() {
+    let ok = 1 < 2 < 3
+}

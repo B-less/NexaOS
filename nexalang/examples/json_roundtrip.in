@@ -1,0 +1,11 @@
+{"name": "NexaOS", "version": 3.2, "tags": ["os", "hexa"], "nested": {"ok": true, "none": null}}
+[1, 2.5, -0.0, 1e3, 1E-2, 123456789012]
+"x\"y\\z\né😀\/"
+[1,]
+{"a" 1}
+"\ud800"
+01
+tru
+
+{"a": [1, {"b": "trailing"}]} x
+  "  spaces kept  "  

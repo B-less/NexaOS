@@ -1,0 +1,5 @@
+// error: unknown type `string`
+fn f(s: string) {
+}
+fn main() {
+}

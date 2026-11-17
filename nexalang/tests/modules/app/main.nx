@@ -1,0 +1,13 @@
+// A program split over three files.
+use shapes
+use report
+
+fn main() {
+    let list = [shapes.circle(1.0), shapes.square(2.0), Shape.Square(0.5)]
+    print(report.summary(list))
+    let biggest = shapes.largest(list)
+    match biggest {
+        some(s) => { print("largest: {shapes.name(s)}") }
+        none => { print("none") }
+    }
+}

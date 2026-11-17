@@ -1,0 +1,5 @@
+// error: use `slice(text, start, end)`
+fn main() {
+    let s = "abc"
+    let c = s[0]
+}

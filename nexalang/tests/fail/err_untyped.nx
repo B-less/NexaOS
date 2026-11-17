@@ -1,0 +1,4 @@
+// error: can't tell what type this `err` is
+fn main() {
+    let e = err("x")
+}

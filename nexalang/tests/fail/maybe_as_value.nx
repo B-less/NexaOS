@@ -1,0 +1,4 @@
+// error: this might be `none`
+fn main() {
+    let n: int = parse_int("5")
+}

@@ -1,0 +1,50 @@
+// Structs, lists of structs, push/pop, nested assignment.
+struct Point {
+    x: int,
+    y: int,
+}
+
+struct Shape {
+    name: str
+    corners: [Point]
+}
+
+fn perimeter_box(s: Shape) -> int {
+    var minx = s.corners[0].x
+    var maxx = minx
+    var miny = s.corners[0].y
+    var maxy = miny
+    for p in s.corners {
+        if p.x < minx { minx = p.x }
+        if p.x > maxx { maxx = p.x }
+        if p.y < miny { miny = p.y }
+        if p.y > maxy { maxy = p.y }
+    }
+    return 2 * (maxx - minx) + 2 * (maxy - miny)
+}
+
+fn main() {
+    var tri = Shape {
+        name: "triangle",
+        corners: [Point { x: 0, y: 0 }, Point { x: 4, y: 0 }],
+    }
+    push(tri.corners, Point { x: 0, y: 3 })
+    print("{tri.name} has {len(tri.corners)} corners, box perimeter {perimeter_box(tri)}")
+
+    tri.corners[1].x = 10
+    tri.corners[1].y += 5
+    let c = tri.corners[1]
+    print("moved corner: ({c.x}, {c.y})")
+
+    var stack: [str] = []
+    push(stack, "a")
+    push(stack, "b")
+    let top = pop(stack)
+    print("popped {top}, {len(stack)} left")
+
+    // value semantics for structs: copying a struct copies its fields
+    var p = Point { x: 1, y: 2 }
+    var q = p
+    q.x = 99
+    print("p.x = {p.x}, q.x = {q.x}")
+}

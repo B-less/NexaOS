@@ -1,0 +1,5 @@
+// error: is a built-in function
+fn print(s: str) {
+}
+fn main() {
+}

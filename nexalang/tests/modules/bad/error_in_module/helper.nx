@@ -1,0 +1,4 @@
+pub fn f() -> str {
+    let x = y
+    return "a"
+}

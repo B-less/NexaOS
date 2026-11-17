@@ -1,0 +1,4 @@
+// trap: would cut a letter in half
+fn main() {
+    let s = slice("αβ", 0, 1)
+}

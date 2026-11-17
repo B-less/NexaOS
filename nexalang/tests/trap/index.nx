@@ -1,0 +1,6 @@
+// trap: position 5 is outside the list (length 3)
+fn main() {
+    let xs = [1, 2, 3]
+    let i = 5
+    print("{xs[i]}")
+}

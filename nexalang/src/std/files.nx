@@ -1,0 +1,144 @@
+// Standard module `files`: reading and writing files and folders.
+//
+// Every function that can fail returns `!T` with a plain message, like
+// "can't read notes.txt: it doesn't exist". Paths are text; `join_path` builds
+// them. What a program may touch is decided by NexaOS (nexa-run confines
+// installed apps to the folders their permissions name), not here.
+
+// The whole file as text. Refuses files over 256 MiB and files that
+// aren't UTF-8 text.
+pub fn read(path: str) -> !str {
+    return __files_read(path)
+}
+
+// The file's lines, without line endings.
+pub fn read_lines(path: str) -> ![str] {
+    let text = __files_read(path)?
+    if text == "" {
+        let empty: [str] = []
+        return ok(empty)
+    }
+    var lines = split(replace(text, "\r\n", "\n"), "\n")
+    if lines[len(lines) - 1] == "" {
+        let last = pop(lines)
+    }
+    return ok(lines)
+}
+
+// Replace the file's contents, all or nothing: if anything goes wrong the
+// old file is left as it was.
+pub fn write(path: str, text: str) -> !void {
+    return __files_write(path, text)
+}
+
+// Add text to the end of the file (made if it doesn't exist).
+pub fn append(path: str, text: str) -> !void {
+    return __files_append(path, text)
+}
+
+pub fn exists(path: str) -> bool {
+    return __files_exists(path)
+}
+
+pub fn is_dir(path: str) -> bool {
+    return __files_is_dir(path)
+}
+
+// Names (not paths) of what's in a folder, sorted.
+pub fn list(dir: str) -> ![str] {
+    return __files_list(dir)
+}
+
+// Make a folder, and any missing folders above it.
+pub fn make_dir(path: str) -> !void {
+    return __files_make_dir(path)
+}
+
+// Remove a file or an empty folder. Never removes a folder's contents.
+pub fn remove(path: str) -> !void {
+    return __files_remove(path)
+}
+
+// `join_path("a/b", "c.txt")` is "a/b/c.txt".
+pub fn join_path(a: str, b: str) -> str {
+    if a == "" {
+        return b
+    }
+    if b == "" {
+        return a
+    }
+    if starts_with(b, "/") {
+        return b
+    }
+    if ends_with(a, "/") {
+        return "{a}{b}"
+    }
+    return "{a}/{b}"
+}
+
+// The last part of a path: "a/b/c.txt" -> "c.txt".
+pub fn name(path: str) -> str {
+    var p = path
+    while len(p) > 1 and ends_with(p, "/") {
+        p = slice(p, 0, len(p) - 1)
+    }
+    let parts = split(p, "/")
+    return parts[len(parts) - 1]
+}
+
+pub fn home() -> str {
+    return unwrap_or(__env("HOME"), "/")
+}
+
+// The app's own folders (XDG). `id` is the app id from nexa.toml.
+// They aren't made automatically: call `make_dir` before writing.
+pub fn config_dir(id: str) -> !str {
+    return app_dir(id, "XDG_CONFIG_HOME", ".config")
+}
+
+pub fn data_dir(id: str) -> !str {
+    return app_dir(id, "XDG_DATA_HOME", ".local/share")
+}
+
+pub fn cache_dir(id: str) -> !str {
+    return app_dir(id, "XDG_CACHE_HOME", ".cache")
+}
+
+fn app_dir(id: str, env_name: str, fallback: str) -> !str {
+    check_id(id)?
+    var base = join_path(home(), fallback)
+    match __env(env_name) {
+        some(v) => {
+            // the XDG rules: only an absolute path counts
+            if starts_with(v, "/") {
+                base = v
+            }
+        }
+        none => { }
+    }
+    return ok(join_path(base, id))
+}
+
+// App ids: lowercase letters, digits, - and _, starting with a letter;
+// `nexa-` is kept for NexaOS itself.
+fn check_id(id: str) -> !void {
+    if id == "" or len(id) > 64 {
+        return err("an app id has 1 to 64 characters")
+    }
+    let first = byte_at(id, 0)
+    if first < 97 or first > 122 {
+        return err("an app id starts with a lowercase letter: `{id}`")
+    }
+    for i in 0..len(id) {
+        let b = byte_at(id, i)
+        let lower = b >= 97 and b <= 122
+        let digit = b >= 48 and b <= 57
+        if not (lower or digit or b == 45 or b == 95) {
+            return err("an app id may only use a-z, 0-9, - and _: `{id}`")
+        }
+    }
+    if starts_with(id, "nexa-") {
+        return err("app ids starting with `nexa-` are kept for NexaOS")
+    }
+    return ok()
+}

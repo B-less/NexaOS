@@ -1,0 +1,9 @@
+// error: doesn't handle `Yellow`
+enum Light { Red, Yellow, Green }
+fn main() {
+    let l = Light.Red
+    match l {
+        Red => { }
+        Green => { }
+    }
+}

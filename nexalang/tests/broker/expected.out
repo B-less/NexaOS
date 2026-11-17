@@ -1,0 +1,7 @@
+set_brightness: {"ok":true,"undo":{"action":"set_brightness","args":{"percent":70}},"got":40}
+frobnicate: {"ok":false,"error":"unknown action frobnicate"}
+garbage: error: the system broker's answer couldn't be read (JSON error at line 1, column 1: expected `null`)
+silent: error: the system broker closed the connection without answering
+: error: the broker needs an action name
+stop: {"ok":true}
+set_brightness: error: 

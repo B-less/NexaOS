@@ -1,0 +1,29 @@
+// Reads numbers from input, one per line; arguments name the report.
+fn main() {
+    let a = args()
+    var title = "report"
+    if len(a) > 0 {
+        title = join(a, " ")
+    }
+    var total = 0
+    var bad: [str] = []
+    while true {
+        match read_line() {
+            none => { break }
+            some(line) => {
+                let t = trim(line)
+                if t == "" {
+                    continue
+                }
+                match parse_int(t) {
+                    some(n) => { total += n }
+                    none => { push(bad, t) }
+                }
+            }
+        }
+    }
+    print("{title}: total {total}")
+    if len(bad) > 0 {
+        print("skipped: {join(bad, ", ")}")
+    }
+}

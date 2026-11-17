@@ -1,0 +1,4 @@
+// error: every item in a list has the same type
+fn main() {
+    let xs = [1, "two"]
+}

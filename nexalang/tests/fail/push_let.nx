@@ -1,0 +1,5 @@
+// error: can't `push` to `xs`
+fn main() {
+    let xs = [1, 2]
+    push(xs, 3)
+}

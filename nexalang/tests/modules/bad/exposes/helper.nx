@@ -1,0 +1,6 @@
+struct Inner {
+    x: int
+}
+pub fn get() -> Inner {
+    return Inner { x: 1 }
+}

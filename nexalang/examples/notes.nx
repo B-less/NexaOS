@@ -1,0 +1,94 @@
+// A small notes tool: keeps notes as JSON in a folder.
+//   notes FOLDER add TEXT...   notes FOLDER list   notes FOLDER clear
+use files
+use json
+
+struct Note {
+    id: int
+    text: str
+}
+
+fn load(path: str) -> ![Note] {
+    var notes: [Note] = []
+    if not files.exists(path) {
+        return ok(notes)
+    }
+    let doc = json.parse(files.read(path)?)?
+    for item in json.items(unwrap_or(json.get(doc, "notes"), Json.Null)) {
+        let id = unwrap_or(json.as_int(unwrap_or(json.get(item, "id"), Json.Null)), 0)
+        let text = unwrap_or(json.as_text(unwrap_or(json.get(item, "text"), Json.Null)), "")
+        push(notes, Note { id: id, text: text })
+    }
+    return ok(notes)
+}
+
+fn save(path: str, notes: [Note]) -> !void {
+    var items: [Json] = []
+    for n in notes {
+        push(items, json.obj([json.field("id", Json.Num(to_float(n.id))), json.field("text", Json.Text(n.text))]))
+    }
+    let doc = json.obj([json.field("version", Json.Num(1.0)), json.field("notes", Json.List(items))])
+    files.write(path, "{json.pretty(doc)}\n")?
+    return ok()
+}
+
+fn run(a: [str]) -> !void {
+    if len(a) < 2 {
+        return err("usage: notes FOLDER add TEXT... | list | clear")
+    }
+    files.make_dir(a[0])?
+    let path = files.join_path(a[0], "notes.json")
+    var notes = load(path)?
+    match a[1] {
+        "add" => {
+            var words: [str] = []
+            for i in 2..len(a) {
+                push(words, a[i])
+            }
+            var next = 1
+            for n in notes {
+                if n.id >= next {
+                    next = n.id + 1
+                }
+            }
+            push(notes, Note { id: next, text: join(words, " ") })
+            save(path, notes)?
+            print("added note {next}")
+        }
+        "list" => {
+            if len(notes) == 0 {
+                print("no notes yet")
+            }
+            for n in notes {
+                print("{n.id}. {n.text}")
+            }
+        }
+        "clear" => {
+            files.remove(path)?
+            print("cleared")
+        }
+        _ => { return err("unknown command `{a[1]}`") }
+    }
+    return ok()
+}
+
+fn main() -> !void {
+    // the example runs several commands in a row on one folder
+    let dir = args()[0]
+    run([dir, "list"])?
+    run([dir, "add", "buy", "milk"])?
+    run([dir, "add", "fix the \"Wi-Fi\" icon"])?
+    run([dir, "list"])?
+    print(files.read(files.join_path(dir, "notes.json"))?)
+    run([dir, "clear"])?
+    run([dir, "list"])?
+    match run([dir, "frob"]) {
+        ok => { }
+        err(e) => { print("error: {e}") }
+    }
+    match files.read(files.join_path(dir, "nothing.txt")) {
+        ok(t) => { print(t) }
+        err(e) => { print("error: {replace(e, dir, "DIR")}") }
+    }
+    return ok()
+}
