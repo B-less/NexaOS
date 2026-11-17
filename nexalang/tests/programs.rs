@@ -259,6 +259,42 @@ fn build_writes_a_program() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// 0.5: nexa-pack projects build into `build/`, which starts out missing.
+#[test]
+fn build_makes_the_output_folder() {
+    let dir = tmpdir("build-dir");
+    let exe = dir.join("build/deeper/hello");
+    let st = nexac().arg("build").arg(root().join("examples/hello.nx")).arg("-o").arg(&exe).status().unwrap();
+    assert!(st.success());
+    assert_eq!(String::from_utf8_lossy(&Command::new(&exe).output().unwrap().stdout), "Hello from NexaLang on NexaOS!\n");
+    // a folder that can't be made is an error with a message, not a crash
+    std::fs::write(dir.join("file"), "x").unwrap();
+    let out = nexac().arg("build").arg(root().join("examples/hello.nx")).arg("-o").arg(dir.join("file/hello")).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("error: can't make the folder"), "{}", String::from_utf8_lossy(&out.stderr));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// 0.5: .nexa packages must be reproducible, so the programs in them are:
+/// the same source built twice (in different folders) gives the same bytes.
+#[test]
+fn built_programs_are_byte_identical() {
+    let dir = tmpdir("repro");
+    let mut progs = vec![root().join("examples/notes.nx")];
+    if have_gtk() {
+        progs.extend(nexa_apps().into_iter().map(|a| a.join("src/main.nx")));
+    }
+    for p in progs {
+        let a = dir.join("one/build/app");
+        let b = dir.join("two/build/app");
+        for out in [&a, &b] {
+            assert!(nexac().arg("build").arg(&p).arg("-o").arg(out).status().unwrap().success(), "{}", p.display());
+        }
+        assert!(std::fs::read(&a).unwrap() == std::fs::read(&b).unwrap(), "{} built twice differs", p.display());
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn module_mistakes_are_reported_in_the_right_file() {
     let bad = root().join("tests/modules/bad");
@@ -354,10 +390,21 @@ fn gtk_flags(which: &str) -> Vec<String> {
     String::from_utf8(o.stdout).unwrap().split_whitespace().map(String::from).collect()
 }
 
-/// Window programs: the examples, and the test programs.
+/// Window programs: the examples, the test programs, and NexaOS apps
+/// written in NexaLang (`apps/*/src/main.nx`, 0.5).
 fn ui_programs() -> Vec<PathBuf> {
     let mut v = files("examples/ui");
     v.extend(files("tests/ui"));
+    v.extend(nexa_apps().into_iter().map(|a| a.join("src/main.nx")));
+    v
+}
+
+/// NexaOS apps written in NexaLang: folders in `apps/` with `src/main.nx`.
+fn nexa_apps() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(root().join("../apps"))
+        .map(|d| d.map(|e| e.unwrap().path()).filter(|p| p.join("src/main.nx").is_file()).collect())
+        .unwrap_or_default();
+    v.sort();
     v
 }
 
@@ -367,13 +414,19 @@ struct Steps {
     broker: bool,
 }
 
+/// tests/ui/*.steps, then each NexaLang app's tests/*.steps (0.5).
 fn ui_steps() -> Vec<Steps> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(root().join("tests/ui"))
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "steps"))
-        .collect();
-    v.sort();
+    let steps_in = |dir: PathBuf| -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
+            .map(|d| d.map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "steps")).collect())
+            .unwrap_or_default();
+        v.sort();
+        v
+    };
+    let mut v = steps_in(root().join("tests/ui"));
+    for app in nexa_apps() {
+        v.extend(steps_in(app.join("tests")));
+    }
     v.into_iter()
         .map(|file| {
             let src = std::fs::read_to_string(&file).unwrap();

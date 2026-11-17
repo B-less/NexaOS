@@ -64,6 +64,7 @@ static const char NX_UI_CSS[] =
     ".nx-heading { font-size: 15pt; font-weight: 700; color: @nexa_text_strong; }\n"
     ".nx-note { font-size: 8.5pt; color: @nexa_muted; }\n"
     ".nx-mono { font-family: \"JetBrains Mono\", monospace; color: @nexa_text_strong; }\n"
+    ".nx-display { font-family: \"JetBrains Mono\", monospace; font-size: 22pt; font-weight: 700; color: @nexa_text_strong; }\n"
     /* buttons: surface; one primary in accent; danger in crit */
     "button { background-image: none; background-color: @nexa_surface_hi; color: @nexa_text_strong;"
     "  border: 1px solid @nexa_border; border-radius: 10px; padding: 4px 12px; min-height: 24px;"
@@ -393,7 +394,7 @@ NX_RT int64_t nx_b___ui_box(int64_t parent, bool across, int line) {
     return nx_ui_add(parent, b, b, across ? NX_UI_ROW : NX_UI_COLUMN, line);
 }
 
-/* style: 0 text, 1 heading, 2 note, 3 mono (numbers that update) */
+/* style: 0 text, 1 heading, 2 note, 3 mono (numbers that update), 4 display (one big number) */
 NX_RT int64_t nx_b___ui_label(int64_t parent, nx_str text, int64_t style, int line) {
     nx_ui_need_start(line);
     char *c = nx_ui_cstr(text);
@@ -402,8 +403,8 @@ NX_RT int64_t nx_b___ui_label(int64_t parent, nx_str text, int64_t style, int li
     gtk_label_set_xalign(GTK_LABEL(l), 0);
     gtk_label_set_line_wrap(GTK_LABEL(l), TRUE);
     gtk_label_set_line_wrap_mode(GTK_LABEL(l), PANGO_WRAP_WORD_CHAR);
-    static const char *const cls[] = {NULL, "nx-heading", "nx-note", "nx-mono"};
-    if (style > 0 && style < 4) gtk_style_context_add_class(gtk_widget_get_style_context(l), cls[style]);
+    static const char *const cls[] = {NULL, "nx-heading", "nx-note", "nx-mono", "nx-display"};
+    if (style > 0 && style < 5) gtk_style_context_add_class(gtk_widget_get_style_context(l), cls[style]);
     return nx_ui_add(parent, l, l, NX_UI_LABEL, line);
 }
 

@@ -40,6 +40,16 @@ pub fn exists(path: str) -> bool {
     return __files_exists(path)
 }
 
+// The size of a file in bytes (0.5). Check it before reading a file that
+// could be huge: `if files.size(path)? > 1_000_000 { ... }`.
+pub fn size(path: str) -> !int {
+    let text = __files_size(path)?
+    match parse_int(text) {
+        some(n) => { return ok(n) }
+        none => { return err("can't find the size of {path}") }
+    }
+}
+
 pub fn is_dir(path: str) -> bool {
     return __files_is_dir(path)
 }

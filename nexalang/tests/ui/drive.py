@@ -14,6 +14,12 @@ STEPS is a file with one step per line:
     key K [K...]      press keys (xdotool names: Return, Tab, ctrl+n, Escape)
     wait SECONDS      let the program catch up
     shot NAME         screenshot the screen into $NX_SHOTS/NAME.png (if set)
+    fill PATH N TEXT  before the program starts: a file in $HOME of N bytes,
+                      TEXT repeated (hostile-input tests: huge files)
+    show PATH         after the program ends: print that file from $HOME
+                      (or "(no file)"), with 10-digit numbers (Unix times)
+                      shown as T and bytes that aren't UTF-8 as \\xNN, so
+                      saved data can be compared exactly
     # ...             a comment
 
 The program's output is passed through (with the new $HOME shown as
@@ -87,9 +93,19 @@ def main():
             env.pop(k, None)
     env["GDK_BACKEND"] = "x11"
     env["NO_AT_BRIDGE"] = "1"  # no accessibility bus in a headless test
+    shows = []
     for raw in open(steps_file, encoding="utf-8"):
         if raw.startswith("file ") and home:
             put_file(home, raw.rstrip("\n").split(" ", 1)[1])
+        elif raw.startswith("fill ") and home:
+            rel, n, text = raw.rstrip("\n").split(" ", 3)[1:]
+            path = os.path.join(home, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            data = text.encode() * (int(n) // len(text.encode()) + 1)
+            with open(path, "wb") as f:
+                f.write(data[:int(n)])
+        elif raw.startswith("show "):
+            shows.append(raw.rstrip("\n").split(" ", 1)[1])
     window_wait = float(env.get("NX_WINDOW_WAIT", "15"))
     last_window = ""
     prog = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE)
@@ -101,7 +117,7 @@ def main():
     try:
         for raw in open(steps_file, encoding="utf-8"):
             line = raw.rstrip("\n")
-            if not line.strip() or line.lstrip().startswith("#") or word_of(line) == "file":
+            if not line.strip() or line.lstrip().startswith("#") or word_of(line) in ("file", "fill", "show"):
                 continue
             word, _, rest = line.partition(" ")
             x = lambda *a: xdotool(env, a)
@@ -168,6 +184,13 @@ def main():
         xvfb.wait()
         reader.join()
         text = b"".join(out)
+        if home:
+            import re
+            for rel in shows:
+                path = os.path.join(home, rel)
+                body = open(path, "rb").read() if os.path.exists(path) else b"(no file)\n"
+                body = body.decode("utf-8", "backslashreplace").encode()  # bytes that aren't text as \xNN
+                text += f"--- {rel}\n".encode() + re.sub(rb"\b\d{10}\b", b"T", body)
         if home:
             text = text.replace(home.encode(), b"/HOME")
         sys.stdout.buffer.write(text)

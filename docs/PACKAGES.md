@@ -4,13 +4,17 @@
 `/usr/local/bin/nexa-pack`) creates, builds, signs and verifies `.nexa`
 packages. New NexaOS software is written in **C** (programs close to
 Wayland/hardware, GTK apps) or **Rust** (services, tools, anything handling
-untrusted data); Python only as a thin interface over them.
+untrusted data); Python only as a thin interface over them. Apps can also
+be written in **NexaLang** (`nexalang/`): `nexa-pack new my-app --lang
+nexa` makes a project whose build command is `nexac build src/main.nx -o
+build/my-app`, so `nexac` must be on the PATH (`scripts/build-native.sh`
+puts it in `build/native/`, which `scripts/build-apps.sh` uses).
 
 ## Quick start
 
 ```bash
 nexa-pack keygen me                      # me.key (secret, keep it private) + me.pub
-nexa-pack new my-app --lang c            # or --lang rust
+nexa-pack new my-app --lang c            # or --lang rust, or --lang nexa (NexaLang)
 cd my-app && nexa-pack build --key ../me.key
 nexa-pack verify dist/my-app-0.1.0.nexa
 ```

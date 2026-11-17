@@ -1,0 +1,8 @@
+// error: expected `str`, but this is `int`
+use ui
+
+fn main() -> !void {
+    let page = ui.start("count-app", "Count")?
+    ui.display(page, 42)
+    return ok()
+}

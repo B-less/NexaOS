@@ -1,0 +1,36 @@
+# program: ../apps/focus-timer/src/main.nx
+# Focus Timer, used the normal way: two sessions (one paused on the way),
+# a length it can't read, then Esc closes. The saved history is printed.
+window Focus Timer
+shot empty
+type Writing the report
+key Tab ctrl+a
+type 0:02
+key Return
+wait 0.5
+shot running
+wait 3
+shot done
+# back to the text fields (focus is on Start), a second session by shortcut
+key shift+Tab shift+Tab ctrl+a
+type Email
+key Tab ctrl+a
+type 0:01
+key ctrl+Return
+wait 0.3
+key ctrl+Return
+shot paused
+wait 2
+key ctrl+Return
+wait 2.5
+shot history
+# a length it can't read: the error says what to type
+key shift+Tab ctrl+a
+type 9 minutes
+key Return
+shot bad-length
+# Ctrl+R puts a good length back on the face; Esc closes (nothing running)
+key ctrl+a
+type 5
+key Escape
+show .local/share/focus-timer/sessions.json

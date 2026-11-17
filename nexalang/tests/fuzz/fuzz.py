@@ -35,6 +35,12 @@ def seeds():
             if n.endswith(".nx"):
                 p = os.path.join(full, n)
                 out.append((p, open(p, encoding="utf-8").read()))
+    # NexaOS apps written in NexaLang (0.5)
+    apps = os.path.join(ROOT, "..", "apps")
+    for n in sorted(os.listdir(apps)) if os.path.isdir(apps) else []:
+        p = os.path.join(apps, n, "src", "main.nx")
+        if os.path.isfile(p):
+            out.append((p, open(p, encoding="utf-8").read()))
     return out
 
 TOKENS = ["0", "1", "-1", "9223372036854775807", "-9223372036854775808", "0.5", "1e308", '""', '"x"', '"\\{"',
@@ -43,7 +49,8 @@ TOKENS = ["0", "1", "-1", "9223372036854775807", "-9223372036854775808", "0.5", 
           ".", "..", "=", "+=", "let", "var", "fn", "return", "if", "else", "while", "for", "in", "match",
           "break", "continue", "=>", "_", "struct", "enum", "pub", "use", "\n", "ui.wait()", "ui.label(1, \"t\")",
           "ui.set_items(2, [\"a\"])", "ui.select(2, 0)", "ui.status(\"s\")", "ui.focus(1)", "ui.get_text(1)",
-          "ui.button(1, \"b\")", "ui.list(1, \"e\")", "ui.wait_ms(1)", "broker.no_args()", "json.parse(\"[1]\")"]
+          "ui.button(1, \"b\")", "ui.list(1, \"e\")", "ui.wait_ms(1)", "broker.no_args()", "json.parse(\"[1]\")",
+          "files.size(\"x\")", "files.size(\"\")", "ui.display(1, \"9:00\")"]
 
 def mutate(rng, src):
     lines = src.split("\n")

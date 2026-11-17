@@ -1,6 +1,6 @@
 # NexaLang: the programming language of NexaOS
 
-Started 2026-11-16. Current version **0.4** (compiler `nexac`, in `nexalang/`).
+Started 2026-11-16. Current version **0.5** (compiler `nexac`, in `nexalang/`).
 
 NexaLang is a small, safe, readable language for writing NexaOS programs.
 The compiler `nexac` (Rust, no dependencies) turns a `.nx` file into C11
@@ -60,6 +60,16 @@ fn main() -> !void {
 }
 ```
 
+An app for NexaOS, packaged (0.5):
+
+```sh
+nexa-pack new my-app --lang nexa    # nexa.toml, src/main.nx, icon.svg
+cd my-app && nexa-pack build        # dist/my-app-0.1.0.nexa (built by nexac)
+nexa-pack verify dist/my-app-0.1.0.nexa
+```
+
+`apps/focus-timer` is a complete NexaOS app written in NexaLang.
+
 ```sh
 nexac run hello.nx                  # build and run
 nexac run --check-memory hello.nx   # also report memory never freed
@@ -105,9 +115,17 @@ and for the compiler itself.
 | **A mistake inside a standard module is reported where the program called it** (0.4) | `ui.set_text(99, "x")` says `in app.nx at line 12`, not a line of `std/ui.nx` the author never wrote | Showing the module's own line |
 | **GTK only for programs that `use ui`** (0.4) | Command-line programs stay small and start instantly; `nexac` adds `pkg-config gtk+-3.0`'s flags (as separate arguments, no shell) after every hardened flag | Linking GTK always |
 | **The broker's answer has kinds** (`Done`, `NeedsPassword`, `Unverified`) (0.4) | The real protocol (nexa-brokerd) has three kinds of "not done" that need different handling; an `enum` makes the program handle each. "too many wrong passwords" and plain refusals are `err`, since asking again can't help. `broker.call` keeps the common case one line | Returning the raw JSON reply (0.3: every program had to know the protocol) |
+| **NexaLang apps are built through nexa.toml's ordinary `[build] command`** (`nexac build src/main.nx -o build/<id>`) (0.5) | No new `nexa.toml` field (WRITING_NEXA_APPS.md: don't invent fields), so the package format, `nexa-pack verify` and the installer's checks don't change at all, and older `nexa-pack`s build these projects too. The hardened flags stay in one place (`nexac`) | A `[build] nexa = "src/main.nx"` field, or `nexa-pack` calling the compiler as a library: a second place that has to get the flags right, and a field old tools refuse |
+| **`nexac build` makes the output's folder** (0.5) | A new project has no `build/` yet; failing there would be every beginner's first error | Making each template add `mkdir -p` (a shell step) |
+| **Programs are reproducible by construction** (0.5) | Packages must be byte-identical when rebuilt. The generated C has no time or random names, and the C file is named after the output (`app.nexa.c`), not a random temporary file, so even the symbol table is the same. Tested by building twice in different folders | Normalising the binary afterwards (more code that can be wrong) |
+| **`files.size(path)` to check before reading** (0.5) | Every file is untrusted: an app can refuse a file that's far too big without reading up to 256 MiB first. It comes back through the runtime's existing `!str` (one C function, no new C result type for the code generator) and is turned into an `int` in NexaLang | A size argument on every `files.read` (each call would need a number); a new `!int` C type in the runtime (more generated code to keep right) |
+| **`ui.display` for one big number** (0.5) | Hexa's display size (22 pt) in JetBrains Mono, so a timer or a total doesn't jitter as it changes. Programs still can't set font sizes, so the type scale can't be broken | Letting programs choose font sizes |
+| **The sample app needs no permissions** (`apps/focus-timer`) (0.5) | It shows everything an app needs (a window with Hexa, its own XDG data, hostile files, an empty state, shortcuts, packaging, running confined) without a file chooser, which `ui` doesn't have yet. An app that opened the person's files would have had to ask for a whole `files.*` folder instead | A notes or viewer app (needs a file chooser first, or broad permissions) |
+| **A saved file that can't be read is never written over silently** (0.5) | The person may want it back; the app says what happened, keeps working, and only "Clear history" (with a question first) replaces it | Starting fresh and overwriting (silent data loss) |
+| **`nexa-pack new --lang nexa` checks the id and escapes the name** (0.5) | A name like `My "App" {x}` would otherwise break `nexa.toml` or the program (`{` starts a value in NexaLang text). Ids that nexa.toml would refuse are refused before any files are made | Finding out at the first build |
 | **Passwords are asked for by `ui`, checked by the broker** (0.4) | `ui.broker_call` shows a password dialog when the broker asks, three tries, the way `nexa_common/broker.py` does; the password goes only into the request to the broker. Apps never check or keep it | Apps asking with their own dialogs |
 
-## 2. The language (v0.4)
+## 2. The language (v0.5)
 
 **Types:** `int` (64-bit, checked), `float` (64-bit), `bool`, `str`
 (immutable UTF-8 text), `[T]` (growable list), `?T` (a `T` or `none`),
@@ -213,7 +231,7 @@ Integer `/` rounds toward zero; `%` takes the sign of the left side.
 
 | Module | Functions |
 |---|---|
-| `files` | `read(path) -> !str`, `read_lines -> ![str]`, `write(path, text) -> !void` (all-or-nothing), `append`, `exists`, `is_dir`, `list(dir) -> ![str]` (sorted names), `make_dir` (with parents), `remove` (a file or an *empty* folder; never contents), `join_path(a, b)`, `name(path)`, `home()`, `config_dir(id)`, `data_dir(id)`, `cache_dir(id)` (the app's XDG folders; ids follow nexa.toml's rules) |
+| `files` | `read(path) -> !str`, `read_lines -> ![str]`, `size(path) -> !int` (bytes; 0.5), `write(path, text) -> !void` (all-or-nothing), `append`, `exists`, `is_dir`, `list(dir) -> ![str]` (sorted names), `make_dir` (with parents), `remove` (a file or an *empty* folder; never contents), `join_path(a, b)`, `name(path)`, `home()`, `config_dir(id)`, `data_dir(id)`, `cache_dir(id)` (the app's XDG folders; ids follow nexa.toml's rules) |
 | `time` | `now() -> int` (Unix seconds), `millis()` (for measuring), `sleep_ms(n)`, `format(t, "%Y-%m-%d")`, `format_utc`, `iso(t)` |
 | `json` | `parse(text) -> !Json` (errors give line and column; 200 levels max), `to_text(j)`, `pretty(j)`, `get(j, key) -> ?Json`, `at(j, i)`, `as_text`, `as_num`, `as_int`, `as_bool`, `items`, `keys`, `obj(fields)`, `field(key, value)`, `set(j, key, value)`. Values: `Json.Null`, `Json.Bool(b)`, `Json.Num(n)`, `Json.Text(s)`, `Json.List(items)`, `Json.Obj(fields)` |
 | `broker` (0.4) | `call(action, args: Json) -> !Json` (the action's result; refusals, a needed password and unverified packages are `err`), `ask(action, args, password: ?str) -> !BrokerReply` (`Done(result)`, `NeedsPassword(what, why)`, `Unverified(why)`; a plain refusal or "too many wrong passwords" is `err`), `call_timeout`, `ask_timeout`, `no_args()`. One request to `/run/nexa-broker.sock`; 30-minute limit |
@@ -227,7 +245,7 @@ widget's number.
 |---|---|
 | Window | `start(app_id, title) -> !int` (opens the window, returns its main column; `err` when there's no display; one window per program) |
 | Layout | `column(parent)`, `row(parent)` (text fields and columns in a row share the free width) |
-| Text | `label`, `heading`, `note` (small, quiet), `mono` (JetBrains Mono: numbers that update) — all `(parent, text) -> int`; long text wraps |
+| Text | `label`, `heading`, `note` (small, quiet), `mono` (JetBrains Mono: numbers that update), `display` (one big number: JetBrains Mono, 22 pt; 0.5) — all `(parent, text) -> int`; long text wraps |
 | Controls | `button(parent, text)`, `primary_button` (one per window, accent colour), `danger_button`, `entry(parent, hint)`, `check(parent, text, on)`, `list(parent, empty_text)` (scrolling rows of text) |
 | Changing | `set_text(id, text)`, `get_text(id)`, `set_checked`, `is_checked`, `set_items(list, [str])` (clears the selection), `selected(list) -> ?int`, `select(list, i)`, `select_none`, `set_enabled`, `set_visible`, `focus`, `tooltip(id, text)`, `shortcut(button, "Ctrl+N")` (shown in the tooltip), `status(text)`, `show_error(text)` (the line at the bottom) |
 | Events | `wait() -> UiEvent`, `wait_ms(ms) -> UiEvent` (`Tick` when nothing happened) |
@@ -328,6 +346,9 @@ nexalang/
                    with exact *.out; tests/ui/trap: misuse (14)
   tests/fuzz/      the compiler fuzzer (fuzz.py)
   examples/ui/     window examples
+../apps/*/src/main.nx   NexaOS apps written in NexaLang (0.5); their
+                 tests/*.steps run with the window tests, three ways
+../tools/nexa-pack      `nexa-pack new --lang nexa` (src/templates.rs)
 ```
 
 All identifiers are prefixed in C (`nx_v_`, `nx_fn_`, `nx_S_`, `nx_E_`,
@@ -340,6 +361,48 @@ only. A runtime error knows its file: the location passed to the runtime
 is file number × 1,000,000 + line.
 
 ## 5. Testing done
+
+**0.5 (2026-11-17)** — Ubuntu 24.04 here: GTK 3.24.41, Xvfb, xdotool,
+Sway 1.9 + grim (headless Wayland), Inter, JetBrains Mono, gcc 13.3,
+clang, Valgrind. `cd nexalang && cargo test`: **35 tests, all pass**
+(13 unit, 22 end to end; 2 new). `cd tools && cargo test -p nexa-pack`:
+**19 pass** (3 new: the template's files, escaping, refused ids).
+
+| Check | Result |
+|---|---|
+| Every earlier check (examples with gcc and clang, ASan + UBSan, Valgrind, window scenarios, theme, misuse, broker, modules, rejected programs, runtime errors) | all still pass; no test removed or weakened |
+| New example `sizes.nx` (`files.size`: empty, small, big, missing, a folder, a zero byte, an empty path; refusing a file that's too big) | exact output, gcc and clang, every byte freed, clean under ASan + UBSan and Valgrind |
+| Bad programs rejected with the expected message | 61/61 (2 new: `files.size` used without handling its error; `ui.display` given a number) |
+| `nexac build -o build/deeper/app` makes the folders; a folder that can't be made is a message, exit 1 | pass |
+| **Programs built twice in different folders are byte-identical** (`notes.nx`, `apps/focus-timer`) | identical |
+| **`nexa-pack new my-app --lang nexa --name 'My "App" {x}'`** → `nexa-pack build` → verify → extract → run the extracted program and drive it with key presses | builds with the hardened flags, `"ok":true`, the window shows the name exactly, Enter greets; screenshot looked at |
+| **`apps/focus-timer`, 8 scenarios driven by real key presses** (`apps/focus-timer/tests/*.steps`: two sessions with a pause, keyboard shortcuts, a length it can't read, 360 px wide, an empty file, a file cut off half-way, a file that isn't UTF-8 (cancel, then accept "Clear history"), a 3 MB file, nonsense entries and numbers too big for an `int`, closing while the timer runs). The saved file is compared exactly | 8 × 3 ways (hardened build + leak counter; ASan + UBSan; Valgrind) = **24/24**, 0 memory errors, 0 leaks from the program's own code, no GTK warnings |
+| **Its package**: `nexa-pack build` twice | byte-identical (sha256 `9e1ba85e…`), `nexa-pack verify`: `"ok":true`, `"permissions":[]`, unsigned |
+| The program in the package: PIE, full RELRO (`BIND_NOW`), stack protector, fortify (`__*_chk`) | all present (readelf) |
+| **Run from the extracted package, confined by the real `nexa-run`** (Landlock, built from `tools/nexa-run`, the app registered with no permissions, home folder outside `/tmp`) | all 8 scenarios give exactly the same output; `nexa-run --explain` lists only its own folders and "no internet". A probe program under the same confinement could **not** read a file in the home folder, and could use its own data folder |
+| **Wayland**: the extracted app in a headless Sway (wlroots, pixman), screenshot with grim | draws correctly with JetBrains Mono and Inter; looked at |
+| A home folder with spaces, quotes and accents in its name | works |
+| Start-up: window shown after | ≈0.5 s on this machine (the measurement's own polling step is 0.5 s) |
+| **Fuzzing** (`tests/fuzz/fuzz.py`, now also seeded with `apps/*/src/main.nx` and `files.size` / `ui.display`): every accepted mutant built with the **exact hardened `-O2 -Werror` flags** and run under ASan + UBSan + the leak counter | **12,000 mutants** (seeds 2029-2032), **1,004 accepted** and run (78 of them window programs): **0 compiler crashes, 0 C build failures, 0 memory errors, 0 leaks** |
+
+**Screenshots** (`shots/0.5/`, all looked at): Focus Timer's empty state,
+running, paused, history, a length it can't read, an unreadable file, a
+damaged file, a file too big, the question before replacing it, after
+clearing, nonsense entries, closing while running, 360 px wide, on
+Wayland; and the `nexa-pack new` template. No clipped text (long names
+end in "…"), no default-grey GTK, no dark-on-dark.
+
+Found and fixed while building 0.5:
+- `nexac build -o build/app` failed when `build/` didn't exist yet (every
+  new project's first build);
+- the test driver couldn't compare saved files that aren't UTF-8 (it now
+  shows those bytes as `\xNN`);
+- Focus Timer itself, from looking at the screenshots: totals under a
+  minute showed as "0 min"; errors repeated the long path of the history
+  file; an empty or cut-off file showed a JSON error with line and column
+  (now: an empty file is an empty history; a cut-off one is "damaged");
+- `nexa-pack new` put the app's name into `nexa.toml` and the program
+  without escaping it, and accepted ids the build would refuse later.
 
 **0.4 (2026-11-17)** — GTK 3.24.41 really built and run here (Ubuntu 24.04
 packages: libgtk-3-dev, Xvfb, xdotool, Inter), gcc 13.3, clang, Valgrind.
@@ -446,26 +509,35 @@ Found and fixed while building 0.2: strings inside `{...}` were refused,
 which made the new text functions awkward (now allowed, 8 levels max);
 floats printed as `1e+03` (now `1000.0`).
 
-## 6. Known limits of 0.4
+## 6. Known limits of 0.5
 
 - **One window per program**, and widgets can't be removed (hide them
   with `set_visible`, or use a list for things that come and go).
 - **List rows are text only**; no images, menus, tabs, sliders, file
-  chooser or drag and drop yet. Apps that open the person's files need a
-  file chooser (WRITING_NEXA_APPS.md §3), so it comes with 0.5.
-- **No hexagon shape** in `ui` yet (the NexaOS mark for one or two things
-  per screen); the app's hexagon icon comes with the package (0.5).
+  chooser or drag and drop yet. **No file chooser yet**, so a NexaLang app
+  can't open the person's files the way WRITING_NEXA_APPS.md §3 asks
+  (0.4 planned it for 0.5; it was moved to later, because 0.5's sample app
+  doesn't open files and an untested file chooser is worse than none).
+  Until then, write apps that keep their own data, like Focus Timer.
+- **No hexagon shape** inside windows yet (the NexaOS mark for one or two
+  things per screen); apps carry it in their icon (`nexa-pack new` makes one).
 - Widgets are `int`s: passing a count where a widget is meant is caught
   only when the program runs (with a message), not by the compiler.
 - **A password is ordinary NexaLang text** after the dialog: it goes only
   into the request to the broker and is freed afterwards, but freed memory
   isn't wiped (GTK wipes its own copy in the dialog).
-- Tested on X11 (Xvfb) here. NexaOS runs Sway/Hyprland (Wayland); GTK
-  chooses the backend itself and nothing in `ui` is X11-specific, but the
-  Wayland run, and the run inside NexaOS's confinement (`nexa-run`), are
-  part of 0.5's app testing.
-- JetBrains Mono isn't installed on the machine 0.4 was tested on, so
-  `mono` text fell back to the system monospace font there; NexaOS ships it.
+- **Tested on Ubuntu (glibc) here, not on Alpine (musl).** This machine
+  couldn't reach Alpine's servers or Docker Hub, so the packages built
+  here hold a glibc program; NexaOS's packages come from
+  `scripts/build-apps.sh` in the Alpine builder, which now also builds
+  `nexac` (`scripts/build-native.sh`). Those two script changes are
+  untested here (no Docker images could be downloaded).
+- Key presses are tested on X11 (Xvfb); on Wayland (headless Sway) the
+  app was started and looked at, but not driven by keys.
+- Not done here: the live-boot test in QEMU
+  (`scripts/test-live-boot.py`, needs a NexaOS ISO), and signing with the
+  release key (only on the release machine). `apps/focus-timer`'s package
+  is unsigned until `make nexa-apps` builds it there.
 - **Single-threaded.** Reference counts aren't atomic; threads (later)
   will use message passing, never shared values. (A window's broker
   request waits on a helper thread that never touches NexaLang values.)
@@ -491,6 +563,6 @@ floats printed as `1e+03` (now `1000.0`).
 | **0.2** ✅ | Reference counting (no leaks, flat memory), value-semantics lists, `enum` + exhaustive `match`, `?T` instead of null, text functions, `read_line`/`args` | §5 |
 | **0.3** ✅ | `!T` errors and `?`; modules with `pub`; standard modules `files`, `time`, `json`, `broker`; `match` on `int`/`str`; every `str` valid UTF-8 | §5 |
 | **0.4** ✅ | **`ui`: GTK 3 windows with Hexa built in** (theme colours with the fallback block, live theme following, Inter / JetBrains Mono, one primary action, empty states, keyboard use); the program-driven event loop; password prompts and the broker's real protocol (`BrokerReply`); functions that always call themselves refused; running out of stack reported | §5. (WRITING_NEXA_APPS.md §6 for a packaged app is 0.5's sample app) |
-| **0.5** | `nexa-pack new my-app --lang nexa`; `.nexa` packages built from `.nx` | An app in the Store written in NexaLang |
+| **0.5** ✅ | `nexa-pack new my-app --lang nexa`; `.nexa` packages built from `.nx`, reproducibly; `apps/focus-timer`, a NexaOS app in NexaLang; `files.size`, `ui.display` | §5. In the Store once `make nexa-apps` builds and signs it on the release machine |
 | **0.6** | `nexac fmt`, syntax highlighting, language server; Nexa Mind explains compiler errors offline | |
-| later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (images, menus, file chooser); in-place string append; self-hosting | |
+| later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (file chooser first, then images, menus); a hexagon widget; in-place string append; self-hosting | |

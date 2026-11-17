@@ -1,0 +1,2 @@
+--- .local/share/focus-timer/sessions.json
+{"sessions": [{"what": "Reading", "seconds": 1500, "ended": T}, {"what": "", "seconds": 60, "ended": 1}, {"what": "negative", "seconds": -5, "ended": 1}, {"what": "huge", "seconds": 99999999999999999999, "ended": 1}, {"what": "too long", "seconds": 999999, "ended": 1}, {"what": 5}, "text", null, [], {"what": "Line one\nline two ✓ ünïcode and a very long name that goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on", "seconds": 90, "ended": T}], "extra": true}

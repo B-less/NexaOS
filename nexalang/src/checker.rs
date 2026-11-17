@@ -48,6 +48,7 @@ fn std_primitive(name: &str) -> Option<(Vec<Type>, Type)> {
         "__files_write" => (vec![s(), s()], res(Void)),
         "__files_append" => (vec![s(), s()], res(Void)),
         "__files_exists" => (vec![s()], Bool),
+        "__files_size" => (vec![s()], res(s())),
         "__files_is_dir" => (vec![s()], Bool),
         "__files_list" => (vec![s()], res(list(s()))),
         "__files_make_dir" => (vec![s()], res(Void)),

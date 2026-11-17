@@ -74,7 +74,8 @@ fn default_categories() -> String {
     "Utility;".into()
 }
 
-fn is_id(s: &str) -> bool {
+/// An app id: lowercase letters, digits, - and _, starting with a letter.
+pub fn is_id(s: &str) -> bool {
     let mut c = s.chars();
     matches!(c.next(), Some('a'..='z'))
         && s.len() <= 40

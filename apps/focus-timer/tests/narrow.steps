@@ -1,0 +1,8 @@
+# program: ../apps/focus-timer/src/main.nx
+# 360 px wide, with a long session name: text wraps or ellipsises, never clips.
+file .local/share/focus-timer/sessions.json {"version": 1, "sessions": [{"what": "Reading the chapter about rivers and the long history of the delta", "seconds": 1500, "ended": 1763370000}]}
+window Focus Timer
+size 360 640
+wait 0.5
+shot narrow
+key Escape

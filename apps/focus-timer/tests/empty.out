@@ -1,0 +1,11 @@
+--- .local/share/focus-timer/sessions.json
+{
+  "version": 1,
+  "sessions": [
+    {
+      "what": "Focus",
+      "seconds": 1,
+      "ended": T
+    }
+  ]
+}

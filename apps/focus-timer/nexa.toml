@@ -1,0 +1,19 @@
+[package]
+id = "focus-timer"
+name = "Focus Timer"
+version = "1.0.0"
+description = "Work on one thing for a set time, then take a break; keeps a list of what you finished"
+categories = "Utility;Office;"
+icon = "icon.svg"
+screenshots = ["shots/running.png", "shots/history.png"]
+
+[build]
+# Written in NexaLang (nexalang/): nexac builds it with the hardened flags.
+command = "nexac build src/main.nx -o build/focus-timer"
+binary = "build/focus-timer"
+
+[requires]
+# Already part of NexaOS, so installing needs no internet.
+depends = ["gtk+3.0"]
+# Nothing beyond its own data folder (~/.local/share/focus-timer).
+permissions = []

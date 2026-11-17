@@ -92,6 +92,12 @@ pub fn mono(parent: int, text: str) -> int {
     return __ui_label(parent, text, 3)
 }
 
+// One big number that matters, in JetBrains Mono at display size (22 pt):
+// a timer, a total (0.5). Use it once per window.
+pub fn display(parent: int, text: str) -> int {
+    return __ui_label(parent, text, 4)
+}
+
 // ---- controls ----
 
 pub fn button(parent: int, text: str) -> int {

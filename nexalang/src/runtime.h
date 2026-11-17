@@ -737,6 +737,24 @@ NX_RT nx_R_v nx_b___files_append(nx_str path, nx_str text, int line) {
     return r;
 }
 
+/* The size of a file in bytes, as decimal text (so it can use the runtime's
+   existing `!str`; std/files.nx turns it into an int). Folders are refused. */
+NX_RT nx_R_s nx_b___files_size(nx_str path, int line) {
+    (void)line;
+    nx_R_s r = {false, {"", 0, NULL}, {"", 0, NULL}};
+    char *c = nx_cstr(path);
+    if (!c) { r.e = NX_BAD_PATH("find the size of", path); return r; }
+    struct stat st;
+    int rc = stat(c, &st);
+    int e = errno;
+    free(c);
+    if (rc != 0) { r.e = nx_os_err("find the size of", path, e); return r; }
+    if (S_ISDIR(st.st_mode)) { r.e = nx_os_err("find the size of", path, EISDIR); return r; }
+    r.v = nx_fmt("%lld", (long long)st.st_size);
+    r.ok = true;
+    return r;
+}
+
 NX_RT bool nx_b___files_exists(nx_str path, int line) {
     (void)line;
     char *c = nx_cstr(path);

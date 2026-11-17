@@ -226,6 +226,14 @@ fn gtk_flags(which: &str) -> Vec<String> {
 fn build_c(prog: &Compiled, out: &Path, check_memory: bool) {
     let c = &prog.c;
     let c_path = out.with_extension("nexa.c");
+    // `nexac build app.nx -o build/app` makes `build/` when it's missing
+    // (0.5: nexa-pack's projects build into a folder that starts out empty).
+    if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            eprintln!("error: can't make the folder {}: {}", dir.display(), e);
+            exit(1);
+        }
+    }
     if let Err(e) = std::fs::write(&c_path, c) {
         eprintln!("error: can't write {}: {}", c_path.display(), e);
         exit(1);

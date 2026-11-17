@@ -1,0 +1,8 @@
+# program: ../apps/focus-timer/src/main.nx
+# A history cut off half-way (a full disk, a crash in another program):
+# called damaged, in plain words, and left alone.
+file .local/share/focus-timer/sessions.json {"version": 1, "sessions": [{"what": "Read
+window Focus Timer
+shot damaged
+key Escape
+show .local/share/focus-timer/sessions.json

@@ -1,0 +1,42 @@
+// files.size (0.5): check a file's size before reading it.
+//   sizes FOLDER
+use files
+
+fn describe(path: str) -> str {
+    match files.size(path) {
+        ok(n) => { return "{files.name(path)}: {n} bytes" }
+        err(e) => { return "error: {e}" }
+    }
+}
+
+// Read a file only when it's small enough to be what we expect.
+fn read_small(path: str, limit: int) -> !str {
+    if files.size(path)? > limit {
+        return err("{files.name(path)} is too big to be a settings file")
+    }
+    return files.read(path)
+}
+
+fn main() -> !void {
+    let dir = args()[0]
+    files.make_dir(dir)?
+    let empty = files.join_path(dir, "empty.txt")
+    let hello = files.join_path(dir, "hello.txt")
+    let big = files.join_path(dir, "big.txt")
+    files.write(empty, "")?
+    files.write(hello, "héllo\n")?
+    files.write(big, repeat("x", 100_000))?
+    print(describe(empty))
+    print(describe(hello))
+    print(describe(big))
+    print(replace(describe(files.join_path(dir, "missing.txt")), dir, "FOLDER"))
+    print(replace(describe(dir), dir, "FOLDER"))
+    print(describe("a\0b"))
+    print(describe(""))
+    print(unwrap_or(read_small(hello, 1000), "?"))
+    match read_small(big, 1000) {
+        ok(_) => { print("read the big one") }
+        err(e) => { print("refused: {e}") }
+    }
+    return ok()
+}
