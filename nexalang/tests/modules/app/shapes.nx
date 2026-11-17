@@ -1,0 +1,44 @@
+// Shapes and what can be worked out about them.
+pub enum Shape {
+    Circle(float)
+    Square(float)
+}
+
+pub fn circle(r: float) -> Shape {
+    return Shape.Circle(r)
+}
+
+pub fn square(side: float) -> Shape {
+    return Shape.Square(side)
+}
+
+pub fn area(s: Shape) -> float {
+    match s {
+        Circle(r) => { return round2(3.14159 * r * r) }
+        Square(a) => { return a * a }
+    }
+}
+
+pub fn name(s: Shape) -> str {
+    match s {
+        Circle(r) => { return "circle r={r}" }
+        Square(a) => { return "square {a}" }
+    }
+}
+
+pub fn largest(list: [Shape]) -> ?Shape {
+    var best: ?Shape = none
+    var best_area = -1.0
+    for s in list {
+        if area(s) > best_area {
+            best_area = area(s)
+            best = some(s)
+        }
+    }
+    return best
+}
+
+// private: only this file can use it
+fn round2(x: float) -> float {
+    return to_float(to_int(x * 100.0)) / 100.0
+}

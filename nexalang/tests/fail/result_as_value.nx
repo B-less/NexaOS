@@ -1,0 +1,7 @@
+// error: this might be an error
+fn get() -> !int {
+    return ok(1)
+}
+fn main() {
+    let n: int = get()
+}

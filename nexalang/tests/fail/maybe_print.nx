@@ -1,0 +1,4 @@
+// error: can't be turned into text
+fn main() {
+    print(parse_int("5"))
+}

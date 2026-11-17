@@ -1,0 +1,9 @@
+// error: `spell` always calls itself here, before it can return, so it would never finish
+fn spell(n: int) -> str {
+    if n == 0 {
+    }
+    return "{spell(n - 1)}{n}"
+}
+fn main() {
+    print(spell(3))
+}

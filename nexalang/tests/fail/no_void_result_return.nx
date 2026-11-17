@@ -1,0 +1,6 @@
+// error: add `return ok()` at the end
+fn save() -> !void {
+    print("x")
+}
+fn main() {
+}

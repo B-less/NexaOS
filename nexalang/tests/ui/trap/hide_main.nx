@@ -1,0 +1,7 @@
+// trap: the window's main column can't be hidden
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    ui.set_visible(page, false)
+    return ok()
+}

@@ -1,0 +1,4 @@
+// trap: split needs a separator
+fn main() {
+    let p = split("a,b", "")
+}

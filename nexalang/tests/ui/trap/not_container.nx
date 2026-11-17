@@ -1,0 +1,8 @@
+// trap: widget 2 is a button, which can't hold other widgets (use a column or a row)
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let b = ui.button(page, "OK")
+    ui.label(b, "inside")
+    return ok()
+}

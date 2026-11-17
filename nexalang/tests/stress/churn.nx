@@ -1,0 +1,44 @@
+// Runs 2 million rounds of making and dropping text, lists, structs,
+// enums and ?T values. With memory freed it needs a few MB; without
+// (v0.1) it would need well over 1 GB.
+struct Rec {
+    name: str
+    tags: [str]
+}
+
+enum Msg {
+    Text(str)
+    Many([str])
+    Nothing
+}
+
+fn make(i: int) -> Rec {
+    return Rec { name: "rec{i}", tags: split("a,b,{i}", ",") }
+}
+
+fn main() {
+    var keep: [Rec] = []
+    var total = 0
+    for i in 0..2000000 {
+        let r = make(i)
+        var m = Msg.Text(r.name)
+        if i % 3 == 0 {
+            m = Msg.Many(r.tags)
+        }
+        match m {
+            Text(t) => { total += len(t) }
+            Many(ts) => { total += len(join(ts, "-")) }
+            Nothing => { }
+        }
+        let found: ?str = some(r.tags[2])
+        total += len(unwrap_or(found, ""))
+        if i % 100000 == 0 {
+            push(keep, r)
+        }
+        if len(keep) > 5 {
+            let old = pop(keep)
+            total += len(old.name)
+        }
+    }
+    print("{total} {len(keep)}")
+}

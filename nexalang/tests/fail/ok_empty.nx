@@ -1,0 +1,4 @@
+// error: only for `!void` results
+fn main() {
+    let x: !int = ok()
+}

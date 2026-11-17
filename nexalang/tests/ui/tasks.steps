@@ -1,0 +1,29 @@
+# program: examples/ui/tasks.nx
+window Tasks
+shot tasks-empty
+type Buy milk
+key Return
+type Call Ama about the "trip"
+key ctrl+n
+type Water plants
+key Return
+shot tasks-normal
+# into the list (selects the first task), down one, remove it
+key Tab
+key Down
+key Delete
+# focus stays in the list; Tab leaves it (Done is off) to the check box
+key Tab
+key space
+shot tasks-focus
+# back into the list, select the last task, remove it: cancel once, then confirm
+key shift+Tab
+key End
+key Delete
+shot tasks-confirm
+key Escape
+key Delete
+key Return
+wait 0.3
+shot tasks-after
+key ctrl+q

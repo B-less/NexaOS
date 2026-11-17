@@ -1,0 +1,8 @@
+// error: is already handled above
+fn main() {
+    match "a" {
+        "a" => { }
+        "a" => { }
+        _ => { }
+    }
+}

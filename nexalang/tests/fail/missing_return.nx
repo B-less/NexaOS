@@ -1,0 +1,9 @@
+// error: can reach its end without returning
+fn sign(n: int) -> int {
+    if n > 0 {
+        return 1
+    }
+}
+fn main() {
+    let s = sign(2)
+}

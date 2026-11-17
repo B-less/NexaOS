@@ -1,0 +1,7 @@
+// error: `if` needs a `bool`
+fn main() {
+    let n = 3
+    if n {
+        print("yes")
+    }
+}

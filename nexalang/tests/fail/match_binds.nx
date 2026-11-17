@@ -1,0 +1,7 @@
+// error: holds 2 value(s), but the case names 1
+enum S { Rect(float, float) }
+fn main() {
+    match S.Rect(1.0, 2.0) {
+        Rect(w) => { }
+    }
+}

@@ -1,0 +1,4 @@
+// error: unexpected `;`
+fn main() {
+    let x = 1;
+}

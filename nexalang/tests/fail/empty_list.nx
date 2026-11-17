@@ -1,0 +1,4 @@
+// error: empty list
+fn main() {
+    var xs = []
+}

@@ -1,0 +1,5 @@
+// error: needs 1 value(s)
+enum Shape { Circle(float), Empty }
+fn main() {
+    let s = Shape.Circle
+}

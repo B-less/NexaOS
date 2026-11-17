@@ -1,0 +1,21 @@
+# program: tests/ui/widgets.nx
+window Widgets
+shot widgets-start
+key ctrl+a
+type ab
+key Return
+key ctrl+g
+# Delete all is off: its shortcut does nothing until Plain (F5) turns it on
+key ctrl+shift+d
+key F5
+shot widgets-error
+# Tab: Plain, Go, Delete all, the check box
+key Tab Tab Tab Tab
+key space
+# into the list: first row, then the next, then Enter
+key Tab
+key Down
+key Return
+key ctrl+shift+d
+shot widgets-empty
+key Escape

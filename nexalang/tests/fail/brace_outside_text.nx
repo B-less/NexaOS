@@ -1,0 +1,5 @@
+// error: write it inside the quotes
+fn main (){
+let name = "Bless"
+print("My name is" ,{name})
+}

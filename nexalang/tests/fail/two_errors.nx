@@ -1,0 +1,5 @@
+// error: 2 errors
+fn main() {
+    let a = b
+    let c = d
+}

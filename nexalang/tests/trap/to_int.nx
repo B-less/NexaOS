@@ -1,0 +1,5 @@
+// trap: doesn't fit in an int
+fn main() {
+    let big = 1e30
+    let n = to_int(big)
+}

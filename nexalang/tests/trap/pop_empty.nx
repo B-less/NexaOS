@@ -1,0 +1,5 @@
+// trap: pop from an empty list
+fn main() {
+    var xs: [int] = []
+    let v = pop(xs)
+}

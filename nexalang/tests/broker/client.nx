@@ -1,0 +1,49 @@
+use broker
+use json
+
+fn show(action: str, args: Json) {
+    match broker.call_timeout(action, args, 5000) {
+        ok(result) => { print("{action}: {json.to_text(result)}") }
+        err(e) => { print("{action}: error: {e}") }
+    }
+}
+
+fn describe(r: !BrokerReply) -> str {
+    match r {
+        ok(reply) => {
+            match reply {
+                Done(result) => { return "done {json.to_text(result)}" }
+                NeedsPassword(what, why) => { return "needs password for `{what}` ({why})" }
+                Unverified(why) => { return "unverified: {why}" }
+            }
+        }
+        err(e) => { return "error: {e}" }
+    }
+}
+
+fn rename(password: ?str) {
+    let args = json.obj([json.field("name", Json.Text("studio"))])
+    print("set_hostname: {describe(broker.ask_timeout("set_hostname", args, password, 5000))}")
+}
+
+fn main() {
+    show("set_brightness", json.obj([json.field("percent", Json.Num(40.0))]))
+    show("frobnicate", broker.no_args())
+    show("garbage", broker.no_args())
+    show("not_object", broker.no_args())
+    show("silent", broker.no_args())
+    show("", broker.no_args())
+    show("no_result", broker.no_args())
+    show("locked", broker.no_args())
+    show("install_app", json.obj([json.field("path", Json.Text("/tmp/x.nexa"))]))
+    print("install_app: {describe(broker.ask_timeout("install_app", broker.no_args(), none, 5000))}")
+    show("set_hostname", json.obj([json.field("name", Json.Text("studio"))]))
+    rename(none)
+    rename(some("open sesame"))
+    rename(some("wrong 1"))
+    rename(some("wrong 2"))
+    rename(some("wrong \"3\""))
+    rename(some("open sesame"))
+    show("stop", broker.no_args())
+    show("set_brightness", broker.no_args())
+}

@@ -1,0 +1,8 @@
+// trap: a window has one primary action; use ui.button for the others
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    ui.primary_button(page, "Save")
+    ui.primary_button(page, "Open")
+    return ok()
+}

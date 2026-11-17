@@ -1,0 +1,7 @@
+// error: must return a `?` value
+fn f() -> !int {
+    let n = parse_int("3")?
+    return ok(n)
+}
+fn main() {
+}

@@ -1,0 +1,4 @@
+use helper
+fn main() {
+    print(helper.f())
+}

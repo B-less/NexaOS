@@ -1,0 +1,6 @@
+// error: unexpected `!`
+fn main() {
+    let a = true
+    if !a {
+    }
+}

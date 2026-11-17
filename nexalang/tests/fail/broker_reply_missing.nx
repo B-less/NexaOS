@@ -1,0 +1,12 @@
+// error: this `match` doesn't handle `NeedsPassword`, `Unverified`
+use broker
+fn main() {
+    match broker.ask("reboot", broker.no_args(), none) {
+        ok(reply) => {
+            match reply {
+                Done(_) => { }
+            }
+        }
+        err(e) => { }
+    }
+}

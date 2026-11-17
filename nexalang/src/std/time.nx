@@ -1,0 +1,32 @@
+// Standard module `time`.
+
+// Seconds since 1970-01-01 UTC.
+pub fn now() -> int {
+    return __time_unix()
+}
+
+// Milliseconds from a fixed point; only for measuring how long something
+// took (it never jumps when the clock is changed).
+pub fn millis() -> int {
+    return __time_millis()
+}
+
+pub fn sleep_ms(ms: int) {
+    __time_sleep_ms(ms)
+}
+
+// Show a time with a strftime pattern, in the local time zone:
+// format(now(), "%Y-%m-%d %H:%M") -> "2026-11-17 09:30"
+pub fn format(t: int, pattern: str) -> !str {
+    return __time_format(t, pattern, false)
+}
+
+// The same in UTC.
+pub fn format_utc(t: int, pattern: str) -> !str {
+    return __time_format(t, pattern, true)
+}
+
+// "2026-11-17T09:30:00Z"
+pub fn iso(t: int) -> str {
+    return unwrap_or(__time_format(t, "%Y-%m-%dT%H:%M:%SZ", true), "")
+}

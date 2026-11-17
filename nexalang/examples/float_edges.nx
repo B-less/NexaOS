@@ -1,0 +1,12 @@
+// Floats at the edges (the fuzzer found that print(1e308) once failed to build).
+fn main() {
+    print(1e308)
+    print(-1.7976931348623157e308)
+    print(5e-324)
+    print(123456789012345680.0)
+    print(99999999999999984.0)
+    print(0.00001)
+    print(0.000001)
+    print(0.1 + 0.2)
+    print(to_str(1e308) + "!")
+}

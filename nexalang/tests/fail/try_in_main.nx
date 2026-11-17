@@ -1,0 +1,7 @@
+// error: or make it `fn main() -> !void`
+fn get() -> !int {
+    return ok(1)
+}
+fn main() {
+    let x = get()?
+}

@@ -1,0 +1,5 @@
+// trap: at line 4: assert failed
+fn main() {
+    print("before")
+    assert(1 + 1 == 3)
+}

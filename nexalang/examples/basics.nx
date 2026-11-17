@@ -1,0 +1,59 @@
+// Variables, loops, functions, floats and strings.
+fn square(n: int) -> int {
+    return n * n
+}
+
+fn average(xs: [float]) -> float {
+    var total = 0.0
+    for x in xs {
+        total += x
+    }
+    return total / to_float(len(xs))
+}
+
+fn grade(score: int) -> str {
+    if score >= 90 {
+        return "A"
+    } else if score >= 75 {
+        return "B"
+    }
+    else {
+        return "C"
+    }
+}
+
+fn main() {
+    var sum = 0
+    for i in 1..11 {
+        sum += square(i)
+    }
+    print("sum of squares 1..10 = {sum}")
+
+    let temps = [21.5, 19.0, 23.25]
+    print("average = {average(temps)}")
+    print("0.1 + 0.2 = {0.1 + 0.2}")
+    print("7 / 2 = {7 / 2}, -7 / 2 = {-7 / 2}, -7 % 2 = {-7 % 2}")
+
+    for s in [95, 80, 40] {
+        print("{s} -> {grade(s)}")
+    }
+
+    var n = 27
+    var steps = 0
+    while n != 1 {
+        if n % 2 == 0 {
+            n = n / 2
+        } else {
+            n = 3 * n + 1
+        }
+        steps += 1
+    }
+    print("collatz(27) takes {steps} steps")
+
+    var greeting = "Hi"
+    greeting += ", there"
+    print(greeting)
+    let target = "Hi, there"
+    print("len = {len(greeting)}, ok = {greeting == target}, big = {to_float(3) * 1e20}")
+    print("smallest int: {-9223372036854775808}")
+}

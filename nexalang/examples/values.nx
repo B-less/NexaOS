@@ -1,0 +1,51 @@
+// Lists are values: a copy never changes when the original does.
+struct Team {
+    name: str
+    members: [str]
+}
+
+fn add_member(t: Team, who: str) -> Team {
+    var copy = t
+    push(copy.members, who)
+    return copy
+}
+
+fn main() {
+    var a = [1, 2, 3]
+    var b = a
+    push(b, 4)
+    b[0] = 100
+    print("a = {len(a)} items, a[0] = {a[0]}")
+    print("b = {len(b)} items, b[0] = {b[0]}")
+
+    let t1 = Team { name: "core", members: ["ada"] }
+    let t2 = add_member(t1, "linus")
+    print("{t1.name}: {join(t1.members, ", ")}")
+    print("{t2.name}: {join(t2.members, ", ")}")
+
+    var grid: [[int]] = []
+    for r in 0..3 {
+        var row: [int] = []
+        for c in 0..3 {
+            push(row, r * 3 + c)
+        }
+        push(grid, row)
+    }
+    var saved = grid
+    grid[1][1] = 0
+    print("grid middle {grid[1][1]}, saved middle {saved[1][1]}")
+
+    // changing a list while looping over it loops over the old version
+    var xs = [1, 2, 3]
+    for x in xs {
+        push(xs, x * 10)
+    }
+    print("xs has {len(xs)} items, last {xs[len(xs) - 1]}")
+
+    var stack = ["a", "b", "c"]
+    var out = ""
+    while len(stack) > 0 {
+        out += pop(stack)
+    }
+    print("popped: {out}")
+}

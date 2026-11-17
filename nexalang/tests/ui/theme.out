@@ -1,0 +1,11 @@
+start: an app id starts with a lowercase letter: `Bad Id`
+start: a window needs a title
+page 1
+label text: zero�byte and ünïcode ✓
+ids 2 3 4 5 6 7 8 9 10 11 12 13
+selected: 1
+selected after none: -1
+entry: set by program, check: true, button: Plain, check text: Option
+tick
+closed
+1 events

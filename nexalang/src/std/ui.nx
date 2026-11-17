@@ -1,0 +1,266 @@
+// Standard module `ui`: a window with Hexa, NexaOS's look, built in.
+//
+//   use ui
+//
+//   fn main() -> !void {
+//       let page = ui.start("hello-app", "Hello")?
+//       let name = ui.entry(page, "Your name")
+//       let greet = ui.primary_button(page, "Greet")
+//       let answer = ui.label(page, "")
+//       while true {
+//           match ui.wait() {
+//               Clicked(id) => {
+//                   if id == greet { ui.set_text(answer, "Hello, {ui.get_text(name)}.") }
+//               }
+//               Closed => { return ok() }
+//               _ => { }
+//           }
+//       }
+//       return ok()
+//   }
+//
+// How it works: widgets are numbered. Every function that makes one
+// returns its number, and events say which widget they came from. The
+// program asks for the next event with `ui.wait()`: there are no callbacks,
+// and nothing happens in the window while your code is running.
+//
+// Done for you: the @nexa_* theme colours (with the fallback block) and
+// following theme changes live; Inter, and JetBrains Mono for `mono`;
+// 6/10/16 px corners and 4-32 px spacing; one primary action per window
+// (a second one stops the program); Esc and Ctrl+Q close; Tab moves
+// between widgets; lists show a friendly text while they're empty.
+// Changes your program makes (set_text, set_checked, ...) never come back
+// as events: events are only what the person did.
+use broker
+use files
+use json
+
+pub enum UiEvent {
+    Clicked(int)          // a button (or its shortcut)
+    Changed(int, str)     // the person changed a text field: its new text
+    Submitted(int, str)   // Enter in a text field: its text
+    Toggled(int, bool)    // a check box: on or off
+    Selected(int, int)    // a list: the row now selected (from 0)
+    Activated(int, int)   // a list: a row double-clicked or Enter pressed on it
+    Closed                // the window's close button, Esc or Ctrl+Q
+    Tick                  // `wait_ms`: the time passed with nothing happening
+}
+
+// Open the window; returns its main column, where the other widgets go.
+// `app_id` is the id from nexa.toml (it names the window for the desktop).
+// Fails when there's no display (a program started outside the desktop).
+pub fn start(app_id: str, title: str) -> !int {
+    files.check_app_id(app_id)?
+    if trim(title) == "" {
+        return err("a window needs a title")
+    }
+    __ui_start(app_id, title)?
+    return ok(1)
+}
+
+// ---- layout ----
+
+// Widgets one under the other.
+pub fn column(parent: int) -> int {
+    return __ui_box(parent, false)
+}
+
+// Widgets side by side. Text fields and columns in a row share the free width.
+pub fn row(parent: int) -> int {
+    return __ui_box(parent, true)
+}
+
+// ---- text ----
+
+// Body text; long text wraps.
+pub fn label(parent: int, text: str) -> int {
+    return __ui_label(parent, text, 0)
+}
+
+// A heading for a page or a part of one.
+pub fn heading(parent: int, text: str) -> int {
+    return __ui_label(parent, text, 1)
+}
+
+// Small, quieter text: hints, details.
+pub fn note(parent: int, text: str) -> int {
+    return __ui_label(parent, text, 2)
+}
+
+// Text in JetBrains Mono: numbers that update, code, sizes.
+pub fn mono(parent: int, text: str) -> int {
+    return __ui_label(parent, text, 3)
+}
+
+// ---- controls ----
+
+pub fn button(parent: int, text: str) -> int {
+    return __ui_button(parent, text, 0)
+}
+
+// The one main action of the window, in the accent colour. A window has
+// only one: a second stops the program with a message.
+pub fn primary_button(parent: int, text: str) -> int {
+    return __ui_button(parent, text, 1)
+}
+
+// An action that deletes or can't be undone, in the warning colour.
+pub fn danger_button(parent: int, text: str) -> int {
+    return __ui_button(parent, text, 2)
+}
+
+// A one-line text field; `hint` is shown in it while it's empty.
+pub fn entry(parent: int, hint: str) -> int {
+    return __ui_entry(parent, hint)
+}
+
+pub fn check(parent: int, text: str, on: bool) -> int {
+    return __ui_check(parent, text, on)
+}
+
+// A scrolling list of text rows. `empty` is what it says while it has no
+// rows; say what to do next ("No notes yet. Write one above and press Add.").
+pub fn list(parent: int, empty: str) -> int {
+    return __ui_list(parent, empty)
+}
+
+// ---- changing widgets ----
+
+// The text of a label, button, check box or text field.
+pub fn set_text(id: int, text: str) {
+    __ui_set_text(id, text)
+}
+
+pub fn get_text(id: int) -> str {
+    return __ui_get_text(id)
+}
+
+pub fn set_checked(id: int, on: bool) {
+    __ui_set_checked(id, on)
+}
+
+pub fn is_checked(id: int) -> bool {
+    return __ui_is_checked(id)
+}
+
+// Replace all the rows of a list. Nothing is selected afterwards.
+pub fn set_items(id: int, items: [str]) {
+    __ui_set_items(id, items)
+}
+
+// The selected row of a list, if any.
+pub fn selected(id: int) -> ?int {
+    let i = __ui_selected(id)
+    if i < 0 {
+        return none
+    }
+    return some(i)
+}
+
+pub fn select(id: int, index: int) {
+    __ui_select(id, index)
+}
+
+pub fn select_none(id: int) {
+    __ui_select(id, -1)
+}
+
+pub fn set_enabled(id: int, on: bool) {
+    __ui_set_enabled(id, on)
+}
+
+pub fn set_visible(id: int, on: bool) {
+    __ui_set_visible(id, on)
+}
+
+pub fn focus(id: int) {
+    __ui_focus(id)
+}
+
+// Shown when the pointer rests on the widget.
+pub fn tooltip(id: int, text: str) {
+    __ui_tooltip(id, text)
+}
+
+// A key that clicks a button: "Ctrl+N", "Ctrl+Shift+S", "F5", "Delete".
+// It's added to the button's tooltip. Esc and Ctrl+Q always close.
+pub fn shortcut(id: int, keys: str) {
+    __ui_shortcut(id, keys)
+}
+
+// A line at the bottom of the window ("Saved."). Empty text hides it.
+pub fn status(text: str) {
+    __ui_status(text, 0)
+}
+
+// The same line, as an error: say what happened and what to do next.
+pub fn show_error(text: str) {
+    __ui_status(text, 1)
+}
+
+// ---- events ----
+
+// Wait for the person to do something.
+pub fn wait() -> UiEvent {
+    return event(__ui_wait(-1))
+}
+
+// Wait at most `ms` milliseconds (1 or more); `Tick` if nothing happened.
+pub fn wait_ms(ms: int) -> UiEvent {
+    return event(__ui_wait(ms))
+}
+
+fn event(kind: int) -> UiEvent {
+    let id = __ui_event_id()
+    match kind {
+        1 => { return UiEvent.Clicked(id) }
+        2 => { return UiEvent.Changed(id, __ui_event_text()) }
+        3 => { return UiEvent.Submitted(id, __ui_event_text()) }
+        4 => { return UiEvent.Toggled(id, __ui_event_num() != 0) }
+        5 => { return UiEvent.Selected(id, __ui_event_num()) }
+        6 => { return UiEvent.Activated(id, __ui_event_num()) }
+        7 => { return UiEvent.Closed }
+        _ => { return UiEvent.Tick }
+    }
+}
+
+// ---- questions ----
+
+// Ask a yes/no question in a small window over this one. `danger` styles
+// `yes` as an action that can't be undone.
+pub fn confirm(heading: str, message: str, yes: str, danger: bool) -> bool {
+    return __ui_confirm(heading, message, yes, danger)
+}
+
+// Ask for the person's password for `what` (the broker says what it's
+// for). `why` is the broker's reason; "wrong password" shows that it was
+// wrong. none when they cancel. Apps never check passwords themselves:
+// the password only goes to the broker.
+pub fn ask_password(what: str, why: str) -> ?str {
+    return __ui_ask_password(what, why)
+}
+
+// Ask the system broker (see `broker`), asking for the password in the
+// window when the action needs one: three tries, as the broker allows.
+// The window keeps drawing while the broker works, but takes no clicks.
+pub fn broker_call(action: str, args: Json) -> !Json {
+    var password: ?str = none
+    var tries = 0
+    while true {
+        match broker.ask(action, args, password)? {
+            Done(result) => { return ok(result) }
+            NeedsPassword(what, why) => {
+                if tries == 3 {
+                    return err("the password was wrong three times; wait a minute and try again")
+                }
+                tries += 1
+                match ask_password(what, why) {
+                    some(p) => { password = some(p) }
+                    none => { return err("cancelled") }
+                }
+            }
+            Unverified(why) => { return err("the package isn't from a trusted publisher: {why}") }
+        }
+    }
+    return err("the system broker didn't answer")
+}

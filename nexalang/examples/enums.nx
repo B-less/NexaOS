@@ -1,0 +1,85 @@
+// Enums, match, and ?T maybe values.
+enum Shape {
+    Circle(float)
+    Rect(float, float)
+    Label(str)
+    Empty
+}
+
+enum Light {
+    Red
+    Yellow
+    Green
+}
+
+fn area(s: Shape) -> float {
+    match s {
+        Circle(r) => { return 3.14159 * r * r }
+        Rect(w, h) => { return w * h }
+        _ => { return 0.0 }
+    }
+}
+
+fn describe(s: Shape) -> str {
+    match s {
+        Shape.Circle(r) => { return "circle of radius {r}" }
+        Rect(w, _) => { return "rectangle {w} wide" }
+        Label(text) => { return "label \"{text}\"" }
+        Empty => { return "nothing" }
+    }
+}
+
+fn next(l: Light) -> Light {
+    match l {
+        Red => { return Light.Green }
+        Green => { return Light.Yellow }
+        Yellow => { return Light.Red }
+    }
+}
+
+fn find_name(names: [str], wanted: str) -> ?int {
+    var i = 0
+    for n in names {
+        if n == wanted {
+            return some(i)
+        }
+        i += 1
+    }
+    return none
+}
+
+fn main() {
+    let shapes = [Shape.Circle(1.0), Shape.Rect(2.0, 3.5), Shape.Label("hi"), Shape.Empty]
+    for s in shapes {
+        print("{describe(s)}: area {area(s)}")
+    }
+
+    var l = Light.Red
+    for i in 0..4 {
+        l = next(l)
+    }
+    if l == Light.Green {
+        print("after 4 steps the light is green")
+    }
+
+    let names = ["ada", "linus", "grace"]
+    match find_name(names, "grace") {
+        some(i) => { print("grace is at {i}") }
+        none => { print("no grace") }
+    }
+    let missing = find_name(names, "bob")
+    print("bob is at {unwrap_or(missing, -1)}")
+
+    var best: ?str = none
+    for n in names {
+        match best {
+            none => { best = some(n) }
+            some(b) => {
+                if len(n) > len(b) {
+                    best = some(n)
+                }
+            }
+        }
+    }
+    print("longest name: {unwrap_or(best, "?")}")
+}

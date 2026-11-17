@@ -1,0 +1,157 @@
+// Standard module `broker`: ask the NexaOS system broker (nexa-brokerd)
+// to change the system. Apps never run as root; the broker checks every
+// request, checks the password when an action needs one, and logs it.
+// See SYSTEM_BROKER.md for the actions and their arguments.
+//
+// The common case, an action without a password:
+//
+//   use broker
+//   use json
+//   let result = broker.call("set_brightness", json.obj([json.field("percent", Json.Num(40.0))]))?
+//
+// Actions that need the person's password: in a window, `ui.broker_call`
+// asks for it (three tries). Without a window, use `broker.ask` and look
+// at the kind of answer:
+//
+//   match broker.ask("set_hostname", args, none)? {
+//       Done(result) => { ... }
+//       NeedsPassword(what, why) => { ... get the password, then ask again with some(password) }
+//       Unverified(why) => { ... the package isn't signed by a trusted publisher }
+//   }
+//
+// The broker's protocol (nexa-brokerd/src/main.rs): one JSON line in,
+//   {"action": "...", "args": {...}, "password": "..."}
+// one JSON line out:
+//   {"ok": true, "result": ...}
+//   {"ok": false, "error": "...", "needs": "password", "what": "..."}
+//   {"ok": false, "error": "...", "unverified": true}
+//   {"ok": false, "error": "..."}
+use json
+
+// What the broker answered, apart from refusals (those are `err`).
+pub enum BrokerReply {
+    // The action ran; this is its result (Json.Null when it has none).
+    Done(Json)
+    // The action needs the person's password: what it's for, and why it
+    // was asked for ("needs your password" or "wrong password").
+    NeedsPassword(str, str)
+    // An app package isn't signed by a trusted publisher. Installing it
+    // anyway is the person's choice (`allow_unverified`).
+    Unverified(str)
+}
+
+fn socket_path() -> str {
+    // NEXA_BROKER_SOCKET only redirects this program's own requests
+    // (used by tests); the broker still checks who is asking.
+    return unwrap_or(__env("NEXA_BROKER_SOCKET"), "/run/nexa-broker.sock")
+}
+
+// Send one request and wait up to 30 minutes for the answer (installing
+// software can take a while). `password` is sent only when it's `some`.
+pub fn ask(action: str, args: Json, password: ?str) -> !BrokerReply {
+    return ask_timeout(action, args, password, 1800000)
+}
+
+pub fn ask_timeout(action: str, args: Json, password: ?str, timeout_ms: int) -> !BrokerReply {
+    if action == "" {
+        return err("the broker needs an action name")
+    }
+    var fields = [json.field("action", Json.Text(action)), json.field("args", args)]
+    match password {
+        some(p) => { push(fields, json.field("password", Json.Text(p))) }
+        none => { }
+    }
+    let line = send(json.to_text(Json.Obj(fields)), timeout_ms)?
+    if trim(line) == "" {
+        return err("the system broker closed the connection without answering")
+    }
+    let reply = read_reply(line)?
+    return understand(reply)
+}
+
+fn send(request: str, timeout_ms: int) -> !str {
+    match __unix_request(socket_path(), "{request}\n", timeout_ms) {
+        ok(line) => { return ok(line) }
+        err(e) => {
+            if contains(e, "doesn't exist") or contains(e, "Connection refused") {
+                return err("the system broker isn't running ({e})")
+            }
+            return err("couldn't ask the system broker: {e}")
+        }
+    }
+}
+
+fn read_reply(line: str) -> !Json {
+    match json.parse(line) {
+        ok(reply) => {
+            match reply {
+                Obj(_) => { return ok(reply) }
+                _ => { return err("the system broker's answer couldn't be read (it isn't a JSON object)") }
+            }
+        }
+        err(e) => { return err("the system broker's answer couldn't be read ({e})") }
+    }
+}
+
+fn text_field(reply: Json, key: str, fallback: str) -> str {
+    match json.get(reply, key) {
+        some(v) => { return unwrap_or(json.as_text(v), fallback) }
+        none => { return fallback }
+    }
+}
+
+fn is_true(reply: Json, key: str) -> bool {
+    match json.get(reply, key) {
+        some(v) => { return unwrap_or(json.as_bool(v), false) }
+        none => { return false }
+    }
+}
+
+// Sort one reply into its kind. Only `"ok": true` counts as done.
+fn understand(reply: Json) -> !BrokerReply {
+    if is_true(reply, "ok") {
+        match json.get(reply, "result") {
+            some(result) => { return ok(BrokerReply.Done(result)) }
+            none => { return ok(BrokerReply.Done(Json.Null)) }
+        }
+    }
+    let error = text_field(reply, "error", "the system broker refused")
+    if text_field(reply, "needs", "") == "password" {
+        // after three wrong tries the broker waits a minute: asking again
+        // now can't work, so this is a refusal, not a question
+        if contains(error, "too many") {
+            return err(error)
+        }
+        return ok(BrokerReply.NeedsPassword(text_field(reply, "what", ""), error))
+    }
+    if is_true(reply, "unverified") {
+        return ok(BrokerReply.Unverified(error))
+    }
+    return err(error)
+}
+
+// The common case: the action's result, or an error with a plain message.
+// An action that needs a password comes back as an error here; use
+// `ui.broker_call` (asks in a window) or `ask`.
+pub fn call(action: str, args: Json) -> !Json {
+    return call_timeout(action, args, 1800000)
+}
+
+pub fn call_timeout(action: str, args: Json, timeout_ms: int) -> !Json {
+    match ask_timeout(action, args, none, timeout_ms)? {
+        Done(result) => { return ok(result) }
+        NeedsPassword(what, _) => {
+            if what == "" {
+                return err("this needs your password")
+            }
+            return err("this needs your password ({what})")
+        }
+        Unverified(why) => { return err("the package isn't from a trusted publisher: {why}") }
+    }
+}
+
+// An empty argument object, for actions without arguments.
+pub fn no_args() -> Json {
+    let none_yet: [Field] = []
+    return Json.Obj(none_yet)
+}

@@ -1,0 +1,8 @@
+// trap: `Ctrl+Banana` isn't a key ui knows; write it like "Ctrl+N", "Ctrl+Shift+S", "F5" or "Delete"
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let b = ui.button(page, "OK")
+    ui.shortcut(b, "Ctrl+Banana")
+    return ok()
+}

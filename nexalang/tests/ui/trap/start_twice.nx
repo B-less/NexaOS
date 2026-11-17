@@ -1,0 +1,7 @@
+// trap: ui.start was already called: a program has one window
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let again = ui.start("trap-test", "Again")?
+    return ok()
+}

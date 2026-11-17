@@ -1,0 +1,3 @@
+fn main() {
+    let t = __time_unix()
+}

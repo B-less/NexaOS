@@ -1,0 +1,11 @@
+// error: can reach its end without returning
+enum L { A, B }
+fn f(l: L) -> int {
+    match l {
+        A => { return 1 }
+        B => { }
+    }
+}
+fn main() {
+    let x = f(L.A)
+}

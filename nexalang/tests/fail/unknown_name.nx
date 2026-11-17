@@ -1,0 +1,5 @@
+// error: unknown name `cuont`
+fn main() {
+    var count = 0
+    cuont = 1
+}

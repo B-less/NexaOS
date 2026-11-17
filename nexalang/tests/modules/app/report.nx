@@ -1,0 +1,13 @@
+use shapes
+
+pub fn summary(list: [Shape]) -> str {
+    var lines: [str] = []
+    var total = 0.0
+    for s in list {
+        let a = shapes.area(s)
+        total += a
+        push(lines, "{shapes.name(s)}: {a}")
+    }
+    push(lines, "total: {total}")
+    return join(lines, "\n")
+}

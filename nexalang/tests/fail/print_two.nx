@@ -1,0 +1,5 @@
+// error: put them all in one text
+fn main() {
+    let name = "Bless"
+    print("My name is", name)
+}

@@ -1,0 +1,5 @@
+// trap: repeat needs a count that isn't negative
+fn main() {
+    let n = 0 - 3
+    let s = repeat("x", n)
+}

@@ -1,0 +1,6 @@
+struct Secret {
+    x: int
+}
+pub fn make() -> int {
+    return 1
+}

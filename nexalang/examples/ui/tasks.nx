@@ -1,0 +1,138 @@
+// A small to-do list in a window: the `ui` module's tour.
+// Type a task and press Enter (or Add, Ctrl+N); select one and press
+// Delete (or Done). Esc or Ctrl+Q closes. Tasks are kept in the app's
+// data folder; if that file can't be read it's left alone.
+use ui
+use files
+
+fn save(path: str, tasks: [str]) -> !void {
+    if len(tasks) == 0 {
+        return files.write(path, "")
+    }
+    return files.write(path, "{join(tasks, "\n")}\n")
+}
+
+fn count_text(tasks: [str]) -> str {
+    match len(tasks) {
+        0 => { return "Nothing to do." }
+        1 => { return "1 task" }
+        _ => { return "{len(tasks)} tasks" }
+    }
+}
+
+fn main() -> !void {
+    let dir = files.data_dir("tasks-demo")?
+    files.make_dir(dir)?
+    let path = files.join_path(dir, "tasks.txt")
+    var tasks: [str] = []
+    var problem = ""
+    if files.exists(path) {
+        match files.read_lines(path) {
+            ok(lines) => { tasks = lines }
+            err(e) => { problem = e }
+        }
+    }
+
+    let page = ui.start("tasks-demo", "Tasks")?
+    ui.heading(page, "Tasks")
+    let count = ui.note(page, count_text(tasks))
+    let top = ui.row(page)
+    let field = ui.entry(top, "What needs doing?")
+    let add = ui.primary_button(top, "Add")
+    ui.shortcut(add, "Ctrl+N")
+    ui.tooltip(add, "Add the task")
+    let list = ui.list(page, "No tasks yet. Write one above and press Add.")
+    ui.set_items(list, tasks)
+    let bottom = ui.row(page)
+    let done = ui.button(bottom, "Done")
+    ui.shortcut(done, "Delete")
+    ui.tooltip(done, "Remove the selected task")
+    ui.set_enabled(done, false)
+    let ask = ui.check(bottom, "Ask before removing", false)
+    ui.set_enabled(add, false)
+    ui.focus(field)
+    // never write over a file that couldn't be read: the person may want it
+    let can_save = problem == ""
+    if not can_save {
+        ui.show_error("Your saved tasks couldn't be read ({problem}). They're left as they are, and new tasks won't be saved until that file is fixed or removed.")
+        print("not saving: {problem}")
+    }
+
+    while true {
+        var changed = false
+        match ui.wait() {
+            Changed(id, text) => {
+                if id == field {
+                    ui.set_enabled(add, trim(text) != "")
+                }
+            }
+            Selected(id, _) => {
+                if id == list {
+                    ui.set_enabled(done, true)
+                }
+            }
+            Toggled(_, on) => { print("ask before removing: {on}") }
+            Activated(_, row) => { print("activated {tasks[row]}") }
+            Tick => { }
+            Closed => {
+                print("closed with {len(tasks)} task(s)")
+                return ok()
+            }
+            Submitted(_, text) => {
+                if trim(text) != "" {
+                    push(tasks, trim(text))
+                    changed = true
+                    print("added {trim(text)}")
+                    ui.set_text(field, "")
+                    ui.set_enabled(add, false)
+                }
+            }
+            Clicked(id) => {
+                if id == add {
+                    let text = trim(ui.get_text(field))
+                    if text != "" {
+                        push(tasks, text)
+                        changed = true
+                        print("added {text}")
+                        ui.set_text(field, "")
+                        ui.set_enabled(add, false)
+                    }
+                } else if id == done {
+                    match ui.selected(list) {
+                        some(i) => {
+                            if ui.is_checked(ask) {
+                                if not ui.confirm("Remove this task?", tasks[i], "Remove", true) {
+                                    print("kept {tasks[i]}")
+                                    continue
+                                }
+                            }
+                            var rest: [str] = []
+                            for j in 0..len(tasks) {
+                                if j != i {
+                                    push(rest, tasks[j])
+                                }
+                            }
+                            print("done {tasks[i]}")
+                            tasks = rest
+                            changed = true
+                        }
+                        none => { }
+                    }
+                    ui.set_enabled(done, false)
+                }
+            }
+        }
+        // set_items clears the selection, so only when the tasks changed
+        if changed {
+            ui.set_items(list, tasks)
+            ui.set_text(count, count_text(tasks))
+            if can_save {
+                match save(path, tasks) {
+                    ok => { ui.status("Saved.") }
+                    err(e) => { ui.show_error("Your tasks couldn't be saved ({e}). Check that the disk isn't full.") }
+                }
+            }
+        }
+    }
+    return ok()
+}

@@ -1,0 +1,5 @@
+// The first NexaLang program.
+fn main() {
+    let name = "NexaOS"
+    print("Hello from NexaLang on {name}!")
+}

@@ -1,0 +1,9 @@
+// error: doesn't handle `err`
+fn get() -> !int {
+    return ok(1)
+}
+fn main() {
+    match get() {
+        ok(v) => { }
+    }
+}
