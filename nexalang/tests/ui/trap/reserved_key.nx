@@ -1,0 +1,8 @@
+// trap: ctrl+q already closes the window
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let b = ui.button(page, "OK")
+    ui.shortcut(b, "ctrl+q")
+    return ok()
+}

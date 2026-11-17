@@ -1,0 +1,7 @@
+// trap: 99 isn't a widget of this window
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    ui.set_text(99, "x")
+    return ok()
+}

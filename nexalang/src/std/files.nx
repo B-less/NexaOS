@@ -119,8 +119,12 @@ fn app_dir(id: str, env_name: str, fallback: str) -> !str {
     return ok(join_path(base, id))
 }
 
-// App ids: lowercase letters, digits, - and _, starting with a letter;
-// `nexa-` is kept for NexaOS itself.
+// App ids (nexa.toml's rules): lowercase letters, digits, - and _,
+// starting with a letter; `nexa-` is kept for NexaOS itself.
+pub fn check_app_id(id: str) -> !void {
+    return check_id(id)
+}
+
 fn check_id(id: str) -> !void {
     if id == "" or len(id) > 64 {
         return err("an app id has 1 to 64 characters")

@@ -1,0 +1,35 @@
+// Many rounds across the C boundary: lists rebuilt, text set and read
+// back, events waited for. Every NexaLang byte must be freed at the end.
+use ui
+
+fn main() -> !void {
+    let page = ui.start("churn-test", "Churn")?
+    let title = ui.heading(page, "Churn")
+    let field = ui.entry(page, "")
+    let list = ui.list(page, "Empty")
+    var total = 0
+    var ticks = 0
+    for round in 0..1500 {
+        var items: [str] = []
+        for i in 0..(round % 40) {
+            push(items, "row {i} of round {round}")
+        }
+        ui.set_items(list, items)
+        if len(items) > 0 {
+            ui.select(list, len(items) - 1)
+            total += unwrap_or(ui.selected(list), 0)
+        }
+        ui.set_text(field, "round {round} ✓")
+        total += len(ui.get_text(field))
+        ui.set_text(title, ui.get_text(field))
+        if round % 100 == 0 {
+            ui.status("round {round}")
+            match ui.wait_ms(1) {
+                Tick => { ticks += 1 }
+                _ => { }
+            }
+        }
+    }
+    print("total {total}, ticks {ticks}")
+    return ok()
+}

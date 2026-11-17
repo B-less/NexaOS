@@ -1,0 +1,7 @@
+// error: the type `UiEvent` is also defined in module `ui`
+use ui
+enum UiEvent {
+    Mine
+}
+fn main() {
+}

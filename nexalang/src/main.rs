@@ -52,6 +52,7 @@ const STD: &[(&str, &str)] = &[
     ("time", include_str!("std/time.nx")),
     ("json", include_str!("std/json.nx")),
     ("broker", include_str!("std/broker.nx")),
+    ("ui", include_str!("std/ui.nx")),
 ];
 
 const MAX_LINES: usize = 999_999;
@@ -80,8 +81,14 @@ fn parse_module(name: &str, file: String, src: String, is_std: bool) -> Result<a
     Ok(ast::Module { name: name.to_string(), file, src, is_std, prog })
 }
 
+/// Generated C, and whether it needs GTK (the program uses `ui`).
+pub struct Compiled {
+    pub c: String,
+    pub gtk: bool,
+}
+
 /// Load the main file and everything it uses, then check and generate C.
-pub fn compile_to_c(main_path: &Path) -> Result<String, String> {
+pub fn compile_to_c(main_path: &Path) -> Result<Compiled, String> {
     let main_src = read_text(main_path)?;
     let display = display_name(main_path);
     let main_dir = main_path.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -137,7 +144,7 @@ pub fn compile_to_c(main_path: &Path) -> Result<String, String> {
     }
     check_cycles(&mods)?;
     let checked = checker::check(&mut mods).map_err(|ds| render_all(&ds, &mods))?;
-    Ok(codegen::generate(&mods, &checked))
+    Ok(Compiled { c: codegen::generate(&mods, &checked), gtk: codegen::uses_ui(&mods) })
 }
 
 /// Modules can't use each other in a circle.
@@ -186,7 +193,7 @@ fn display_name(path: &Path) -> String {
     path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.display().to_string())
 }
 
-fn to_c_or_exit(path: &str) -> String {
+fn to_c_or_exit(path: &str) -> Compiled {
     if !path.ends_with(".nx") {
         eprintln!("error: NexaLang files end in .nx: {}", path);
         exit(2);
@@ -200,9 +207,24 @@ fn to_c_or_exit(path: &str) -> String {
     }
 }
 
+/// GTK 3's compiler and linker flags, from pkg-config (run with an
+/// argument list, never a shell). Each flag is one argument.
+fn gtk_flags(which: &str) -> Vec<String> {
+    let out = Command::new("pkg-config").arg(which).arg("gtk+-3.0").output();
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).split_whitespace().map(String::from).collect(),
+        _ => {
+            eprintln!("error: this program uses `ui`, which needs GTK 3 and pkg-config (on NexaOS: apk add gtk+3.0-dev pkgconf)");
+            exit(1);
+        }
+    }
+}
+
 /// Compile C to `out` with the hardened flags. Uses $CC or `cc`; starts
-/// the compiler with an argument list, never through a shell.
-fn build_c(c: &str, out: &Path, check_memory: bool) {
+/// the compiler with an argument list, never through a shell. Programs
+/// that use `ui` also get GTK's flags; every hardened flag stays.
+fn build_c(prog: &Compiled, out: &Path, check_memory: bool) {
+    let c = &prog.c;
     let c_path = out.with_extension("nexa.c");
     if let Err(e) = std::fs::write(&c_path, c) {
         eprintln!("error: can't write {}: {}", c_path.display(), e);
@@ -214,7 +236,14 @@ fn build_c(c: &str, out: &Path, check_memory: bool) {
     if check_memory {
         cmd.arg("-DNX_LEAK_CHECK");
     }
-    let status = cmd.arg(&c_path).arg("-o").arg(out).arg("-lm").status();
+    if prog.gtk {
+        cmd.args(gtk_flags("--cflags"));
+    }
+    cmd.arg(&c_path).arg("-o").arg(out).arg("-lm");
+    if prog.gtk {
+        cmd.args(gtk_flags("--libs"));
+    }
+    let status = cmd.status();
     let _ = std::fs::remove_file(&c_path);
     match status {
         Ok(s) if s.success() => {}
@@ -241,7 +270,7 @@ fn main() {
             to_c_or_exit(&args[1]);
             eprintln!("ok: no mistakes found in {}", args[1]);
         }
-        "emit-c" if args.len() == 2 => print!("{}", to_c_or_exit(&args[1])),
+        "emit-c" if args.len() == 2 => print!("{}", to_c_or_exit(&args[1]).c),
         "build" if args.len() == 2 || (args.len() == 4 && args[2] == "-o") => {
             let c = to_c_or_exit(&args[1]);
             let out = if args.len() == 4 {
@@ -266,7 +295,14 @@ fn main() {
             let status = Command::new(&exe).args(&raw[first + 1..]).status();
             let _ = std::fs::remove_dir_all(&dir);
             match status {
-                Ok(s) => exit(s.code().unwrap_or(1)),
+                Ok(s) => match s.code() {
+                    Some(c) => exit(c),
+                    None => {
+                        use std::os::unix::process::ExitStatusExt;
+                        eprintln!("error: the program was stopped by signal {}", s.signal().unwrap_or(0));
+                        exit(1);
+                    }
+                },
                 Err(e) => {
                     eprintln!("error: can't start the program: {}", e);
                     exit(1);

@@ -25,7 +25,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <signal.h>
+#include <sys/resource.h>
+
 #define NX_RT static inline __attribute__((unused))
+
+/* nexac refuses functions that always call themselves (with a message);
+   the C compiler's own, different analysis of the same thing must never
+   turn into "the C compiler failed". Running out of stack is reported
+   by nx_on_segv below. All the hardened flags stay. */
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Winfinite-recursion"
+#elif defined(__GNUC__) && __GNUC__ >= 12
+#pragma GCC diagnostic ignored "-Winfinite-recursion"
+#endif
 
 typedef void (*nx_efn)(void *);
 /* rc is NULL for text that lives forever (literals, program arguments). */
@@ -49,10 +62,15 @@ static int64_t nx_live; /* blocks currently allocated (for the leak check) */
 
 /* Source files, by index; a location is index * 1000000 + line. */
 static const char *const nx_files[] = { NX_FILES };
+static const bool nx_std_files[] = { NX_STD_FILES };
+/* Where the program last called into a standard module: a runtime error
+   inside one is reported there, in the program's own file. */
+__attribute__((unused)) static int nx_user_loc;
 
 __attribute__((noreturn, format(printf, 2, 3), unused))
 static void nx_trap(int loc, const char *fmt, ...) {
     va_list ap;
+    if (nx_std_files[loc / 1000000] && nx_user_loc > 0) loc = nx_user_loc;
     int line = loc % 1000000;
     const char *file = nx_files[loc / 1000000];
     fflush(stdout);
@@ -63,6 +81,45 @@ static void nx_trap(int loc, const char *fmt, ...) {
     va_end(ap);
     fputc('\n', stderr);
     exit(1);
+}
+
+/* Running out of stack (a function calling itself too deeply) is a
+   runtime error with a message, not a silent crash. The handler runs on
+   its own small stack and only uses async-signal-safe calls. Any other
+   crash is left alone (it's a bug in the runtime, not the program). */
+static uintptr_t nx_stack_top; /* roughly where main's stack starts */
+static size_t nx_stack_size;
+static void nx_on_segv(int sig, siginfo_t *si, void *ctx) {
+    (void)ctx;
+    uintptr_t a = (uintptr_t)si->si_addr;
+    if (nx_stack_top && a < nx_stack_top && nx_stack_top - a <= nx_stack_size + ((size_t)1 << 20)) {
+        static const char a1[] = "nexa: runtime error in ";
+        static const char a2[] = ": the program ran out of stack space (a function called itself too many times)\n";
+        ssize_t w = write(2, a1, sizeof a1 - 1);
+        w = write(2, nx_files[0], strlen(nx_files[0])); /* the program's main file */
+        w = write(2, a2, sizeof a2 - 1);
+        (void)w;
+        _exit(1);
+    }
+    signal(sig, SIG_DFL); /* fault again, the normal way */
+}
+static void nx_init(void) {
+    static char alt[65536];
+    stack_t ss;
+    memset(&ss, 0, sizeof ss);
+    ss.ss_sp = alt;
+    ss.ss_size = sizeof alt;
+    if (sigaltstack(&ss, NULL) != 0) return;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = nx_on_segv;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, NULL);
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY) nx_stack_size = (size_t)rl.rlim_cur;
+    else nx_stack_size = (size_t)1 << 32;
+    nx_stack_top = (uintptr_t)__builtin_frame_address(0);
 }
 
 NX_RT void *nx_alloc(size_t n) {
@@ -177,7 +234,11 @@ NX_RT nx_str nx_int_str(int64_t v) {
     return nx_str_heap(buf, (size_t)n);
 }
 NX_RT nx_str nx_float_str(double v) {
-    char buf[64];
+    /* Plain notation is only used below 1e17 (short), but the buffer fits
+       any double written with %f (at most 332 bytes), so the C compiler
+       can check it without knowing that (found by the fuzzer: print(1e308)
+       failed -Werror=format-truncation). */
+    char buf[384];
     if (isnan(v)) return nx_str_lit("nan", 3);
     if (isinf(v)) return v > 0 ? nx_str_lit("inf", 3) : nx_str_lit("-inf", 4);
     /* fewest significant digits that read back as the same number */
@@ -816,51 +877,49 @@ NX_RT nx_R_s nx_b___time_format(int64_t t, nx_str fmt, bool utc, int line) {
 }
 
 /* ---- one request over a unix socket: send a line, read one line back ---- */
-NX_RT nx_R_s nx_b___unix_request(nx_str path, nx_str msg, int64_t timeout_ms, int line) {
-    (void)line;
-    nx_R_s r = {false, {"", 0, NULL}, {"", 0, NULL}};
+/* One request over a Unix socket, done by plain C that touches no
+   NexaLang memory (no nx_alloc, no counts, no traps), so a window can run
+   it on a helper thread and keep drawing meanwhile (see nx_run_blocking).
+   The message is borrowed: no NexaLang code runs until the job is done. */
+typedef struct {
     struct sockaddr_un addr;
-    memset(&addr, 0, sizeof addr);
-    addr.sun_family = AF_UNIX;
-    if (path.len <= 0 || path.len >= (int64_t)sizeof addr.sun_path || memchr(path.p, 0, (size_t)path.len)) {
-        r.e = nx_str_lit("the socket path is empty, too long or has a zero byte", 53);
-        return r;
-    }
-    memcpy(addr.sun_path, path.p, (size_t)path.len);
+    const char *msg; size_t msglen;
+    int64_t timeout_ms;
+    char *buf; size_t n; /* the reply (malloc'd), when stage == 0 */
+    int stage, err;      /* stage: 0 done, 1 socket, 2 connect, 3 send, 4 read, 5 too long, 6 no memory */
+} nx_sock_job;
+
+__attribute__((unused)) static void nx_sock_job_run(void *arg) {
+    nx_sock_job *j = arg;
+    j->buf = NULL; j->n = 0; j->err = 0;
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) { r.e = nx_os_err("open a socket for", path, errno); return r; }
-    if (timeout_ms > 0) {
-        struct timeval tv = {(time_t)(timeout_ms / 1000), (suseconds_t)((timeout_ms % 1000) * 1000)};
+    if (fd < 0) { j->stage = 1; j->err = errno; return; }
+    if (j->timeout_ms > 0) {
+        struct timeval tv = {(time_t)(j->timeout_ms / 1000), (suseconds_t)((j->timeout_ms % 1000) * 1000)};
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
     }
-    if (connect(fd, (struct sockaddr *)&addr, sizeof addr) != 0) {
-        int e = errno; close(fd);
-        r.e = nx_os_err("connect to", path, e);
-        return r;
-    }
-    int64_t off = 0;
-    while (off < msg.len) {
-        ssize_t w = send(fd, msg.p + off, (size_t)(msg.len - off), MSG_NOSIGNAL);
-        if (w < 0) { if (errno == EINTR) continue; int e = errno; close(fd); r.e = nx_os_err("send to", path, e); return r; }
-        off += w;
+    if (connect(fd, (struct sockaddr *)&j->addr, sizeof j->addr) != 0) { j->stage = 2; j->err = errno; close(fd); return; }
+    size_t off = 0;
+    while (off < j->msglen) {
+        ssize_t w = send(fd, j->msg + off, j->msglen - off, MSG_NOSIGNAL);
+        if (w < 0) { if (errno == EINTR) continue; j->stage = 3; j->err = errno; close(fd); return; }
+        off += (size_t)w;
     }
     size_t cap = 4096, n = 0;
     char *buf = malloc(cap);
-    if (!buf) nx_trap(0, "out of memory");
+    if (!buf) { j->stage = 6; close(fd); return; }
     for (;;) {
         if (n == cap) {
-            if (cap >= ((size_t)1 << 20)) { free(buf); close(fd); r.e = nx_str_lit("the reply is longer than 1 MiB", 30); return r; }
+            if (cap >= ((size_t)1 << 20)) { free(buf); close(fd); j->stage = 5; return; }
             char *nb = realloc(buf, cap * 2);
-            if (!nb) { free(buf); nx_trap(0, "out of memory"); }
+            if (!nb) { free(buf); close(fd); j->stage = 6; return; }
             buf = nb; cap *= 2;
         }
         ssize_t got = recv(fd, buf + n, cap - n, 0);
         if (got < 0) {
             if (errno == EINTR) continue;
-            int e = errno; free(buf); close(fd);
-            r.e = (e == EAGAIN || e == EWOULDBLOCK) ? nx_str_lit("no reply in time", 16) : nx_os_err("read the reply from", path, e);
-            return r;
+            j->stage = 4; j->err = errno; free(buf); close(fd); return;
         }
         if (got == 0) break;
         char *nl = memchr(buf + n, '\n', (size_t)got);
@@ -868,9 +927,41 @@ NX_RT nx_R_s nx_b___unix_request(nx_str path, nx_str msg, int64_t timeout_ms, in
         if (nl) { n = (size_t)(nl - buf); break; }
     }
     close(fd);
-    if (!nx_utf8_ok((const unsigned char *)buf, (int64_t)n)) { free(buf); r.e = nx_str_lit("the reply isn't UTF-8 text", 26); return r; }
+    j->stage = 0; j->buf = buf; j->n = n;
+}
+
+/* How a blocking job runs: directly (NULL), or, once a window is open, on
+   a helper thread while the window keeps drawing (set by the ui runtime). */
+__attribute__((unused)) static void (*nx_run_blocking)(void (*fn)(void *), void *arg);
+
+NX_RT nx_R_s nx_b___unix_request(nx_str path, nx_str msg, int64_t timeout_ms, int line) {
+    (void)line;
+    nx_R_s r = {false, {"", 0, NULL}, {"", 0, NULL}};
+    nx_sock_job j;
+    memset(&j, 0, sizeof j);
+    j.addr.sun_family = AF_UNIX;
+    if (path.len <= 0 || path.len >= (int64_t)sizeof j.addr.sun_path || memchr(path.p, 0, (size_t)path.len)) {
+        r.e = nx_str_lit("the socket path is empty, too long or has a zero byte", 53);
+        return r;
+    }
+    memcpy(j.addr.sun_path, path.p, (size_t)path.len);
+    j.msg = msg.p; j.msglen = (size_t)msg.len; j.timeout_ms = timeout_ms;
+    if (nx_run_blocking) nx_run_blocking(nx_sock_job_run, &j);
+    else nx_sock_job_run(&j);
+    switch (j.stage) {
+    case 0: break;
+    case 1: r.e = nx_os_err("open a socket for", path, j.err); return r;
+    case 2: r.e = nx_os_err("connect to", path, j.err); return r;
+    case 3: r.e = nx_os_err("send to", path, j.err); return r;
+    case 4:
+        r.e = (j.err == EAGAIN || j.err == EWOULDBLOCK) ? nx_str_lit("no reply in time", 16) : nx_os_err("read the reply from", path, j.err);
+        return r;
+    case 5: r.e = nx_str_lit("the reply is longer than 1 MiB", 30); return r;
+    default: nx_trap(0, "out of memory");
+    }
+    if (!nx_utf8_ok((const unsigned char *)j.buf, (int64_t)j.n)) { free(j.buf); r.e = nx_str_lit("the reply isn't UTF-8 text", 26); return r; }
     r.ok = true;
-    r.v = nx_str_heap(buf, n);
-    free(buf);
+    r.v = nx_str_heap(j.buf, j.n);
+    free(j.buf);
     return r;
 }

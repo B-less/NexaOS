@@ -1,0 +1,91 @@
+// Every ui function, driven by the keyboard (tests/ui/widgets.steps).
+// Changes the program makes must never come back as events.
+use ui
+
+fn show(e: UiEvent) {
+    match e {
+        Clicked(id) => { print("clicked {id}") }
+        Changed(id, text) => { print("changed {id}: {text}") }
+        Submitted(id, text) => { print("submitted {id}: {text}") }
+        Toggled(id, on) => { print("toggled {id}: {on}") }
+        Selected(id, row) => { print("selected {id}: row {row}") }
+        Activated(id, row) => { print("activated {id}: row {row}") }
+        Closed => { print("closed") }
+        Tick => { print("tick") }
+    }
+}
+
+fn main() -> !void {
+    match ui.start("Bad Id", "x") {
+        ok(_) => { print("bad id accepted") }
+        err(e) => { print("start: {e}") }
+    }
+    match ui.start("widgets-test", "  ") {
+        ok(_) => { print("empty title accepted") }
+        err(e) => { print("start: {e}") }
+    }
+    let page = ui.start("widgets-test", "Widgets")?
+    print("page {page}")
+    let h = ui.heading(page, "Every widget")
+    let n = ui.note(page, "A note")
+    let m = ui.mono(page, "00:00")
+    let l = ui.label(page, "zero\0byte and ünïcode ✓")
+    print("label text: {ui.get_text(l)}")
+    let r = ui.row(page)
+    let c = ui.column(r)
+    let field = ui.entry(c, "Type here")
+    let b = ui.button(r, "Plain")
+    let p = ui.primary_button(r, "Go")
+    let d = ui.danger_button(r, "Delete all")
+    ui.shortcut(p, "Ctrl+G")
+    ui.shortcut(b, "F5")
+    ui.shortcut(d, "Ctrl+Shift+D")
+    ui.tooltip(p, "Go now")
+    let chk = ui.check(page, "Option", false)
+    let lst = ui.list(page, "Nothing here yet.")
+    print("ids {h} {n} {m} {l} {r} {c} {field} {b} {p} {d} {chk} {lst}")
+
+    // the program's own changes: no events
+    ui.set_text(field, "set by program")
+    ui.set_checked(chk, true)
+    ui.set_items(lst, ["one", "two", "three"])
+    ui.select(lst, 1)
+    print("selected: {unwrap_or(ui.selected(lst), -1)}")
+    ui.select_none(lst)
+    print("selected after none: {unwrap_or(ui.selected(lst), -1)}")
+    print("entry: {ui.get_text(field)}, check: {ui.is_checked(chk)}, button: {ui.get_text(b)}, check text: {ui.get_text(chk)}")
+    ui.set_text(b, "Plain!")
+    ui.set_text(chk, "Option (on)")
+    ui.set_text(m, "12:34")
+    ui.set_visible(n, false)
+    ui.set_visible(n, true)
+    ui.set_enabled(d, false)
+    ui.status("Ready.")
+    show(ui.wait_ms(50))
+    ui.focus(field)
+
+    var events = 0
+    while true {
+        let e = ui.wait()
+        show(e)
+        events += 1
+        match e {
+            Clicked(id) => {
+                if id == b {
+                    ui.set_enabled(d, true)
+                    ui.show_error("Something went wrong. Try again.")
+                } else if id == d {
+                    let empty: [str] = []
+                    ui.set_items(lst, empty)
+                    ui.status("")
+                }
+            }
+            Closed => {
+                print("{events} events")
+                return ok()
+            }
+            _ => { }
+        }
+    }
+    return ok()
+}

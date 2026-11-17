@@ -1,0 +1,7 @@
+// trap: ui.wait_ms needs a time of at least 1 ms, not 0
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let e = ui.wait_ms(0)
+    return ok()
+}

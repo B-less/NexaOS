@@ -1,6 +1,6 @@
 # NexaLang: the programming language of NexaOS
 
-Started 2026-11-16. Current version **0.3** (compiler `nexac`, in `nexalang/`).
+Started 2026-11-16. Current version **0.4** (compiler `nexac`, in `nexalang/`).
 
 NexaLang is a small, safe, readable language for writing NexaOS programs.
 The compiler `nexac` (Rust, no dependencies) turns a `.nx` file into C11
@@ -30,6 +30,32 @@ fn main() -> !void {
         files.write(path, "\{\"name\": \"Bless\"}")?
     }
     print("Hello, {load_name(path)?}!")
+    return ok()
+}
+```
+
+A window, with NexaOS's look (Hexa) built in (0.4):
+
+```nx
+use ui
+
+fn main() -> !void {
+    let page = ui.start("hello-app", "Hello")?
+    let name = ui.entry(page, "Your name")
+    let greet = ui.primary_button(page, "Greet")
+    let answer = ui.label(page, "")
+    while true {
+        match ui.wait() {
+            Clicked(id) => {
+                if id == greet {
+                    ui.set_text(answer, "Hello, {ui.get_text(name)}.")
+                }
+            }
+            Submitted(_, text) => { ui.set_text(answer, "Hello, {text}.") }
+            Closed => { return ok() }
+            _ => { }
+        }
+    }
     return ok()
 }
 ```
@@ -70,8 +96,18 @@ and for the compiler itself.
 | **Every `str` is valid UTF-8** (0.3) | Files are checked when read; input and arguments have bad bytes replaced with `�`. Text functions can rely on it, and nothing can cut a letter in half | Bytes with an encoding "usually" |
 | **File writes are all-or-nothing** (0.3) | `files.write` writes a temporary file, flushes it to disk and renames it over the old one, so a crash or full disk never leaves a half-written config | Writing in place |
 | **Errors explain and suggest** | People coming from C, Python or JS type those by habit | Bare error codes |
+| **Windows: the program asks for the next event** (`match ui.wait() { Clicked(id) => ... }`) (0.4) | NexaLang has no closures or function values, and callbacks are where GUI code goes wrong most: code running inside a GTK signal while other code is half-way through changing the same data. With one loop the program drives, GTK runs only inside `ui.wait()`; signal handlers only add an event to a queue. No re-entrancy, no hidden control flow, and `match` makes the program handle every kind of event (adding one later shows every place to update) | Callbacks (needs function values; re-entrancy; ownership of captured values across C); a declarative tree that's re-diffed (far more code to get wrong) |
+| **Widgets are numbers, checked on every use** (0.4) | Keeps the API to plain functions and `int`s, which a beginner can follow. A number that isn't a widget, or a widget used for something it can't do (`set_items` on a text), stops the program with a message naming the program's own file and line, like a list index outside the list | Typed handles (a `Widget` type) would catch some of these before running; they're planned once the language has a way to define distinct number types without boilerplate |
+| **Hexa can't be left out** (0.4) | The runtime ships WRITING_NEXA_APPS.md §4: the `@nexa_*` colours with the fallback block, following theme changes live, Inter and JetBrains Mono, 6/10/16 px corners, 4-32 px spacing, the 160 ms ease-out. A **second primary button stops the program**; a **list can't be made without its empty-state text**; Esc and Ctrl+Q always close. A rule that's built in can't be forgotten | Styling left to each app (each would have to get it right) |
+| **Only the person's actions are events** (0.4) | `set_text`, `set_checked`, `set_items`, `select` block their own signals, so a program can't loop by reacting to its own change (a classic GUI bug) | GTK's default (every change fires) |
+| **GTK doesn't change the program's locale** (0.4) | `gtk_init` would call `setlocale`, and in German or French `print(1.5)` would start writing `1,5`, breaking JSON and files. `ui.start` turns that off | GTK's default |
+| **Waiting for the broker doesn't freeze the window** (0.4) | The socket request runs on a helper thread that only touches plain C buffers (no NexaLang values, no GTK); the window keeps drawing (but takes no clicks) until the answer is back. NexaLang code itself stays single-threaded | Blocking the GTK thread (a frozen window during a 2-minute install); threads in NexaLang (needs atomic counts and message passing first) |
+| **A mistake inside a standard module is reported where the program called it** (0.4) | `ui.set_text(99, "x")` says `in app.nx at line 12`, not a line of `std/ui.nx` the author never wrote | Showing the module's own line |
+| **GTK only for programs that `use ui`** (0.4) | Command-line programs stay small and start instantly; `nexac` adds `pkg-config gtk+-3.0`'s flags (as separate arguments, no shell) after every hardened flag | Linking GTK always |
+| **The broker's answer has kinds** (`Done`, `NeedsPassword`, `Unverified`) (0.4) | The real protocol (nexa-brokerd) has three kinds of "not done" that need different handling; an `enum` makes the program handle each. "too many wrong passwords" and plain refusals are `err`, since asking again can't help. `broker.call` keeps the common case one line | Returning the raw JSON reply (0.3: every program had to know the protocol) |
+| **Passwords are asked for by `ui`, checked by the broker** (0.4) | `ui.broker_call` shows a password dialog when the broker asks, three tries, the way `nexa_common/broker.py` does; the password goes only into the request to the broker. Apps never check or keep it | Apps asking with their own dialogs |
 
-## 2. The language (v0.3)
+## 2. The language (v0.4)
 
 **Types:** `int` (64-bit, checked), `float` (64-bit), `bool`, `str`
 (immutable UTF-8 text), `[T]` (growable list), `?T` (a `T` or `none`),
@@ -180,7 +216,40 @@ Integer `/` rounds toward zero; `%` takes the sign of the left side.
 | `files` | `read(path) -> !str`, `read_lines -> ![str]`, `write(path, text) -> !void` (all-or-nothing), `append`, `exists`, `is_dir`, `list(dir) -> ![str]` (sorted names), `make_dir` (with parents), `remove` (a file or an *empty* folder; never contents), `join_path(a, b)`, `name(path)`, `home()`, `config_dir(id)`, `data_dir(id)`, `cache_dir(id)` (the app's XDG folders; ids follow nexa.toml's rules) |
 | `time` | `now() -> int` (Unix seconds), `millis()` (for measuring), `sleep_ms(n)`, `format(t, "%Y-%m-%d")`, `format_utc`, `iso(t)` |
 | `json` | `parse(text) -> !Json` (errors give line and column; 200 levels max), `to_text(j)`, `pretty(j)`, `get(j, key) -> ?Json`, `at(j, i)`, `as_text`, `as_num`, `as_int`, `as_bool`, `items`, `keys`, `obj(fields)`, `field(key, value)`, `set(j, key, value)`. Values: `Json.Null`, `Json.Bool(b)`, `Json.Num(n)`, `Json.Text(s)`, `Json.List(items)`, `Json.Obj(fields)` |
-| `broker` | `call(action, args: Json) -> !Json` (one request to `/run/nexa-broker.sock`, the reply as JSON; 30-minute limit), `call_timeout(action, args, ms)`, `no_args()` |
+| `broker` (0.4) | `call(action, args: Json) -> !Json` (the action's result; refusals, a needed password and unverified packages are `err`), `ask(action, args, password: ?str) -> !BrokerReply` (`Done(result)`, `NeedsPassword(what, why)`, `Unverified(why)`; a plain refusal or "too many wrong passwords" is `err`), `call_timeout`, `ask_timeout`, `no_args()`. One request to `/run/nexa-broker.sock`; 30-minute limit |
+| `ui` (0.4) | see below |
+
+**Windows: `ui` (0.4).** GTK 3 with Hexa built in. Every function that
+makes a widget takes its parent (a column or a row) and returns the new
+widget's number.
+
+| Group | Functions |
+|---|---|
+| Window | `start(app_id, title) -> !int` (opens the window, returns its main column; `err` when there's no display; one window per program) |
+| Layout | `column(parent)`, `row(parent)` (text fields and columns in a row share the free width) |
+| Text | `label`, `heading`, `note` (small, quiet), `mono` (JetBrains Mono: numbers that update) — all `(parent, text) -> int`; long text wraps |
+| Controls | `button(parent, text)`, `primary_button` (one per window, accent colour), `danger_button`, `entry(parent, hint)`, `check(parent, text, on)`, `list(parent, empty_text)` (scrolling rows of text) |
+| Changing | `set_text(id, text)`, `get_text(id)`, `set_checked`, `is_checked`, `set_items(list, [str])` (clears the selection), `selected(list) -> ?int`, `select(list, i)`, `select_none`, `set_enabled`, `set_visible`, `focus`, `tooltip(id, text)`, `shortcut(button, "Ctrl+N")` (shown in the tooltip), `status(text)`, `show_error(text)` (the line at the bottom) |
+| Events | `wait() -> UiEvent`, `wait_ms(ms) -> UiEvent` (`Tick` when nothing happened) |
+| Questions | `confirm(heading, message, yes, danger) -> bool`, `ask_password(what, why) -> ?str`, `broker_call(action, args) -> !Json` (the broker, asking for the password in the window when needed: three tries) |
+
+```nx
+pub enum UiEvent {
+    Clicked(int)          // a button, or its shortcut
+    Changed(int, str)     // the person edited a text field: its text
+    Submitted(int, str)   // Enter in a text field
+    Toggled(int, bool)    // a check box
+    Selected(int, int)    // a list and its selected row (from 0)
+    Activated(int, int)   // a list row double-clicked, or Enter on it
+    Closed                // the close button, Esc or Ctrl+Q
+    Tick                  // wait_ms: nothing happened in time
+}
+```
+
+Keyboard: Tab moves between widgets (and out of a list; arrow keys move
+inside it), Space and Enter press, Esc and Ctrl+Q close. `Closed` doesn't
+close the window by itself: the program decides (returning from `main`
+does). Windows are 560×640 to start and work down to 360 px wide.
 
 JSON numbers are `float`, as in JavaScript: whole numbers beyond 2^53
 are rounded, and numbers too big for a `float` are refused (JSON has no
@@ -197,6 +266,9 @@ half. `to_upper`/`to_lower` change ASCII letters only (for now).
 - A function that returns a value must return on every path (checked,
   including through `match`).
 - `main` is `fn main()`: no parameters, returns nothing.
+- A function that calls itself on every path before it can return is
+  refused (it could never finish). Recursion that runs too deep anyway
+  stops with "the program ran out of stack space" (0.4).
 
 ## 3. How memory works (0.2)
 
@@ -217,6 +289,13 @@ value exactly one owner:
 - `for x in list` loops over a private snapshot; `match v` holds its own
   reference, so a case can replace `v` safely.
 
+**Across the C boundary (0.4).** Text and lists passed to `ui` are
+borrowed: the runtime copies what GTK needs and keeps nothing. Text that
+comes back (`get_text`, event text, a password) is a new NexaLang string
+with one owner, freed like any other. GTK's own memory is GTK's;
+`--check-memory` counts every NexaLang byte exactly, with or without a
+window.
+
 Text pieces from `slice`, `split` and `trim` share the original bytes
 instead of copying them. Literal text is never counted or freed.
 
@@ -232,6 +311,8 @@ nexalang/
                    generated retain/release functions per type
   src/runtime.h    checked ints, counted strings, copy-on-write lists,
                    text functions, input, leak counter (~450 lines)
+  src/runtime_ui.h windows (GTK 3): widgets, the event queue, Hexa's CSS,
+                   theme following, dialogs (only in programs that use ui)
   src/main.rs      CLI and module loader (finds `use`d files, refuses circles);
                    runs cc with an argument list, never a shell
   src/std/*.nx     the standard modules, built into nexac
@@ -242,16 +323,76 @@ nexalang/
   tests/broker/    a stand-in broker (Python) and a client
   tests/json/      JSON round-trip reader + differential fuzz vs Python
   tests/stress/    2-million-round memory churn
+  tests/ui/        window programs driven by real key presses on a
+                   headless X server (drive.py: Xvfb + xdotool), *.steps
+                   with exact *.out; tests/ui/trap: misuse (14)
+  tests/fuzz/      the compiler fuzzer (fuzz.py)
+  examples/ui/     window examples
 ```
 
 All identifiers are prefixed in C (`nx_v_`, `nx_fn_`, `nx_S_`, `nx_E_`,
 `nx_M_`, `nx_R_`, `nx_f_`), so a NexaLang name can never collide with C;
 module functions get their module's name with its length
-(`nx_fn_4json_parse`). String literals are emitted with octal escapes
+(`nx_fn_4json_parse`). A call from the program into a standard module
+first records its location (`nx_user_loc`), so a runtime error inside the
+module is reported at the program's line. String literals are emitted with octal escapes
 only. A runtime error knows its file: the location passed to the runtime
 is file number × 1,000,000 + line.
 
 ## 5. Testing done
+
+**0.4 (2026-11-17)** — GTK 3.24.41 really built and run here (Ubuntu 24.04
+packages: libgtk-3-dev, Xvfb, xdotool, Inter), gcc 13.3, clang, Valgrind.
+`cd nexalang && cargo test`: **33 tests, all pass** (13 unit, 20 end to
+end; the window tests skip with a message where GTK, Xvfb or xdotool are
+missing).
+
+| Check | Result |
+|---|---|
+| 14 example programs + the three-file program: exact output with gcc and clang under `-Werror`, every byte freed; AddressSanitizer + UBSan + LeakSanitizer; Valgrind | 15/15, 0 errors |
+| Window programs (`examples/ui`, `tests/ui`) built by `nexac build` with every hardened flag + GTK's, gcc and clang; a program without `ui` isn't linked with GTK | 4×2 build clean; `hello` has no GTK |
+| **Windows driven by real key presses** on a headless X server (`tests/ui/*.steps`: typing, Enter, Tab, arrows, Space, shortcuts, Esc, Ctrl+Q, dialogs): exact expected output, run 3 ways: hardened build + leak counter; ASan + UBSan; Valgrind | 7 scenarios × 3 = **21/21**, 0 memory errors, 0 leaks from the program's own code, no GTK warnings |
+| The window leak check itself: a leak planted in the runtime (a tooltip's text never freed) | caught by both ASan and Valgrind |
+| Churn: 1,500 rounds of rebuilt lists, text set and read back, events | every NexaLang byte freed; clean under ASan and Valgrind |
+| Misusing `ui` (14 kinds: wrong widget, wrong kind, second primary, bad/reserved/duplicate shortcut, before `start`, twice `start`, row out of range, `wait_ms(0)`, ...): stops with a message **in the program's own file and line** | 14/14 |
+| No display: `error: can't open a window: there's no display to show it on`, exit 1, nothing leaked | pass |
+| **Theme**: a theme set before start, then `~/.config/gtk-3.0/gtk.css` replaced while the window is open: background and accent checked pixel by pixel | follows both, live |
+| Broker protocol against the stand-in broker (the real reply format of nexa-brokerd): result, refusal, unreadable and non-object replies, closed connection, no result, locked account, unverified package (`call` and `ask`), password needed, right and wrong passwords, lockout after three, no broker | 19/19 |
+| The password dialog in a window (`ui.broker_call`): wrong password then right, cancel, three wrong tries, lockout | exact output; screenshots looked at |
+| Bad programs rejected with the expected message | 59/59 (6 new) |
+| Runtime errors stop with exit 1 and file:line | 12/12 (running out of stack is new) |
+| Module mistakes in the right file | 11/11 |
+| Generated C reproducible | all examples and window programs |
+| **Fuzzing** (`tests/fuzz/fuzz.py`, now in the repository): mutated programs (the examples, the window programs, the tests); every accepted one built with the **exact hardened `-O2 -Werror` flags** and run under ASan + UBSan + the leak counter (window programs on a headless X server) | first 10,000: **3 findings**, all fixed (below). On the final compiler: **14,000 mutants** (seeds 2026, 2027, 2028), **1,121 accepted** and run (84 of them window programs): **0 compiler crashes, 0 C build failures, 0 memory errors, 0 leaks** |
+
+**Screenshots** (`shots/0.4/`, all looked at): empty state, normal use,
+keyboard focus, a confirm dialog, unreadable saved data (error), the
+password dialog (asking, wrong password, locked out), every widget, the
+same window after a live theme change, and 360 px wide. No clipped text,
+no default-grey GTK, no dark-on-dark.
+
+Found and fixed while building 0.4:
+- **the fuzzer**: a function that always calls itself made gcc's
+  `-Winfinite-recursion` fail the build under `-Werror` ("bug in nexac";
+  there since 0.1). nexac now refuses such functions with a message, the
+  generated C no longer lets the C compiler's own (different) analysis
+  fail the build, and recursion that runs too deep anyway stops with
+  "the program ran out of stack space" (before, the program died with no
+  message at all, and `nexac run` hid the signal);
+- **the fuzzer**: `print(1e308)` made gcc's `-Wformat-truncation` fail
+  the build (there since 0.2): the float-printing buffer now fits any
+  number gcc can imagine;
+- runtime errors inside a standard module were reported at a line of the
+  module (`std/ui.nx`), not the program's;
+- a type with the same name as a standard module's type was reported in
+  the module's file, where it can't be fixed;
+- windows: Tab walked through every row of a list (now it leaves the
+  list; arrow keys move inside); rebuilding a list lost the keyboard
+  focus; the primary button took Enter away from list rows; a dialog lost
+  its window title;
+- the test driver: under load, polling the X server every 100 ms filled
+  its connection queue, and a program's own connection failed (EAGAIN)
+  now and then; it now waits on one connection.
 
 **0.3 (2026-11-17)**
 
@@ -305,18 +446,37 @@ Found and fixed while building 0.2: strings inside `{...}` were refused,
 which made the new text functions awkward (now allowed, 8 levels max);
 floats printed as `1e+03` (now `1000.0`).
 
-## 6. Known limits of 0.3
+## 6. Known limits of 0.4
 
+- **One window per program**, and widgets can't be removed (hide them
+  with `set_visible`, or use a list for things that come and go).
+- **List rows are text only**; no images, menus, tabs, sliders, file
+  chooser or drag and drop yet. Apps that open the person's files need a
+  file chooser (WRITING_NEXA_APPS.md §3), so it comes with 0.5.
+- **No hexagon shape** in `ui` yet (the NexaOS mark for one or two things
+  per screen); the app's hexagon icon comes with the package (0.5).
+- Widgets are `int`s: passing a count where a widget is meant is caught
+  only when the program runs (with a message), not by the compiler.
+- **A password is ordinary NexaLang text** after the dialog: it goes only
+  into the request to the broker and is freed afterwards, but freed memory
+  isn't wiped (GTK wipes its own copy in the dialog).
+- Tested on X11 (Xvfb) here. NexaOS runs Sway/Hyprland (Wayland); GTK
+  chooses the backend itself and nothing in `ui` is X11-specific, but the
+  Wayland run, and the run inside NexaOS's confinement (`nexa-run`), are
+  part of 0.5's app testing.
+- JetBrains Mono isn't installed on the machine 0.4 was tested on, so
+  `mono` text fell back to the system monospace font there; NexaOS ships it.
 - **Single-threaded.** Reference counts aren't atomic; threads (later)
-  will use message passing, never shared values.
+  will use message passing, never shared values. (A window's broker
+  request waits on a helper thread that never touches NexaLang values.)
 - No generic functions or types of your own (only the built-in `?T`,
   `!T` and `[T]`).
 - `s += "x"` in a loop copies the text each time; collect pieces in a list
   and `join` them.
-- No network access yet (only the broker's local socket), and no GUI.
-- The broker client sends requests and returns the reply as it is. How
-  the broker asks for a password isn't written down in SYSTEM_BROKER.md,
-  so password prompts aren't handled by `broker` yet.
+- No network access yet (only the broker's local socket).
+- Without a window, `broker` reports `NeedsPassword` but can't ask for the
+  password itself (reading one from a terminal without showing it isn't
+  in the language yet).
 - `files` doesn't decide what an app may touch: installed apps are
   confined by `nexa-run` (Landlock) to the folders their permissions name.
 - Enums can't be compared with `==` when a variant holds values.
@@ -330,7 +490,7 @@ floats printed as `1e+03` (now `1000.0`).
 | **0.1** ✅ | Core language, checked ints, bounds-checked lists, structs, compile to hardened C | §5 |
 | **0.2** ✅ | Reference counting (no leaks, flat memory), value-semantics lists, `enum` + exhaustive `match`, `?T` instead of null, text functions, `read_line`/`args` | §5 |
 | **0.3** ✅ | `!T` errors and `?`; modules with `pub`; standard modules `files`, `time`, `json`, `broker`; `match` on `int`/`str`; every `str` valid UTF-8 | §5 |
-| **0.4** | **GTK bindings with Hexa built in**: `nexa.ui` windows, buttons, lists that use the `@nexa_*` theme colours and fonts automatically | A NexaLang app passes WRITING_NEXA_APPS.md §6 |
+| **0.4** ✅ | **`ui`: GTK 3 windows with Hexa built in** (theme colours with the fallback block, live theme following, Inter / JetBrains Mono, one primary action, empty states, keyboard use); the program-driven event loop; password prompts and the broker's real protocol (`BrokerReply`); functions that always call themselves refused; running out of stack reported | §5. (WRITING_NEXA_APPS.md §6 for a packaged app is 0.5's sample app) |
 | **0.5** | `nexa-pack new my-app --lang nexa`; `.nexa` packages built from `.nx` | An app in the Store written in NexaLang |
 | **0.6** | `nexac fmt`, syntax highlighting, language server; Nexa Mind explains compiler errors offline | |
-| later | Generics; threads with message passing; HTTPS (`network` permission); broker password prompts; in-place string append; self-hosting | |
+| later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (images, menus, file chooser); in-place string append; self-hosting | |

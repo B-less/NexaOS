@@ -58,6 +58,26 @@ fn std_primitive(name: &str) -> Option<(Vec<Type>, Type)> {
         "__time_sleep_ms" => (vec![Int], Void),
         "__time_format" => (vec![Int, s(), Bool], res(s())),
         "__unix_request" => (vec![s(), s(), Int], res(s())),
+        // windows (std/ui.nx over runtime_ui.h)
+        "__ui_start" => (vec![s(), s()], res(Void)),
+        "__ui_box" => (vec![Int, Bool], Int),
+        "__ui_label" | "__ui_button" => (vec![Int, s(), Int], Int),
+        "__ui_entry" | "__ui_list" => (vec![Int, s()], Int),
+        "__ui_check" => (vec![Int, s(), Bool], Int),
+        "__ui_set_text" | "__ui_tooltip" | "__ui_shortcut" => (vec![Int, s()], Void),
+        "__ui_get_text" => (vec![Int], s()),
+        "__ui_set_checked" | "__ui_set_enabled" | "__ui_set_visible" => (vec![Int, Bool], Void),
+        "__ui_is_checked" => (vec![Int], Bool),
+        "__ui_set_items" => (vec![Int, list(s())], Void),
+        "__ui_selected" => (vec![Int], Int),
+        "__ui_select" => (vec![Int, Int], Void),
+        "__ui_focus" => (vec![Int], Void),
+        "__ui_status" => (vec![s(), Int], Void),
+        "__ui_wait" => (vec![Int], Int),
+        "__ui_event_id" | "__ui_event_num" => (vec![], Int),
+        "__ui_event_text" => (vec![], s()),
+        "__ui_ask_password" => (vec![s(), s()], Maybe(Box::new(s()))),
+        "__ui_confirm" => (vec![s(), s(), s(), Bool], Bool),
         _ => return None,
     })
 }
@@ -154,7 +174,12 @@ pub fn check(mods: &mut [Module]) -> Result<Checked, Vec<Diag>> {
 
     // 1. type names (structs and enums share one namespace across files)
     let mut named_types = Vec::new();
-    for (mi, m) in mods.iter().enumerate() {
+    // standard modules first, so a clash with one is reported in the
+    // program's own file, where it can be fixed
+    let mut order: Vec<usize> = (0..mods.len()).collect();
+    order.sort_by_key(|&i| !mods[i].is_std);
+    for mi in order {
+        let m = &mods[mi];
         c.cur = mi;
         for (name, span, is_enum, public) in m
             .prog
@@ -298,6 +323,13 @@ pub fn check(mods: &mut [Module]) -> Result<Checked, Vec<Diag>> {
                 c.declare(&p.name, t, false, p.span);
             }
             c.block(&mut f.body, false);
+            let key = canonical(&mname, &f.name);
+            if let Flow::Recurses(span) = block_flow(&f.body, &key) {
+                c.errors.push(
+                    Diag::new(span, format!("`{}` always calls itself here, before it can return, so it would never finish", f.name))
+                        .hint("make it stop first: return before this call when the work is done (for example `if n == 0 { return ... }`)"),
+                );
+            }
             if sig.ret != Type::Void && sig.ret != Type::Error && !always_returns(&f.body) {
                 let hint = if sig.ret == Type::Result(Box::new(Type::Void)) {
                     "add `return ok()` at the end"
@@ -319,6 +351,154 @@ pub fn check(mods: &mut [Module]) -> Result<Checked, Vec<Diag>> {
     } else {
         c.errors.sort_by_key(|d| (d.file, d.span.line, d.span.col));
         Err(c.errors)
+    }
+}
+
+// ---- functions that always call themselves --------------------------------
+//
+// A function that, on every path, calls itself before it can return never
+// finishes (it runs out of stack). This finds the plain cases with certainty:
+// it only says `Recurses` when no `return`, `?` or `exit` can come first.
+
+#[derive(Clone, Copy, PartialEq)]
+enum Flow {
+    /// every path reaches a call to the function itself (here)
+    Recurses(Span),
+    /// some path may leave the function (or the program) first
+    MayLeave,
+    /// carries on to the next statement
+    FallsThrough,
+}
+
+fn block_flow(stmts: &[Stmt], me: &str) -> Flow {
+    for s in stmts {
+        let f = stmt_flow(s, me);
+        if f != Flow::FallsThrough {
+            return f;
+        }
+    }
+    Flow::FallsThrough
+}
+
+/// The flow of an expression that's always evaluated.
+fn expr_flow(e: &Expr, me: &str) -> Flow {
+    if may_leave(e) {
+        return Flow::MayLeave;
+    }
+    match self_call(e, me) {
+        Some(span) => Flow::Recurses(span),
+        None => Flow::FallsThrough,
+    }
+}
+
+fn stmt_flow(s: &Stmt, me: &str) -> Flow {
+    match s {
+        Stmt::Let { value, .. } => expr_flow(value, me),
+        Stmt::Assign { target, value, .. } => match expr_flow(target, me) {
+            Flow::FallsThrough => expr_flow(value, me),
+            f => f,
+        },
+        Stmt::Expr(e) => expr_flow(e, me),
+        Stmt::Return { value: Some(e), .. } => match expr_flow(e, me) {
+            Flow::Recurses(sp) => Flow::Recurses(sp),
+            _ => Flow::MayLeave,
+        },
+        Stmt::Return { value: None, .. } => Flow::MayLeave,
+        Stmt::If { cond, then, els } => {
+            let c = expr_flow(cond, me);
+            if c != Flow::FallsThrough {
+                return c;
+            }
+            let t = block_flow(then, me);
+            let e = els.as_ref().map_or(Flow::FallsThrough, |b| block_flow(b, me));
+            match (t, e) {
+                (Flow::Recurses(sp), Flow::Recurses(_)) => Flow::Recurses(sp),
+                (Flow::MayLeave, _) | (_, Flow::MayLeave) => Flow::MayLeave,
+                _ => Flow::FallsThrough,
+            }
+        }
+        Stmt::Match { value, arms, .. } => {
+            let v = expr_flow(value, me);
+            if v != Flow::FallsThrough {
+                return v;
+            }
+            let flows: Vec<Flow> = arms.iter().map(|a| block_flow(&a.body, me)).collect();
+            if !flows.is_empty() && flows.iter().all(|f| matches!(f, Flow::Recurses(_))) {
+                return flows[0];
+            }
+            if flows.contains(&Flow::MayLeave) {
+                return Flow::MayLeave;
+            }
+            Flow::FallsThrough
+        }
+        // the condition or range is evaluated at least once; the body
+        // maybe never
+        Stmt::While { cond, body } => loop_flow(&[cond], body, me),
+        Stmt::ForRange { start, end, body, .. } => loop_flow(&[start, end], body, me),
+        Stmt::ForEach { iter, body, .. } => loop_flow(&[iter], body, me),
+        Stmt::Break(_) | Stmt::Continue(_) => Flow::MayLeave,
+    }
+}
+
+fn loop_flow(heads: &[&Expr], body: &[Stmt], me: &str) -> Flow {
+    for h in heads {
+        let f = expr_flow(h, me);
+        if f != Flow::FallsThrough {
+            return f;
+        }
+    }
+    if body.iter().any(stmt_may_leave) {
+        Flow::MayLeave
+    } else {
+        Flow::FallsThrough
+    }
+}
+
+/// Whether running this statement could leave the function or the program.
+fn stmt_may_leave(s: &Stmt) -> bool {
+    let b = |blk: &Vec<Stmt>| blk.iter().any(stmt_may_leave);
+    match s {
+        Stmt::Return { .. } => true,
+        Stmt::Let { value, .. } | Stmt::Expr(value) => may_leave(value),
+        Stmt::Assign { target, value, .. } => may_leave(target) || may_leave(value),
+        Stmt::If { cond, then, els } => may_leave(cond) || b(then) || els.as_ref().is_some_and(b),
+        Stmt::While { cond, body } => may_leave(cond) || b(body),
+        Stmt::ForRange { start, end, body, .. } => may_leave(start) || may_leave(end) || b(body),
+        Stmt::ForEach { iter, body, .. } => may_leave(iter) || b(body),
+        Stmt::Match { value, arms, .. } => may_leave(value) || arms.iter().any(|a| b(&a.body)),
+        Stmt::Break(_) | Stmt::Continue(_) => false,
+    }
+}
+
+fn children(e: &Expr) -> Vec<&Expr> {
+    match &e.kind {
+        ExprKind::Unary(_, a) | ExprKind::Field(a, _) | ExprKind::Try(a) => vec![a],
+        ExprKind::Binary(_, a, b) | ExprKind::Index(a, b) => vec![a, b],
+        ExprKind::Call(_, args) | ExprKind::Array(args) => args.iter().collect(),
+        ExprKind::Variant(_, _, Some(args)) => args.iter().collect(),
+        ExprKind::StructLit(_, fields) => fields.iter().map(|(_, e, _)| e).collect(),
+        ExprKind::Str(pieces) => pieces
+            .iter()
+            .filter_map(|p| match p {
+                StrPiece::Expr(e) => Some(e),
+                StrPiece::Lit(_) => None,
+            })
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// `?` or `exit(...)` anywhere in the expression.
+fn may_leave(e: &Expr) -> bool {
+    matches!(&e.kind, ExprKind::Try(_)) || matches!(&e.kind, ExprKind::Call(n, _) if n == "exit") || children(e).into_iter().any(may_leave)
+}
+
+/// A call to `me` that's always evaluated (not on the right of `and`/`or`).
+fn self_call(e: &Expr, me: &str) -> Option<Span> {
+    match &e.kind {
+        ExprKind::Call(n, _) if n == me => Some(e.span),
+        ExprKind::Binary(BinOp::And | BinOp::Or, a, _) => self_call(a, me),
+        _ => children(e).into_iter().find_map(|c| self_call(c, me)),
     }
 }
 

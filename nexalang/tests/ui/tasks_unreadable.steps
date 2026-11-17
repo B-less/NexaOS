@@ -1,0 +1,8 @@
+# program: examples/ui/tasks.nx
+# saved tasks that aren't text: the app says so, leaves the file alone
+file .local/share/tasks-demo/tasks.txt Buy milk\n\xff\xfe broken
+window Tasks
+type New task
+key Return
+shot tasks-error
+key Escape

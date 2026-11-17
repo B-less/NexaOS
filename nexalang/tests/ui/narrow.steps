@@ -1,0 +1,12 @@
+# program: examples/ui/tasks.nx
+# 360 px wide: text wraps or ellipsises, nothing is cut off
+window Tasks
+size 360 560
+type A task with a long name that can't possibly fit in one row of a narrow window
+key Return
+type Short
+key Return
+key Tab
+key ctrl+n
+shot narrow
+key Escape

@@ -1,0 +1,9 @@
+// trap: row 3 is outside the list (it has 3)
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let l = ui.list(page, "empty")
+    ui.set_items(l, ["a", "b", "c"])
+    ui.select(l, 3)
+    return ok()
+}

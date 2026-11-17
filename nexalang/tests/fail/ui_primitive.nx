@@ -1,0 +1,5 @@
+// error: `__ui_wait` is for the standard modules only
+use ui
+fn main() {
+    let k = __ui_wait(-1)
+}

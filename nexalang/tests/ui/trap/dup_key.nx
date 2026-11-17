@@ -1,0 +1,10 @@
+// trap: Ctrl+S is already the shortcut of widget 2
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let a = ui.button(page, "Save")
+    let b = ui.button(page, "Store")
+    ui.shortcut(a, "Ctrl+S")
+    ui.shortcut(b, "Ctrl+S")
+    return ok()
+}

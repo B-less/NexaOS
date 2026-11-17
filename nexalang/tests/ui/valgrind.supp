@@ -1,0 +1,13 @@
+# librsvg (the SVG loader GTK uses for icons) is written in Rust; Valgrind
+# reports its optimised Rust code as reading uninitialised memory, a known
+# false alarm. Only reports whose innermost frame is in librsvg match.
+{
+   librsvg-rust-cond
+   Memcheck:Cond
+   obj:*/librsvg-2.so*
+}
+{
+   librsvg-rust-value8
+   Memcheck:Value8
+   obj:*/librsvg-2.so*
+}

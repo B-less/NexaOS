@@ -1,0 +1,8 @@
+// trap: widget 2 is a text, which can't have a shortcut (only buttons can)
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let l = ui.label(page, "hi")
+    ui.shortcut(l, "F2")
+    return ok()
+}

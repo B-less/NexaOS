@@ -22,6 +22,13 @@ use crate::checker::{canonical, fixed_builtin, Checked};
 use std::collections::{BTreeMap, HashSet};
 
 pub const RUNTIME: &str = include_str!("runtime.h");
+/// Windows (GTK 3): only in programs that `use ui`.
+pub const RUNTIME_UI: &str = include_str!("runtime_ui.h");
+
+/// Whether the program uses the standard module `ui` (and so needs GTK).
+pub fn uses_ui(mods: &[Module]) -> bool {
+    mods.iter().any(|m| m.is_std && m.name == "ui")
+}
 
 /// A C expression with no side effects, and whether it's an owned temporary.
 #[derive(Clone)]
@@ -56,6 +63,9 @@ pub struct Gen<'a> {
     file_idx: u32,
     /// return type of the function being generated (for `?`)
     cur_ret: Type,
+    /// standard modules, and whether the function being generated is in one
+    std_mods: HashSet<String>,
+    cur_std: bool,
 }
 
 /// Unambiguous short name of a type, used to build C identifiers.
@@ -110,6 +120,8 @@ pub fn generate(mods: &[Module], checked: &Checked) -> String {
         module: String::new(),
         cur_ret: Type::Void,
         file_idx: 0,
+        std_mods: mods.iter().filter(|m| m.is_std).map(|m| m.name.clone()).collect(),
+        cur_std: false,
     };
     // 1. function bodies (this discovers which ?T and rc helpers are used)
     let mut protos = String::new();
@@ -122,6 +134,7 @@ pub fn generate(mods: &[Module], checked: &Checked) -> String {
     for (mi, m) in mods.iter().enumerate() {
         g.module = m.file.clone();
         g.file_idx = mi as u32;
+        g.cur_std = m.is_std;
         for f in &m.prog.fns {
             let key = canonical(&m.name, &f.name);
             g.function(f, &key);
@@ -139,7 +152,12 @@ pub fn generate(mods: &[Module], checked: &Checked) -> String {
     out += ". Do not edit. */\n";
     let files: Vec<String> = mods.iter().map(|m| c_string_literal(m.file.as_bytes())).collect();
     out += &format!("#define NX_FILES {}\n", files.join(", "));
+    let std_flags: Vec<&str> = mods.iter().map(|m| if m.is_std { "1" } else { "0" }).collect();
+    out += &format!("#define NX_STD_FILES {}\n", std_flags.join(", "));
     out += RUNTIME;
+    if uses_ui(mods) {
+        out += RUNTIME_UI;
+    }
     out += "\n/* ---- types ---- */\n";
     out += &types;
     out += "\n/* ---- memory helpers ---- */\n";
@@ -148,10 +166,10 @@ pub fn generate(mods: &[Module], checked: &Checked) -> String {
     out += &protos;
     out += &bodies;
     if checked.fns["main"].ret == Type::Void {
-        out += "\nint main(int argc, char **argv) {\n    nx_argc = argc;\n    nx_argv = argv;\n    nx_fn_main();\n    return nx_finish();\n}\n";
+        out += "\nint main(int argc, char **argv) {\n    nx_init();\n    nx_argc = argc;\n    nx_argv = argv;\n    nx_fn_main();\n    return nx_finish();\n}\n";
     } else {
         // fn main() -> !void: an error ends the program with its message
-        out += "\nint main(int argc, char **argv) {\n    nx_argc = argc;\n    nx_argv = argv;\n    nx_R_v r = nx_fn_main();\n    if (!r.ok) {\n        fflush(stdout);\n        fprintf(stderr, \"error: %.*s\\n\", (int)r.e.len, r.e.p);\n        nx_str_release(r.e);\n        int code = nx_finish();\n        return code ? code : 1;\n    }\n    return nx_finish();\n}\n";
+        out += "\nint main(int argc, char **argv) {\n    nx_init();\n    nx_argc = argc;\n    nx_argv = argv;\n    nx_R_v r = nx_fn_main();\n    if (!r.ok) {\n        fflush(stdout);\n        fprintf(stderr, \"error: %.*s\\n\", (int)r.e.len, r.e.p);\n        nx_str_release(r.e);\n        int code = nx_finish();\n        return code ? code : 1;\n    }\n    return nx_finish();\n}\n";
     }
     out
 }
@@ -1057,6 +1075,11 @@ impl<'a> Gen<'a> {
                 }
             }
             _ => {
+                // a runtime error inside a standard module is reported
+                // where the program called it
+                if !self.cur_std && name.split_once('.').is_some_and(|(m, _)| self.std_mods.contains(m)) {
+                    self.line(format!("nx_user_loc = {};", ln));
+                }
                 let call = format!("{}({})", fn_cname(name), vals.iter().map(|v| v.code.clone()).collect::<Vec<_>>().join(", "));
                 if e.ty == Type::Void {
                     self.line(format!("{};", call));
