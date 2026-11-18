@@ -1,0 +1,52 @@
+// A sample with every kind of word
+ccccccccccccccccccccccccccccccccccc
+use files
+kkk......
+
+
+enum Shape {
+kkkk.ttttt..
+    Circle(float)
+....tttttt.ttttt.
+    Square(float)
+....tttttt.ttttt.
+}
+.
+
+
+fn area(s: Shape) -> float {
+kk.FFFF....ttttt.....ttttt..
+    match s {
+....kkkkk....
+        Circle(r) => { return 3.14 * r * r }
+........tttttt.........kkkkkk.ffff..........
+        Square(w) => { return w * w }
+........tttttt.........kkkkkk........
+    }
+.....
+}
+.
+
+
+fn main() -> !void {
+kk.FFFF.......tttt..
+    let n = 0xff + 1_000 + 2e-3
+....kkk.....hhhh...ddddd...ffff
+    var names: [str] = []
+....kkk.........ttt......
+    push(names, "Bless")
+....bbbb........sssssss.
+    if not files.exists("x") and true or none == none {
+....kk.ooo.mmmmm.FFFFFF.sss..ooo.BBBB.oo.nnnn....nnnn..
+        print("a \"q\" \{ {join(names, ", ")} {area(Shape.Circle(1.5))} end\n")
+........bbbbb.ssseeseeseesebbbbssssssssssssseseFFFFstttttsttttttsfffssessssees.
+    }
+.....
+    print("bad \q escape")
+....bbbbb.sssssxxssssssss.
+    for i in 0..10 { }
+....kkk...kk.d..dd....
+    return ok()
+....kkkkkk.bb..
+}
+.

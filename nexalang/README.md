@@ -1,6 +1,6 @@
 # NexaLang: the programming language of NexaOS
 
-Started 2026-11-16. Current version **0.5** (compiler `nexac`, in `nexalang/`).
+Started 2026-11-16. Current version **0.6** (compiler `nexac`, in `nexalang/`).
 
 NexaLang is a small, safe, readable language for writing NexaOS programs.
 The compiler `nexac` (Rust, no dependencies) turns a `.nx` file into C11
@@ -78,6 +78,19 @@ nexac check hello.nx                # mistakes only
 nexac emit-c hello.nx               # see the generated C
 ```
 
+Tools for writing it (0.6):
+
+```sh
+nexac fmt hello.nx                  # lay it out the one standard way
+nexac check --json hello.nx         # mistakes as JSON, for editors
+nexac explain                       # what each kind of mistake means
+nexac explain results               #   one of them, with an example
+nexac lsp                           # a language server, for editors
+```
+
+Colours for NexaOS's text editor and VS Code, and how to use the language
+server in other editors: `editors/README.md`.
+
 ---
 
 ## 1. Design decisions (and why)
@@ -123,9 +136,20 @@ and for the compiler itself.
 | **The sample app needs no permissions** (`apps/focus-timer`) (0.5) | It shows everything an app needs (a window with Hexa, its own XDG data, hostile files, an empty state, shortcuts, packaging, running confined) without a file chooser, which `ui` doesn't have yet. An app that opened the person's files would have had to ask for a whole `files.*` folder instead | A notes or viewer app (needs a file chooser first, or broad permissions) |
 | **A saved file that can't be read is never written over silently** (0.5) | The person may want it back; the app says what happened, keeps working, and only "Clear history" (with a question first) replaces it | Starting fresh and overwriting (silent data loss) |
 | **`nexa-pack new --lang nexa` checks the id and escapes the name** (0.5) | A name like `My "App" {x}` would otherwise break `nexa.toml` or the program (`{` starts a value in NexaLang text). Ids that nexa.toml would refuse are refused before any files are made | Finding out at the first build |
+| **`nexac fmt` works on the tokens, not on the syntax tree** (0.6) | It never adds, removes or reorders a token; it only changes spaces, indentation and empty lines. So it can't change what a program means, and that's checkable: the generated C must be the same (it is, for every program in the repository and every fuzzed one). Numbers (`0xff`, `1_000`), strings and the code inside `{...}` are copied exactly | Printing the syntax tree back out (every literal's spelling and every comment would have to be carried through the tree: many ways to lose a comment or turn `0xff` into `255`) |
+| **`nexac fmt` never joins or splits lines** (0.6) | A line break ends a statement, so moving one can change the program; keeping every break where it is (empty lines aside) keeps the meaning. Long lines stay long | Wrapping at a width (each wrap would need its own proof that the meaning didn't change) |
+| **`nexac fmt` refuses a file that doesn't parse** (0.6) | It says what's wrong and leaves the file alone; type mistakes don't stop it. Editors show the mistake instead | Formatting broken code as best it can (guessing at a half-written program can make it worse) |
+| **Comments after code line up, two spaces after the longest code of the group** (0.6) | Keeps the habit the standard library and Focus Timer already had (aligned notes beside fields and variables), with one rule instead of each person's spacing | One space (destroyed every aligned table of notes) |
+| **Every mistake has a topic, found from its message** (0.6) | `nexac explain TOPIC` and the JSON's `topic` come from one list of phrases in `explain.rs`. A test reads every message written in the compiler's source and fails if one has no topic, and the fuzzer checks the messages as they're really shown, so a new message can't be forgotten. Topic names are words (`let-var`, `maybe`), which a beginner can read and type | A number at each of ~130 places that make a message (each a place to pick the wrong one; `E0308` means nothing to someone learning) |
+| **Explanations live in `nexac`, each with a refused and a fixed program** (0.6) | They work offline, always match the compiler of the same version, and a test checks that each "wrong" program is refused with its own topic and each "right" one is accepted (and formatted), so the examples can't go stale | Explanations on a website or in a separate document (drift from the compiler) |
+| **`check --json` counts columns in characters; the language server converts to UTF-16** (0.6) | The JSON matches what `nexac check` prints and what a person sees; LSP's UTF-16 rule (an emoji is 2) is applied in one function, tested with emoji and accents | UTF-16 everywhere (wrong for everything that isn't LSP); bytes (wrong in any line with an accent) |
+| **The language server is `nexac lsp`, using the same code as the command line** (0.6) | One program, so the editor can never disagree with the compiler. It does little: whole-text updates, diagnostics, formatting, hover explanations; one thread, nothing kept but the open texts. Hostile input (64 MiB / 8 KiB limits, bad JSON, bad UTF-8, wrong types) gets an answer, never a crash; a compiler panic would be caught and shown as one mistake | A separate server program (two versions to keep in step); incremental updates (range arithmetic is a classic source of editor bugs); completion and go-to-definition (they need analysis of half-written programs; later) |
+| **One expected colouring for both grammars** (0.6) | The GtkSourceView file and the VS Code (TextMate) grammar are separate files, so they could drift; a test colours one sample with both (GtkSourceView itself, and VS Code's own engine `vscode-textmate`) and compares each with the same expected letters | Testing only that the files load |
+| **`nexac` has its own small JSON reader and writer** (0.6) | No crates (the compiler stays std-only and builds offline); 300 lines, strict, 64 levels deep at most, tested against Python's `json` by the fuzzer and with every prefix and flipped byte of a message | A JSON crate (the first dependency); hand-building JSON strings (escaping mistakes) |
+| **Nexa Mind isn't wired to `nexac explain` yet** (0.6) | Nexa Mind's tools (`nexa-tools`, docs/NEXA_MIND.md) read and change files; none runs programs, and adding one that runs a compiler is a new permission to design, not a side effect of a compiler release. What 0.6 gives it is `nexac explain --json`: offline, plain-language text (title, summary, explanation, examples) written for people and small models. The NexaLang code editor (0.8) shows it directly | Inventing a Nexa Mind interface it doesn't have |
 | **Passwords are asked for by `ui`, checked by the broker** (0.4) | `ui.broker_call` shows a password dialog when the broker asks, three tries, the way `nexa_common/broker.py` does; the password goes only into the request to the broker. Apps never check or keep it | Apps asking with their own dialogs |
 
-## 2. The language (v0.5)
+## 2. The language (v0.6: no changes since 0.5; 0.6 is tools)
 
 **Types:** `int` (64-bit, checked), `float` (64-bit), `bool`, `str`
 (immutable UTF-8 text), `[T]` (growable list), `?T` (a `T` or `none`),
@@ -288,6 +312,30 @@ half. `to_upper`/`to_lower` change ASCII letters only (for now).
   refused (it could never finish). Recursion that runs too deep anyway
   stops with "the program ran out of stack space" (0.4).
 
+**Tools (0.6).**
+
+| Command | What it does |
+|---|---|
+| `nexac fmt FILE.nx...` | Lays files out the standard way, in place (all-or-nothing, keeping the file's permissions; a link's target is replaced). `--check` only lists files that aren't laid out that way (exit 1); `--stdin` formats stdin to stdout. A file that doesn't parse is left alone, with its mistake shown |
+| `nexac check --json [--stdin] FILE.nx` | One line of JSON: `ok`, and each mistake's `file`, `line`, `column` (characters, from 1), `length`, `message`, `hint`, `topic`, `summary`. `--stdin` checks unsaved text; the modules next to `FILE.nx` are still read from the disk. Format: `editors/README.md` |
+| `nexac explain [--json] [TOPIC or "message"]` | With nothing: the 20 topics. With a topic (`let-var`) or a message nexac gave: what it means, how to fix it, a refused program and the fixed one |
+| `nexac lsp` | A language server on stdin/stdout: mistakes while typing, formatting, an explanation when the pointer rests on a mistake |
+
+The standard layout: 4 spaces per level (a line is one level deeper than
+the line that opened the innermost unclosed bracket; a line starting with
+a closing bracket lines up with its opener); one space between tokens,
+except none inside brackets, before `,` `:` `)` `]`, around `.` and `..`,
+before a call's `(` or an index's `[`, after a unary `-`, inside `?int`
+and `!void`, and before the `?` that passes an error on; at most one empty
+line in a row (none after an opening line or before a closing one);
+comments after code lined up two spaces after the longest code of their
+group. Line breaks stay where they are.
+
+Topics: `syntax`, `strings`, `numbers`, `names`, `unknown`,
+`already-defined`, `let-var`, `types`, `match`, `maybe`, `results`,
+`returns`, `unused`, `modules`, `lists`, `main`, `calls`, `loops`,
+`limits`, `files`.
+
 ## 3. How memory works (0.2)
 
 Strings and lists carry a reference count. The code generator gives every
@@ -333,6 +381,11 @@ nexalang/
                    theme following, dialogs (only in programs that use ui)
   src/main.rs      CLI and module loader (finds `use`d files, refuses circles);
                    runs cc with an argument list, never a shell
+  src/diag.rs      a mistake with its place; `Report`: ready for text or JSON
+  src/fmt.rs       `nexac fmt` (0.6): re-lays tokens and comments out
+  src/explain.rs   `nexac explain` (0.6): topics, their phrases, examples
+  src/json.rs      a small strict JSON reader/writer (0.6)
+  src/lsp.rs       `nexac lsp` (0.6): the language server
   src/std/*.nx     the standard modules, built into nexac
   examples/*.nx    + .out expected output (+ .in input, .args arguments)
   tests/fail/*.nx  programs that must be rejected (53)
@@ -346,6 +399,9 @@ nexalang/
                    with exact *.out; tests/ui/trap: misuse (14)
   tests/fuzz/      the compiler fuzzer (fuzz.py)
   examples/ui/     window examples
+  tests/tooling.rs fmt / check --json / explain / lsp tests (0.6)
+  tests/highlight/ both colour grammars against one expected colouring
+  editors/         gtksourceview/nexalang.lang, vscode/ (grammar), README
 ../apps/*/src/main.nx   NexaOS apps written in NexaLang (0.5); their
                  tests/*.steps run with the window tests, three ways
 ../tools/nexa-pack      `nexa-pack new --lang nexa` (src/templates.rs)
@@ -361,6 +417,40 @@ only. A runtime error knows its file: the location passed to the runtime
 is file number × 1,000,000 + line.
 
 ## 5. Testing done
+
+**0.6 (2026-11-18)** — Ubuntu 24.04 here: gcc 13.3, GTK 3.24.41,
+GtkSourceView 4.8.4, Xvfb, Node 22 with `vscode-textmate` 9.2.0 (VS Code's
+grammar engine), Valgrind. `cd nexalang && cargo test`: **61 tests, all
+pass** (27 unit, 22 end to end as before, 12 new in `tests/tooling.rs`).
+No earlier test was removed or weakened.
+
+| Check | Result |
+|---|---|
+| Every earlier check (examples with gcc and clang, ASan + UBSan, Valgrind, window scenarios driven by keys, theme, misuse, broker, modules, rejected programs, runtime errors, Focus Timer's 8 scenarios × 3 ways, reproducible builds) | all still pass |
+| **`nexac fmt` keeps the meaning**: every `.nx` file in the repository (examples, window examples, every test folder, the module tests, `apps/*/src`), its layout first messed up (no indentation, extra spaces and tabs, spaces at line ends, more empty lines), then formatted in place | **126 files**: each comes back **exactly** as it was; **50 programs give byte-identical generated C** (`emit-c --no-lines`), **72 rejected programs give the same mistake**; formatting again changes nothing; every comment kept |
+| The standard modules, Focus Timer, the examples and `nexa-pack new`'s template are formatted | yes (`fmt --check`); formatting them changed only the spacing of lined-up comments in `std/ui.nx` and Focus Timer, and two empty lines at the end of `std/json.nx` |
+| `nexac fmt` command line: `--check`, in place (permissions kept, nothing left behind, a link's target replaced and the link kept), `--stdin`; files that don't parse, aren't UTF-8, aren't `.nx`, don't exist | as designed; a file that doesn't parse is never changed |
+| **`nexac check --json`** against the text output, for every rejected test program and module test (73 files) | same message, file, line, column and hint, in order; every mistake has a topic; a file that can't be read has line 0; `--stdin` (unsaved text, modules from the disk) reports the right line and column |
+| **Every message in the compiler has a topic**: a unit test reads all ~130 messages from the source; the fuzzer checks them as shown | 0 without a topic (the fuzzer found two shapes the source scan missed, "can't change this" and "can't \`push\` to this", now covered) |
+| **`nexac explain`**: each topic's refused program is refused **with that topic**, its fixed program is accepted and formatted; a message instead of a topic; a typo | 19/19 examples; typo → exit 2 with the list |
+| **`nexac lsp`**: a whole session (initialize, open with a mistake after an emoji: UTF-16 column checked, hover explains, change, formatting edit, close, shutdown, exit 0); a module with a mistake; requests before initialize; bad JSON, bad UTF-8, no Content-Length, a bad Content-Length, wrong types, an unknown method, 100,000-deep JSON, a 64 MiB + 1 byte message (skipped, the next one answered), a file that isn't open; input ending without shutdown (exit 1) | all answered as the protocol says; never a crash |
+| Valgrind on `nexac lsp` (a session over Focus Timer: open, a mistake, hover, formatting, shutdown), `fmt`, `check --json`, `explain` | 0 errors, 0 leaks |
+| **Colours**: `tests/highlight/sample.nx` (every kind of word, escapes, a bad escape, values in text with strings and struct literals inside, numbers in every form, `0..10`) coloured by **GtkSourceView 4 itself** (a C program, every style its own colour) and by **`vscode-textmate`** with the TextMate grammar | both give **exactly** `sample.expected`, character by character; `app.nx` is recognised as NexaLang |
+| **NexaOS's own text editor** (`text-editor/`, with the real `nexa-textio` engine) opening a `.nx` file under Xvfb | status bar says "NexaLang", colours readable on the Hexa theme; screenshot looked at (`shots/0.6/text-editor-colours.png`) |
+| **Fuzzing the tools** (`tests/fuzz/fuzz.py --tools-only`, mutations now also change layout: indentation, tabs, comments with emoji, empty lines, lines split after operators): every mutant through `check --json` (read back by Python's `json`), `check`, `explain` of every message, `fmt` twice and the C of the formatted program, and a language server session (diagnostics, formatting, hover, shutdown) | **18,000 mutants** (seeds 101-106) on the final compiler: 3,966 accepted, 5,217 formattable (3,530 of them re-laid out), 15,153 mistakes explained: **0 crashes, 0 non-idempotent formats, 0 changes of meaning, 0 disagreements** between `check`, `check --json` and the language server |
+| **Fuzzing the compiler** as before (the lexer and the message plumbing changed): every accepted mutant built with the **exact hardened `-O2 -Werror` flags** and run under ASan + UBSan + the leak counter, plus all the tool checks above | **9,000 mutants** (seeds 2033-2035), **1,922 accepted** and run (215 of them window programs): **0 compiler crashes, 0 C build failures, 0 memory errors, 0 leaks**, 0 tool findings. (Run before the language server's header fix below, which only touches broken message headers; the 18,000 above ran on the final compiler) |
+
+Found and fixed while building 0.6:
+- a message shape without a topic (above);
+- the language server's header reader: after a bad `Content-Length` it
+  stopped before the end of the headers, so the next message was lost
+  (found by its unit test);
+- formatting first put one space before trailing comments, which undid
+  the lined-up notes in `std/ui.nx` and Focus Timer: comments after code
+  now line up in groups;
+- one explanation's example (strings inside strings) was one level short
+  of the limit it was meant to show, so it was accepted (found by the
+  example test).
 
 **0.5 (2026-11-17)** — Ubuntu 24.04 here: GTK 3.24.41, Xvfb, xdotool,
 Sway 1.9 + grim (headless Wayland), Inter, JetBrains Mono, gcc 13.3,
@@ -509,7 +599,34 @@ Found and fixed while building 0.2: strings inside `{...}` were refused,
 which made the new text functions awkward (now allowed, 8 levels max);
 floats printed as `1e+03` (now `1000.0`).
 
-## 6. Known limits of 0.5
+## 6. Known limits of 0.6
+
+Tools (0.6):
+- **`nexac fmt` doesn't wrap long lines** (moving a line break could
+  change the program), and doesn't touch the code inside a string's
+  `{...}`.
+- **The language server is small**: mistakes, formatting and explanations
+  only; no completion, go-to-definition or renaming yet. It wants the
+  whole text on every change (it says so when it starts; an editor that
+  sends only the changed part anyway is ignored until the next whole
+  text). A mistake in a module the open file uses is shown on the first
+  line, naming the module's file and line; modules are read from the disk,
+  so unsaved changes in another open module aren't seen until it's saved.
+  An unsaved, never-named buffer can't `use` modules of its own.
+- A lone carriage return (`\r` without `\n`) is a line break to LSP
+  editors but not to NexaLang; positions after one on the same line are
+  off. Files from Windows (`\r\n`) are fine.
+- **Nexa Mind** doesn't call `nexac explain` by itself (see the decisions:
+  its tools don't run programs). The explanations are ready for it
+  (`nexac explain --json`).
+- The NexaOS text editor (Python, GtkSourceView 4) colours `.nx` files
+  once `nexalang.lang` is installed (`scripts/stage-text-editor.sh`); it
+  doesn't show mistakes as you type. That's the NexaLang code editor
+  (0.8).
+- The VS Code grammar is tested with VS Code's own engine, not inside VS
+  Code; the extension around it is 0.9.
+
+The language and `ui` (unchanged since 0.5):
 
 - **One window per program**, and widgets can't be removed (hide them
   with `set_visible`, or use a list for things that come and go).
@@ -564,5 +681,8 @@ floats printed as `1e+03` (now `1000.0`).
 | **0.3** ✅ | `!T` errors and `?`; modules with `pub`; standard modules `files`, `time`, `json`, `broker`; `match` on `int`/`str`; every `str` valid UTF-8 | §5 |
 | **0.4** ✅ | **`ui`: GTK 3 windows with Hexa built in** (theme colours with the fallback block, live theme following, Inter / JetBrains Mono, one primary action, empty states, keyboard use); the program-driven event loop; password prompts and the broker's real protocol (`BrokerReply`); functions that always call themselves refused; running out of stack reported | §5. (WRITING_NEXA_APPS.md §6 for a packaged app is 0.5's sample app) |
 | **0.5** ✅ | `nexa-pack new my-app --lang nexa`; `.nexa` packages built from `.nx`, reproducibly; `apps/focus-timer`, a NexaOS app in NexaLang; `files.size`, `ui.display` | §5. In the Store once `make nexa-apps` builds and signs it on the release machine |
-| **0.6** | `nexac fmt`, syntax highlighting, language server; Nexa Mind explains compiler errors offline | |
-| later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (file chooser first, then images, menus); a hexagon widget; in-place string append; self-hosting | |
+| **0.6** ✅ | `nexac fmt` (meaning-preserving, idempotent, keeps comments); `nexac check --json`; `nexac explain` (20 topics; 19 with a refused and a fixed program, both tested); `nexac lsp` (diagnostics, formatting, hover); colours for GtkSourceView 4 (NexaOS's text editor) and VS Code | §5. Nexa Mind integration waits for a tool that may run programs |
+| **0.7** | **Window Designer**, a NexaOS app written in NexaLang: build a window from headings, labels, buttons, fields, lists, rows and columns; see it; get the `ui` code. Whatever `ui` lacks for it first (a file chooser for exporting, removing widgets, ...) | the generated code is accepted by `nexac check`, builds with the hardened flags and shows the same widgets |
+| **0.8** | **A NexaLang code editor** (NexaOS app, written in NexaLang): GtkSourceView with 0.6's colours, mistakes as you type, `fmt`, `explain`, Run (with Stop) | driven by key presses, packaged, run confined |
+| **0.9** | **Editing NexaLang on Windows**: a VS Code extension (0.6's grammar and language server, format on save, explanations); `nexac` for Windows | tested as far as possible without a Windows PC (Wine) |
+| later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (images, menus); a hexagon widget; in-place string append; completion in the language server; self-hosting | |

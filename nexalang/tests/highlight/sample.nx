@@ -1,0 +1,26 @@
+// A sample with every kind of word
+use files
+
+enum Shape {
+    Circle(float)
+    Square(float)
+}
+
+fn area(s: Shape) -> float {
+    match s {
+        Circle(r) => { return 3.14 * r * r }
+        Square(w) => { return w * w }
+    }
+}
+
+fn main() -> !void {
+    let n = 0xff + 1_000 + 2e-3
+    var names: [str] = []
+    push(names, "Bless")
+    if not files.exists("x") and true or none == none {
+        print("a \"q\" \{ {join(names, ", ")} {area(Shape.Circle(1.5))} end\n")
+    }
+    print("bad \q escape")
+    for i in 0..10 { }
+    return ok()
+}

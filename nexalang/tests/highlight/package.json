@@ -1,0 +1,9 @@
+{
+  "name": "nexalang-highlight-test",
+  "private": true,
+  "description": "Test-only: runs the VS Code TextMate grammar through VS Code's own engine (npm ci here, then cargo test).",
+  "devDependencies": {
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.2.0"
+  }
+}

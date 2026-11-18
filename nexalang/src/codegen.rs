@@ -66,6 +66,8 @@ pub struct Gen<'a> {
     /// standard modules, and whether the function being generated is in one
     std_mods: HashSet<String>,
     cur_std: bool,
+    /// false: every source line is written as 0
+    lines: bool,
 }
 
 /// Unambiguous short name of a type, used to build C identifiers.
@@ -107,7 +109,9 @@ fn fn_cname(key: &str) -> String {
     }
 }
 
-pub fn generate(mods: &[Module], checked: &Checked) -> String {
+/// `lines` false writes every source line as 0 (`nexac emit-c --no-lines`,
+/// used to prove `nexac fmt` changes nothing but the layout).
+pub fn generate(mods: &[Module], checked: &Checked, lines: bool) -> String {
     let file_name = mods[0].file.as_str();
     let mut g = Gen {
         c: checked,
@@ -122,6 +126,7 @@ pub fn generate(mods: &[Module], checked: &Checked) -> String {
         file_idx: 0,
         std_mods: mods.iter().filter(|m| m.is_std).map(|m| m.name.clone()).collect(),
         cur_std: false,
+        lines,
     };
     // 1. function bodies (this discovers which ?T and rc helpers are used)
     let mut protos = String::new();
@@ -437,7 +442,7 @@ impl<'a> Gen<'a> {
     /// Where in the source, as one number for the runtime: the file's
     /// index times 1,000,000 plus the line (files are limited to 999,999 lines).
     fn loc(&self, span: crate::diag::Span) -> u32 {
-        self.file_idx * 1_000_000 + span.line
+        self.file_idx * 1_000_000 + if self.lines { span.line } else { 0 }
     }
 
     fn line(&mut self, s: impl AsRef<str>) {

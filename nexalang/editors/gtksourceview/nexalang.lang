@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NexaLang syntax colours for GtkSourceView 4 (NexaOS's text editor and
+  NexaLang's own editors). Installed to
+  /usr/share/gtksourceview-4/language-specs/nexalang.lang.
+  Colours come from the editor's style scheme (def:* styles), so they
+  follow Hexa's light and dark themes.
+  Tested by nexalang/tests/highlight (cargo test).
+-->
+<language id="nexalang" name="NexaLang" version="2.0" _section="Source">
+  <metadata>
+    <property name="mimetypes">text/x-nexalang</property>
+    <property name="globs">*.nx</property>
+    <property name="line-comment-start">//</property>
+  </metadata>
+
+  <styles>
+    <style id="comment" name="Comment" map-to="def:comment"/>
+    <style id="string" name="String" map-to="def:string"/>
+    <style id="escape" name="Escaped character" map-to="def:special-char"/>
+    <style id="interpolation" name="Value in text" map-to="def:special-char"/>
+    <style id="error" name="Error" map-to="def:error"/>
+    <style id="keyword" name="Keyword" map-to="def:keyword"/>
+    <style id="operator" name="Word operator" map-to="def:operator"/>
+    <style id="type" name="Type" map-to="def:type"/>
+    <style id="builtin" name="Built-in function" map-to="def:builtin"/>
+    <style id="module" name="Standard module" map-to="def:preprocessor"/>
+    <style id="constant" name="Constant" map-to="def:special-constant"/>
+    <style id="boolean" name="Boolean" map-to="def:boolean"/>
+    <style id="decimal" name="Number" map-to="def:decimal"/>
+    <style id="hex" name="Hex number" map-to="def:base-n-integer"/>
+    <style id="float" name="Float" map-to="def:floating-point"/>
+    <style id="function" name="Function" map-to="def:function"/>
+  </styles>
+
+  <definitions>
+    <context id="line-comment" style-ref="comment" end-at-line-end="true" class="comment" class-disabled="no-spell-check">
+      <start>//</start>
+      <include>
+        <context ref="def:in-comment"/>
+      </include>
+    </context>
+
+    <context id="escape" style-ref="escape">
+      <match>\\[ntr0\\"{}]</match>
+    </context>
+
+    <context id="bad-escape" style-ref="error">
+      <match>\\.?</match>
+    </context>
+
+    <!-- `{ ... }` inside the code of a value in text (a struct literal) -->
+    <context id="code-braces">
+      <start>\{</start>
+      <end>\}</end>
+      <include>
+        <context ref="code-braces"/>
+        <context ref="nexalang:*"/>
+      </include>
+    </context>
+
+    <!-- "Hello {name}": the code between the braces is NexaLang -->
+    <context id="interpolation">
+      <start>\{</start>
+      <end>\}</end>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="interpolation"/>
+        <context sub-pattern="0" where="end" style-ref="interpolation"/>
+        <context ref="code-braces"/>
+        <context ref="nexalang:*"/>
+      </include>
+    </context>
+
+    <!-- strings end on their line -->
+    <context id="string" style-ref="string" end-at-line-end="true" class="string" class-disabled="no-spell-check">
+      <start>"</start>
+      <end>"</end>
+      <include>
+        <context ref="escape"/>
+        <context ref="bad-escape"/>
+        <context ref="interpolation"/>
+      </include>
+    </context>
+
+    <context id="keywords" style-ref="keyword">
+      <keyword>fn</keyword>
+      <keyword>let</keyword>
+      <keyword>var</keyword>
+      <keyword>if</keyword>
+      <keyword>else</keyword>
+      <keyword>while</keyword>
+      <keyword>for</keyword>
+      <keyword>in</keyword>
+      <keyword>return</keyword>
+      <keyword>break</keyword>
+      <keyword>continue</keyword>
+      <keyword>struct</keyword>
+      <keyword>enum</keyword>
+      <keyword>use</keyword>
+      <keyword>pub</keyword>
+      <keyword>match</keyword>
+    </context>
+
+    <context id="word-operators" style-ref="operator">
+      <keyword>and</keyword>
+      <keyword>or</keyword>
+      <keyword>not</keyword>
+    </context>
+
+    <context id="booleans" style-ref="boolean">
+      <keyword>true</keyword>
+      <keyword>false</keyword>
+    </context>
+
+    <context id="constants" style-ref="constant">
+      <keyword>none</keyword>
+    </context>
+
+    <context id="primitive-types" style-ref="type">
+      <keyword>int</keyword>
+      <keyword>float</keyword>
+      <keyword>bool</keyword>
+      <keyword>str</keyword>
+      <keyword>void</keyword>
+    </context>
+
+    <!-- structs, enums and their variants start with a capital -->
+    <context id="type-names" style-ref="type">
+      <match>\b[A-Z][A-Za-z0-9_]*\b</match>
+    </context>
+
+    <context id="builtins" style-ref="builtin">
+      <prefix>\b</prefix>
+      <suffix>(?=\s*\()</suffix>
+      <keyword>print</keyword>
+      <keyword>len</keyword>
+      <keyword>to_str</keyword>
+      <keyword>to_float</keyword>
+      <keyword>to_int</keyword>
+      <keyword>assert</keyword>
+      <keyword>push</keyword>
+      <keyword>pop</keyword>
+      <keyword>some</keyword>
+      <keyword>ok</keyword>
+      <keyword>err</keyword>
+      <keyword>unwrap_or</keyword>
+      <keyword>slice</keyword>
+      <keyword>find</keyword>
+      <keyword>contains</keyword>
+      <keyword>starts_with</keyword>
+      <keyword>ends_with</keyword>
+      <keyword>split</keyword>
+      <keyword>join</keyword>
+      <keyword>trim</keyword>
+      <keyword>to_upper</keyword>
+      <keyword>to_lower</keyword>
+      <keyword>replace</keyword>
+      <keyword>repeat</keyword>
+      <keyword>parse_int</keyword>
+      <keyword>parse_float</keyword>
+      <keyword>read_line</keyword>
+      <keyword>args</keyword>
+      <keyword>byte_at</keyword>
+      <keyword>char_from_code</keyword>
+      <keyword>exit</keyword>
+    </context>
+
+    <!-- `files.read(...)`: the standard modules -->
+    <context id="modules" style-ref="module">
+      <prefix>\b</prefix>
+      <suffix>(?=\.)</suffix>
+      <keyword>files</keyword>
+      <keyword>time</keyword>
+      <keyword>json</keyword>
+      <keyword>broker</keyword>
+      <keyword>ui</keyword>
+    </context>
+
+    <context id="hex-number" style-ref="hex">
+      <match>\b0[xX][0-9A-Fa-f_]+\b</match>
+    </context>
+
+    <!-- 1.5, 2e-3, 1_000.25 (but not the 0 of 0..10) -->
+    <context id="float-number" style-ref="float">
+      <match>\b[0-9][0-9_]*(\.[0-9][0-9_]*([eE][+-]?[0-9]+)?|[eE][+-]?[0-9]+)\b</match>
+    </context>
+
+    <context id="decimal-number" style-ref="decimal">
+      <match>\b[0-9][0-9_]*\b</match>
+    </context>
+
+    <!-- a function's name where it's made or called -->
+    <context id="function-name" style-ref="function">
+      <match>\b[a-z_][A-Za-z0-9_]*(?=\s*\()</match>
+    </context>
+
+    <context id="nexalang" class="no-spell-check">
+      <include>
+        <context ref="line-comment"/>
+        <context ref="string"/>
+        <context ref="keywords"/>
+        <context ref="word-operators"/>
+        <context ref="booleans"/>
+        <context ref="constants"/>
+        <context ref="primitive-types"/>
+        <context ref="builtins"/>
+        <context ref="modules"/>
+        <context ref="type-names"/>
+        <context ref="hex-number"/>
+        <context ref="float-number"/>
+        <context ref="decimal-number"/>
+        <context ref="function-name"/>
+      </include>
+    </context>
+  </definitions>
+</language>

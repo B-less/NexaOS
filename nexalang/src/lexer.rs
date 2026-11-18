@@ -200,23 +200,39 @@ struct Lexer {
     toks: Vec<Token>,
     /// true for the sub-lexer of a `{...}` inside a string.
     nested: bool,
+    /// For `nexac fmt` (0.6): each token's characters (start, end) in the
+    /// source, and each comment's. Same length as `toks`.
+    ranges: Vec<(usize, usize)>,
+    comments: Vec<(usize, usize)>,
+}
+
+/// The tokens of a file plus where each one and each comment is (as
+/// character offsets), for the formatter.
+pub struct Layout {
+    pub toks: Vec<Token>,
+    pub ranges: Vec<(usize, usize)>,
+    pub comments: Vec<(usize, usize)>,
+    pub chars: Vec<char>,
+}
+
+/// Lex `src` exactly as `lex` does, also keeping where tokens and
+/// comments are.
+pub fn lex_layout(src: &str) -> Result<Layout, Diag> {
+    let mut lx = Lexer::new(src.chars().collect(), 1, 1, false);
+    lx.run()?;
+    Ok(Layout { toks: lx.toks, ranges: lx.ranges, comments: lx.comments, chars: lx.chars })
 }
 
 pub fn lex(src: &str) -> Result<Vec<Token>, Diag> {
-    let mut lx = Lexer {
-        chars: src.chars().collect(),
-        pos: 0,
-        line: 1,
-        col: 1,
-        depth: 0,
-        toks: Vec::new(),
-        nested: false,
-    };
+    let mut lx = Lexer::new(src.chars().collect(), 1, 1, false);
     lx.run()?;
     Ok(lx.toks)
 }
 
 impl Lexer {
+    fn new(chars: Vec<char>, line: u32, col: u32, nested: bool) -> Lexer {
+        Lexer { chars, pos: 0, line, col, depth: 0, toks: Vec::new(), nested, ranges: Vec::new(), comments: Vec::new() }
+    }
     fn peek(&self) -> Option<char> {
         self.chars.get(self.pos).copied()
     }
@@ -238,6 +254,13 @@ impl Lexer {
         Span::new(self.line, self.col)
     }
     fn push(&mut self, tok: Tok, span: Span) {
+        // tokens never span lines, so the start is on the current line
+        let start = if span.line == self.line && span.col <= self.col {
+            self.pos - (self.col - span.col) as usize
+        } else {
+            self.pos
+        };
+        self.ranges.push((start, self.pos));
         self.toks.push(Token { tok, span });
     }
 
@@ -277,12 +300,14 @@ impl Lexer {
                     self.bump();
                 }
                 '/' if self.peek2() == Some('/') => {
+                    let from = self.pos;
                     while let Some(c) = self.peek() {
                         if c == '\n' {
                             break;
                         }
                         self.bump();
                     }
+                    self.comments.push((from, self.pos));
                 }
                 '"' => self.string()?,
                 c if c.is_ascii_digit() => self.number()?,
@@ -557,15 +582,7 @@ impl Lexer {
                         return Err(Diag::new(here, "empty `{}` in a string")
                             .hint("put a value inside, like {name}, or write `\\{` for a literal brace"));
                     }
-                    let mut sub = Lexer {
-                        chars: code.chars().collect(),
-                        pos: 0,
-                        line: code_start.line,
-                        col: code_start.col,
-                        depth: 0,
-                        toks: Vec::new(),
-                        nested: true,
-                    };
+                    let mut sub = Lexer::new(code.chars().collect(), code_start.line, code_start.col, true);
                     sub.run()?;
                     if !cur.is_empty() {
                         parts.push(StrTok::Lit(std::mem::take(&mut cur)));

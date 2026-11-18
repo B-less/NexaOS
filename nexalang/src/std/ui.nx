@@ -36,14 +36,14 @@ use files
 use json
 
 pub enum UiEvent {
-    Clicked(int)          // a button (or its shortcut)
-    Changed(int, str)     // the person changed a text field: its new text
-    Submitted(int, str)   // Enter in a text field: its text
-    Toggled(int, bool)    // a check box: on or off
-    Selected(int, int)    // a list: the row now selected (from 0)
-    Activated(int, int)   // a list: a row double-clicked or Enter pressed on it
-    Closed                // the window's close button, Esc or Ctrl+Q
-    Tick                  // `wait_ms`: the time passed with nothing happening
+    Clicked(int)         // a button (or its shortcut)
+    Changed(int, str)    // the person changed a text field: its new text
+    Submitted(int, str)  // Enter in a text field: its text
+    Toggled(int, bool)   // a check box: on or off
+    Selected(int, int)   // a list: the row now selected (from 0)
+    Activated(int, int)  // a list: a row double-clicked or Enter pressed on it
+    Closed               // the window's close button, Esc or Ctrl+Q
+    Tick                 // `wait_ms`: the time passed with nothing happening
 }
 
 // Open the window; returns its main column, where the other widgets go.
