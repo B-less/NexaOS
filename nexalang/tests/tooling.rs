@@ -24,8 +24,21 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// The `nexac` under test: this build, or (0.9) another one named by
+/// `NEXAC_TEST_EXE`, started through `NEXAC_TEST_WRAPPER` when that's set:
+/// `NEXAC_TEST_WINDOWS=1 NEXAC_TEST_WRAPPER=wine NEXAC_TEST_EXE=nexac.exe
+/// cargo test --test tooling` runs every test here against the Windows
+/// `nexac` (`NEXAC_TEST_WINDOWS` skips only the Unix file mode check).
 fn nexac() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_nexac"))
+    let exe = std::env::var_os("NEXAC_TEST_EXE").unwrap_or_else(|| env!("CARGO_BIN_EXE_nexac").into());
+    match std::env::var_os("NEXAC_TEST_WRAPPER") {
+        Some(w) => {
+            let mut c = Command::new(w);
+            c.arg(exe);
+            c
+        }
+        None => Command::new(exe),
+    }
 }
 
 fn tmpdir(tag: &str) -> PathBuf {
@@ -209,8 +222,9 @@ fn fmt_command_line() {
     let out = nexac().arg("fmt").arg(&p).output().unwrap();
     assert!(out.status.success());
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "fn main() {\n    print(1)  // one\n}\n");
+    // (a Windows nexac, under Wine, has only Windows' read-only flag to keep)
     #[cfg(unix)]
-    {
+    if std::env::var_os("NEXAC_TEST_WINDOWS").is_none() {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o640);
     }
@@ -599,4 +613,33 @@ fn the_vscode_grammar_colours_the_sample_the_same_way() {
     let g = json::parse(&std::fs::read_to_string(root().join("editors/vscode/syntaxes/nexalang.tmLanguage.json")).unwrap()).unwrap();
     assert_eq!(g.get("scopeName").unwrap().as_str(), Some("source.nexalang"));
     json::parse(&std::fs::read_to_string(root().join("editors/vscode/language-configuration.json")).unwrap()).unwrap();
+}
+
+/// The VS Code extension's own tests (0.9: `editors/vscode/test`, run with
+/// node's test runner), against the nexac under test: its logic, what it
+/// asks VS Code to do, and whole sessions with `nexac lsp` and `explain`.
+#[test]
+fn the_vscode_extension_passes_its_tests() {
+    let dir = root().join("editors/vscode");
+    if !have_cmd("node", "--version") || !dir.join("node_modules/vscode-languageclient").exists() {
+        eprintln!("SKIPPED: needs node, and `npm ci` in editors/vscode");
+        return;
+    }
+    if std::env::var_os("NEXAC_TEST_WRAPPER").is_some() {
+        eprintln!("SKIPPED: the extension's tests start nexac themselves; give NEXAC_TEST_EXE a script instead of a wrapper");
+        return;
+    }
+    let exe = std::env::var_os("NEXAC_TEST_EXE").unwrap_or_else(|| env!("CARGO_BIN_EXE_nexac").into());
+    let mut cmd = Command::new("node");
+    cmd.arg("--test").current_dir(&dir).env("NEXAC", exe);
+    for t in ["lib", "extension", "nexac"] {
+        cmd.arg(format!("test/{}.test.js", t));
+    }
+    if std::env::var_os("NEXAC_TEST_WINDOWS").is_some() {
+        cmd.env("NEXAC_WINDOWS", "1");
+    }
+    let out = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{}\n{}", stdout, String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("# fail 0") && stdout.contains("# pass 12"), "{}", stdout);
 }

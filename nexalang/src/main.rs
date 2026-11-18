@@ -26,6 +26,12 @@ use std::process::{exit, Command};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// What `nexac build` and `nexac run` say on Windows (0.9).
+const WINDOWS_NO_BUILD: &str = "error: NexaLang programs are built and run on NexaOS (or another Linux), not on Windows: \
+the program has no mistakes, but the C it becomes uses NexaOS's system calls.\n  \
+= hint: on Windows, nexac can check (nexac check), lay out (nexac fmt) and explain (nexac explain) programs; \
+copy the .nx files to NexaOS and run `nexac run FILE.nx` there";
+
 /// The hardened flags WRITING_NEXA_APPS.md requires for C. Never remove any.
 const HARDENED: &[&str] = &[
     "-std=gnu11",
@@ -54,7 +60,7 @@ fn usage() -> ! {
          nexac fmt --check FILE.nx...    only say which files aren't laid out that way\n  \
          nexac fmt --stdin               format stdin to stdout\n  \
          nexac explain [TOPIC | MESSAGE] what a kind of mistake means (--json for editors)\n  \
-         nexac lsp                       a language server for editors, on stdin/stdout\n  \
+         nexac lsp [--stdio]             a language server for editors, on stdin/stdout\n  \
          nexac --version"
     );
     exit(2)
@@ -137,7 +143,8 @@ pub fn compile_source(main_path: &Path, main_src: Option<String>, lines: bool) -
             };
             let local = dirs[i].join(format!("{}.nx", name));
             if let Some((_, src)) = STD.iter().find(|(n, _)| *n == name) {
-                if !mods[i].is_std && local.exists() {
+                // (a `Files.nx` isn't `files.nx` on NexaOS, so not on Windows either)
+                if !mods[i].is_std && local.exists() && differently_spelled(&local).is_none() {
                     return Err(fail(
                         format!("`{}` is a standard module, but there's also a {}.nx here", name, name),
                         Some(format!("rename your {}.nx so it's clear which one you mean", name)),
@@ -149,6 +156,15 @@ pub fn compile_source(main_path: &Path, main_src: Option<String>, lines: bool) -
             }
             if mods[i].is_std {
                 return Err(fail(format!("unknown standard module `{}`", name), None));
+            }
+            if let Some(real) = differently_spelled(&local) {
+                // Windows and macOS find `Helpers.nx` for `use helpers`, NexaOS
+                // doesn't: the same message on both, so a program that
+                // works on one works on the other (0.9).
+                return Err(fail(
+                    format!("can't find module `{}`: the file here is called {}, and capitals count", name, real),
+                    Some(format!("rename the file to {}.nx, or the module in `use` to match the file", name)),
+                ));
             }
             if !local.exists() {
                 let std_names: Vec<&str> = STD.iter().map(|(n, _)| *n).collect();
@@ -170,6 +186,28 @@ pub fn compile_source(main_path: &Path, main_src: Option<String>, lines: bool) -
     check_cycles(&mods)?;
     let checked = checker::check(&mut mods).map_err(|ds| render_all(&ds, &mods))?;
     Ok(Compiled { c: codegen::generate(&mods, &checked, lines), gtk: codegen::uses_ui(&mods), source: codegen::uses_editor(&mods) })
+}
+
+/// When `path` exists only because the file system ignores capitals (on
+/// Windows), the name the file really has. None when the name matches
+/// exactly, or the folder can't be listed.
+fn differently_spelled(path: &Path) -> Option<String> {
+    let want = path.file_name()?.to_str()?;
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let mut other = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name == want {
+            return None;
+        }
+        if name.eq_ignore_ascii_case(want) || name.to_lowercase() == want.to_lowercase() {
+            other = Some(name);
+        }
+    }
+    other
 }
 
 /// Modules can't use each other in a circle.
@@ -262,6 +300,12 @@ fn gtk_flags(which: &str, source: bool) -> Option<Vec<String>> {
 /// (with a message, and nothing left behind but `out`'s folder) when it
 /// can't.
 fn build_c(prog: &Compiled, out: &Path, check_memory: bool) -> bool {
+    if cfg!(windows) {
+        // 0.9: the generated C uses POSIX (sockets, signals, process
+        // groups) and GTK's Unix parts; see NEXALANG.md's decisions.
+        eprintln!("{}", WINDOWS_NO_BUILD);
+        return false;
+    }
     let c = &prog.c;
     let c_path = out.with_extension("nexa.c");
     // `nexac build app.nx -o build/app` makes `build/` when it's missing
@@ -331,7 +375,8 @@ fn main() {
         "check" if args.len() >= 3 && args[1] == "--json" => exit(check_json(&args[2..])),
         "fmt" if args.len() >= 2 => exit(fmt_cmd(&args[1..])),
         "explain" => exit(explain_cmd(&args[1..])),
-        "lsp" if args.len() == 1 => exit(lsp::serve()),
+        // `--stdio`: what many editors' language clients add (0.9)
+        "lsp" if args.len() == 1 || (args.len() == 2 && args[1] == "--stdio") => exit(lsp::serve()),
         "build" if args.len() == 2 || (args.len() == 4 && args[2] == "-o") => {
             let c = to_c_or_exit(&args[1]);
             let out = if args.len() == 4 {
@@ -381,8 +426,13 @@ fn main() {
                 Ok(s) => match s.code() {
                     Some(c) => exit(c),
                     None => {
-                        use std::os::unix::process::ExitStatusExt;
-                        eprintln!("error: the program was stopped by signal {}", s.signal().unwrap_or(0));
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::process::ExitStatusExt;
+                            eprintln!("error: the program was stopped by signal {}", s.signal().unwrap_or(0));
+                        }
+                        #[cfg(not(unix))]
+                        eprintln!("error: the program was stopped");
                         exit(1);
                     }
                 },

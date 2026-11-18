@@ -364,7 +364,11 @@ pub fn check(mods: &mut [Module]) -> Result<Checked, Vec<Diag>> {
         let fns = c.fns.into_iter().map(|(k, v)| (k, v.sig)).collect();
         Ok(Checked { struct_fields: c.structs, enum_variants: c.enums, named_types, fns })
     } else {
-        c.errors.sort_by_key(|d| (d.file, d.span.line, d.span.col));
+        // "no `fn main()`" is about the whole program, not line 1: it comes
+        // last, so the first mistake shown doesn't depend on whether the
+        // file starts with an empty line (0.9: found by fuzzing `fmt`)
+        let whole = |d: &Diag| d.msg.starts_with("the program has no `fn main()`");
+        c.errors.sort_by_key(|d| (whole(d), d.file, d.span.line, d.span.col));
         Err(c.errors)
     }
 }

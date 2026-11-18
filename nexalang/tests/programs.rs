@@ -313,6 +313,34 @@ fn module_mistakes_are_reported_in_the_right_file() {
 }
 
 #[test]
+fn a_file_spelled_with_other_capitals_isnt_a_standard_module() {
+    // 0.9: `use json` next to a `Json.nx` means the standard module on
+    // every computer (on Windows the file system would find Json.nx)
+    let dir = tmpdir("capitals");
+    std::fs::write(dir.join("Json.nx"), "pub fn x() -> int {\n    return 1\n}\n").unwrap();
+    std::fs::write(dir.join("main.nx"), "use json\n\nfn main() {\n    print(json.to_text(json.obj([])))\n}\n").unwrap();
+    let out = nexac().arg("check").arg(dir.join("main.nx")).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn no_main_is_listed_after_the_mistakes_in_the_code() {
+    // 0.9 (found by fuzzing fmt): with or without an empty first line, the
+    // first mistake shown is the one in the code
+    let dir = tmpdir("nomain");
+    for (n, src) in ["fn slice() {\n}\n", "\n\nfn slice() {\n}\n"].iter().enumerate() {
+        let p = dir.join(format!("p{}.nx", n));
+        std::fs::write(&p, src).unwrap();
+        let out = nexac().arg("check").arg(&p).output().unwrap();
+        let e = String::from_utf8_lossy(&out.stderr);
+        assert!(e.starts_with("error: `slice` is a built-in function"), "{}", e);
+        assert!(e.contains("error: the program has no `fn main()`\n  --> "), "{}", e);
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn an_error_reaching_the_end_of_main_is_printed() {
     let out = nexac().arg("run").arg("--check-memory").arg(root().join("tests/main_err/divide.nx")).output().unwrap();
     assert_eq!(out.status.code(), Some(1));

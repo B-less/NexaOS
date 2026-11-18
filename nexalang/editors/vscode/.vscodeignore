@@ -1,0 +1,5 @@
+test/**
+*.vsix
+.gitignore
+node_modules/**/*.d.ts
+node_modules/**/*.map
