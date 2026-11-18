@@ -2,7 +2,7 @@
   "name": "nexalang",
   "displayName": "NexaLang",
   "description": "NexaLang, the programming language of NexaOS: colours, mistakes as you type, layout on save and explanations, all from nexac.",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "publisher": "nexaos",
   "license": "MIT",
   "repository": {
@@ -62,7 +62,7 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "The full path to `nexac` (`nexac.exe` on Windows). Empty: the first one in a folder of `PATH`. Only your own settings can set this, not a folder's settings."
+          "markdownDescription": "The full path to `nexac` (`nexac.exe` on Windows), or to the folder that holds it. Empty: the first one in a folder of `PATH`. Only your own settings can set this, not a folder's settings."
         }
       }
     },
@@ -90,7 +90,7 @@
   },
   "scripts": {
     "test": "node --test test/lib.test.js test/extension.test.js test/nexac.test.js",
-    "package": "vsce package --out nexalang-0.9.0.vsix"
+    "package": "vsce package"
   },
   "dependencies": {
     "vscode-languageclient": "10.1.2"

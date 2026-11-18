@@ -20,7 +20,7 @@ VS Code always agrees with it.
   in `nexalang/`, then copy `target/release/nexac` to a folder in `PATH`).
 - **Windows**: copy `nexac.exe` to a folder of your own (for example
   `C:\Users\you\NexaLang\`) and add that folder to `PATH`, or set
-  **nexalang.path** to the full path of `nexac.exe`.
+  **nexalang.path** to the full path of `nexac.exe` (or of its folder).
 
 The extension only uses a `nexac` given by its full path: from the
 `nexalang.path` setting (only your own settings can set it, never a
@@ -38,7 +38,7 @@ Windows say so instead. Copy your `.nx` files to NexaOS and run
 
 | Setting | Meaning |
 |---|---|
-| `nexalang.path` | Full path to `nexac` (`nexac.exe`). Empty: found in `PATH`. |
+| `nexalang.path` | Full path to `nexac` (`nexac.exe`), or to the folder that holds it. Empty: found in `PATH`. |
 
 Format on save, 4-space indents and NexaLang as the formatter are on by
 default for `.nx` files (`[nexalang]` settings); change them like any other

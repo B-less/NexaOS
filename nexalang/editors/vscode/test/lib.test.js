@@ -36,6 +36,23 @@ test('nexac is found in PATH, by full path, never in a relative folder', () => {
   assert.match(find({ setting: '.\\nexac.exe', envPath: '', platform: 'win32' }).error, /must be the full path/);
   assert.match(find({ setting: '/nowhere/nexac', envPath: '/usr/local/bin', platform: 'linux' }).error, /isn't a program/);
   assert.match(find({ setting: '', envPath: undefined, platform: 'linux' }).error, /colours still work/);
+
+  // the folder that holds it, with or without a last \ or quotes (0.9.1:
+  // the first thing tried on a real Windows PC was the folder)
+  const folders = new Set(['C:\\Users\\BBF\\NexaLang', 'C:\\Users\\BBF\\NexaLang\\', 'C:\\Empty']);
+  const findIn = (setting) =>
+    lib.findNexac({
+      setting,
+      envPath: '',
+      platform: 'win32',
+      isRunnable: (x) => x === 'C:\\Users\\BBF\\NexaLang\\nexac.exe',
+      isFolder: (x) => folders.has(x),
+    });
+  for (const s of ['C:\\Users\\BBF\\NexaLang', 'C:\\Users\\BBF\\NexaLang\\', ' "C:\\Users\\BBF\\NexaLang" ', '"C:\\Users\\BBF\\NexaLang\\nexac.exe"']) {
+    assert.deepEqual(findIn(s), { path: 'C:\\Users\\BBF\\NexaLang\\nexac.exe' }, s);
+  }
+  assert.match(findIn('C:\\Empty').error, /names the folder C:\\Empty, which has no nexac\.exe in it/);
+  assert.match(findIn('"nexac.exe"').error, /must be the full path/);
   assert.deepEqual(find({ setting: 42, envPath: '/usr/local/bin', platform: 'linux' }), { path: '/usr/local/bin/nexac' });
 });
 
@@ -52,6 +69,11 @@ test('isRunnableFile: a file that may run, not a folder or a plain file', () => 
   assert.equal(lib.isRunnableFile(plain, 'win32'), true); // Windows has no x bit
   assert.equal(lib.isRunnableFile(dir, 'linux'), false);
   assert.equal(lib.isRunnableFile(path.join(dir, 'missing'), 'linux'), false);
+  // a real folder as the setting: nexac inside it is found
+  if (process.platform !== 'win32') {
+    assert.deepEqual(lib.findNexac({ setting: dir, envPath: '', platform: 'linux' }), { path: prog });
+    assert.deepEqual(lib.findNexac({ setting: dir + '/', envPath: '', platform: 'linux' }), { path: prog });
+  }
   fs.rmSync(dir, { recursive: true });
 });
 

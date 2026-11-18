@@ -6,6 +6,15 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
+/** Is `p` a folder? */
+function isFolderPath(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** Is `p` a file this user may run? */
 function isRunnableFile(p, platform) {
   try {
@@ -19,7 +28,7 @@ function isRunnableFile(p, platform) {
 
 /**
  * Where `nexac` is, as a full path: the `nexalang.path` setting when it's
- * set (it must be a full path), otherwise the first `nexac` (`nexac.exe`
+ * set (it must be a full path, to nexac or to the folder holding it), otherwise the first `nexac` (`nexac.exe`
  * on Windows) in a folder of PATH.
  *
  * Folders in PATH that aren't full paths (`.`, an empty entry) are
@@ -29,13 +38,21 @@ function isRunnableFile(p, platform) {
  *
  * Returns { path } or { error } (a sentence to show).
  */
-function findNexac({ setting, envPath, platform = process.platform, isRunnable = isRunnableFile }) {
+function findNexac({ setting, envPath, platform = process.platform, isRunnable = isRunnableFile, isFolder = isFolderPath }) {
   const p = platform === 'win32' ? path.win32 : path.posix;
   const name = platform === 'win32' ? 'nexac.exe' : 'nexac';
-  const wanted = typeof setting === 'string' ? setting.trim() : '';
+  let wanted = typeof setting === 'string' ? setting.trim() : '';
+  // Windows' "Copy as path" puts quotes around it
+  if (wanted.length >= 2 && wanted.startsWith('"') && wanted.endsWith('"')) wanted = wanted.slice(1, -1).trim();
   if (wanted !== '') {
     if (!p.isAbsolute(wanted)) {
       return { error: `The setting nexalang.path must be the full path to ${name} (it's "${wanted}").` };
+    }
+    // the folder that holds nexac is fine too (0.9.1: what people try first)
+    if (isFolder(wanted)) {
+      const inside = p.join(wanted, name);
+      if (isRunnable(inside, platform)) return { path: inside };
+      return { error: `The setting nexalang.path names the folder ${wanted}, which has no ${name} in it.` };
     }
     if (!isRunnable(wanted, platform)) {
       return { error: `The setting nexalang.path names ${wanted}, which isn't a program that can be started.` };

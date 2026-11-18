@@ -131,7 +131,7 @@ as you type, Lay out, Explain, and Run with Stop.
 Writing NexaLang on Microsoft Windows (0.9), in VS Code:
 
 ```sh
-sh editors/windows/build.sh     # dist/nexac.exe and dist/nexalang-0.9.0.vsix
+sh editors/windows/build.sh     # dist/nexac.exe and dist/nexalang-0.9.1.vsix
 ```
 
 Put `nexac.exe` in a folder of `PATH` on Windows, install the `.vsix` in VS
@@ -576,6 +576,10 @@ tests run from `cargo test` (`the_vscode_extension_passes_its_tests`).
 | **Fuzzing the tools** (`--tools-only`) | **10,000 mutants** (seeds 127-131): **1 finding** (seed 129: the first mistake shown changed when `fmt` removed an empty first line, because "no `fn main()`" was placed at line 1), fixed and re-run: 0 findings |
 
 Found and fixed while building 0.9:
+- On the first try on a real Windows PC (after the PR), `nexalang.path`
+  was set to the folder holding `nexac.exe`, and the extension refused
+  it. Extension 0.9.1 accepts the folder too (and quotes around the path,
+  as Windows' "Copy as path" adds them); tested.
 - `vscode-languageclient` adds `--stdio` to the server's arguments when
   the transport is stdio, and 0.6's `nexac lsp` refused any argument: the
   server would never have started in VS Code. Found by reading the
