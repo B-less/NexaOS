@@ -16,17 +16,20 @@
  *
  * Widgets are numbered (1, 2, ...). A number that isn't a widget, or a
  * widget used for something it can't do, stops the program with a plain
- * message, like a list index outside the list. */
+ * message, like a list index outside the list. Numbers are never used
+ * twice: after ui.remove or ui.clear (0.7), a removed widget's number stops
+ * the program if it's used again, instead of meaning some newer widget. */
 #include <gtk/gtk.h>
 
-enum { NX_UI_COLUMN = 1, NX_UI_ROW, NX_UI_LABEL, NX_UI_BUTTON, NX_UI_ENTRY, NX_UI_CHECK, NX_UI_LIST };
+enum { NX_UI_COLUMN = 1, NX_UI_ROW, NX_UI_LABEL, NX_UI_BUTTON, NX_UI_ENTRY, NX_UI_CHECK, NX_UI_LIST, NX_UI_CODE };
 enum { NX_EV_CLICKED = 1, NX_EV_CHANGED, NX_EV_SUBMITTED, NX_EV_TOGGLED, NX_EV_SELECTED, NX_EV_ACTIVATED, NX_EV_CLOSED, NX_EV_TICK };
 #define NX_UI_MAX_WIDGETS 100000
 
 typedef struct {
+    int64_t id;       /* its number (the key in nx_ui.items) */
     GtkWidget *w;     /* the widget itself */
     GtkWidget *outer; /* what's packed into the parent (a list's scroller) */
-    int kind;
+    int kind, style;  /* style: a label's or a button's (see their makers) */
     gulong sig;       /* the handler that reports the person's changes */
     char *tip, *keys; /* tooltip and shortcut label (g_malloc'd) */
 } nx_ui_item;
@@ -37,7 +40,9 @@ typedef struct { guint key; GdkModifierType mods; int64_t id; } nx_ui_key;
 static struct {
     bool started, busy, has_primary;
     GtkWidget *win, *status, *content;
-    nx_ui_item *items; int64_t n, cap; /* items[0] is never used */
+    GHashTable *items;  /* number -> nx_ui_item*, only widgets that still exist */
+    int64_t n;          /* the next number (numbers are never used twice) */
+    bool tree;          /* NEXALANG_UI_TREE: Ctrl+Shift+F12 prints the widgets (tests) */
     nx_ui_ev *q; int64_t qhead, qlen, qcap;
     nx_ui_ev cur;
     nx_ui_key *keys; int64_t nkeys, kcap;
@@ -104,6 +109,37 @@ static const char NX_UI_CSS[] =
     ".nx-empty { color: @nexa_muted; padding: 24px; }\n"
     "scrollbar { background-color: transparent; border: none; }\n"
     "scrollbar slider { background-color: alpha(@nexa_text, 0.25); border-radius: 6px; min-width: 6px; min-height: 6px; border: none; }\n"
+    /* read-only code (0.7) */
+    ".nx-code { background-color: @nexa_field; border: 1px solid @nexa_border; border-radius: 10px; }\n"
+    ".nx-code textview, .nx-code text { background-color: @nexa_field; color: @nexa_text_strong; font-family: \"JetBrains Mono\", monospace; }\n"
+    ".nx-code text selection { background-color: @nexa_selected; color: @nexa_selected_text; }\n"
+    ".nx-code:focus-within, .nx-code textview:focus { border-color: @nexa_accent; }\n"
+    /* the file chooser (0.7): its places, folders and files on Hexa colours */
+    "filechooser, filechooser box, filechooser stack, filechooser paned { background-color: @nexa_bg; color: @nexa_text; }\n"
+    "filechooser .sidebar, placessidebar, placessidebar list { background-color: @nexa_surface; color: @nexa_text; border: none; }\n"
+    "placessidebar row { color: @nexa_text; border-radius: 10px; }\n"
+    "placessidebar row:hover { background-color: @nexa_hover; }\n"
+    "placessidebar row:selected { background-color: @nexa_selected; color: @nexa_selected_text; }\n"
+    "placessidebar row label, placessidebar row image { color: inherit; }\n"
+    "filechooser treeview, filechooser treeview.view { background-color: @nexa_surface; color: @nexa_text; }\n"
+    "filechooser treeview:selected, filechooser treeview.view:selected { background-color: @nexa_selected; color: @nexa_selected_text; }\n"
+    "filechooser treeview header button { background-color: @nexa_surface_hi; color: @nexa_muted; border-radius: 0; border: none; border-bottom: 1px solid @nexa_border; }\n"
+    "filechooser scrolledwindow { background-color: @nexa_surface; }\n"
+    "filechooser .path-bar button, filechooser pathbar button { border-radius: 10px; }\n"
+    "filechooser actionbar, filechooser .search-bar, filechooser revealer box { background-color: @nexa_bg; color: @nexa_text; border: none; }\n"
+    "filechooser label { color: @nexa_text; }\n"
+    "filechooser paned separator { background-color: @nexa_border; min-width: 1px; }\n"
+    /* GTK's own questions (the file chooser's "replace it?") */
+    "messagedialog, messagedialog.background, messagedialog .dialog-vbox, messagedialog box { background-color: @nexa_surface; color: @nexa_text; }\n"
+    "messagedialog label { color: @nexa_text; }\n"
+    "messagedialog label.title, messagedialog .titlebar label { color: @nexa_text_strong; font-weight: 700; }\n"
+    "messagedialog .dialog-action-area { padding: 12px 16px 16px 16px; }\n"
+    "button.destructive-action { color: @nexa_crit; border-color: alpha(@nexa_crit, 0.6); }\n"
+    "button.destructive-action:hover { background-color: @nexa_crit; color: @nexa_on_accent; }\n"
+    "button.suggested-action { background-color: @nexa_accent; color: @nexa_on_accent; border-color: @nexa_accent; font-weight: 700; }\n"
+    "popover, popover.background, menu, .menu, .context-menu { background-color: @nexa_surface_hi; color: @nexa_text; border: 1px solid @nexa_border; }\n"
+    "menuitem, modelbutton { color: @nexa_text; }\n"
+    "menuitem:hover, modelbutton:hover { background-color: @nexa_hover; }\n"
     "tooltip { background-color: @nexa_surface_hi; color: @nexa_text_strong; border-radius: 6px; }\n"
     "tooltip * { color: @nexa_text_strong; }\n"
     /* the status line at the bottom */
@@ -122,6 +158,22 @@ static const char NX_UI_CSS[] =
     "dialog .dialog-vbox { padding: 0; }\n";
 
 /* ---- small helpers ---- */
+
+static void nx_ui_item_free(gpointer p) {
+    nx_ui_item *it = p;
+    g_free(it->tip);
+    g_free(it->keys);
+    g_free(it);
+}
+
+static nx_ui_item *nx_ui_new_item(GtkWidget *w, GtkWidget *outer, int kind, int style) {
+    nx_ui_item *it = g_new0(nx_ui_item, 1);
+    *it = (nx_ui_item){nx_ui.n++, w, outer, kind, style, 0, NULL, NULL};
+    g_hash_table_insert(nx_ui.items, &it->id, it);
+    g_object_set_data(G_OBJECT(outer), "nx-id", GINT_TO_POINTER((int)it->id));
+    return it;
+}
+
 
 /* A NUL-terminated copy for GTK. NexaLang text may contain zero bytes;
    GTK can't show them, so each becomes U+FFFD. Free with g_free. */
@@ -156,14 +208,17 @@ static const char *nx_ui_kind_name(int k) {
     case NX_UI_BUTTON: return "a button";
     case NX_UI_ENTRY: return "a text field";
     case NX_UI_CHECK: return "a check box";
+    case NX_UI_CODE: return "a code view";
     default: return "a list";
     }
 }
 
 static nx_ui_item *nx_ui_get(int64_t id, int line) {
     nx_ui_need_start(line);
-    if (id < 1 || id >= nx_ui.n) nx_trap(line, "%" PRId64 " isn't a widget of this window", id);
-    return &nx_ui.items[id];
+    nx_ui_item *it = g_hash_table_lookup(nx_ui.items, &id);
+    if (it) return it;
+    if (id >= 1 && id < nx_ui.n) nx_trap(line, "widget %" PRId64 " was removed (ui.remove or ui.clear), so it can't be used any more", id);
+    nx_trap(line, "%" PRId64 " isn't a widget of this window", id);
 }
 
 /* The widget `id`, which must be one of the kinds in `mask` (1 << kind). */
@@ -183,6 +238,9 @@ static void nx_ui_push(int kind, int64_t id, int64_t num, const char *text) {
     nx_ui_ev e = {kind, id, num, text ? g_strdup(text) : NULL};
     nx_ui.q[nx_ui.qlen++] = e;
 }
+
+static void nx_ui_tree(GtkWidget *outer, int depth);
+static void nx_ui_tree_text(const char *t);
 
 /* ---- signal handlers: they only queue events ---- */
 
@@ -218,6 +276,18 @@ static gboolean nx_ui_on_key(GtkWidget *w, GdkEventKey *e, gpointer d) {
     guint key = gdk_keyval_to_lower(e->keyval);
     if (key == GDK_KEY_Escape && mods == 0) { nx_ui_push(NX_EV_CLOSED, 0, 0, NULL); return TRUE; }
     if (key == GDK_KEY_q && mods == GDK_CONTROL_MASK) { nx_ui_push(NX_EV_CLOSED, 0, 0, NULL); return TRUE; }
+    if (nx_ui.tree && key == GDK_KEY_F12 && mods == (GDK_CONTROL_MASK | GDK_SHIFT_MASK)) {
+        fflush(stdout);
+        nx_ui_tree(nx_ui.content, 0);
+        if (gtk_widget_get_visible(nx_ui.status)) {
+            bool bad = gtk_style_context_has_class(gtk_widget_get_style_context(nx_ui.status), "nx-error");
+            fputs(bad ? "status error " : "status ", stdout);
+            nx_ui_tree_text(gtk_label_get_text(GTK_LABEL(nx_ui.status)));
+            putchar('\n');
+        }
+        fflush(stdout);
+        return TRUE;
+    }
     if (nx_ui.busy) return FALSE;
     /* Tab leaves a list (arrow keys move inside it), instead of walking
        through every row */
@@ -235,8 +305,8 @@ static gboolean nx_ui_on_key(GtkWidget *w, GdkEventKey *e, gpointer d) {
     }
     for (int64_t i = 0; i < nx_ui.nkeys; i++) {
         if (nx_ui.keys[i].key == key && nx_ui.keys[i].mods == mods) {
-            GtkWidget *b = nx_ui.items[nx_ui.keys[i].id].w;
-            if (gtk_widget_is_sensitive(b) && gtk_widget_is_visible(b))
+            nx_ui_item *it = g_hash_table_lookup(nx_ui.items, &nx_ui.keys[i].id);
+            if (it && gtk_widget_is_sensitive(it->w) && gtk_widget_is_visible(it->w))
                 nx_ui_push(NX_EV_CLICKED, nx_ui.keys[i].id, 0, NULL);
             return TRUE;
         }
@@ -303,9 +373,9 @@ NX_RT nx_R_v nx_b___ui_start(nx_str app_id, nx_str title, int line) {
     char *id = nx_ui_cstr(app_id), *t = nx_ui_cstr(title);
     g_set_prgname(id); /* the window's app id, for the desktop and its icon */
     nx_ui.started = true;
-    nx_ui.n = 1;
-    nx_ui.cap = 64;
-    nx_ui.items = g_new0(nx_ui_item, nx_ui.cap);
+    nx_ui.items = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, nx_ui_item_free);
+    const char *tree = g_getenv("NEXALANG_UI_TREE");
+    nx_ui.tree = tree && *tree;
 
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_data(css, NX_UI_CSS, -1, NULL);
@@ -354,8 +424,8 @@ NX_RT nx_R_v nx_b___ui_start(nx_str app_id, nx_str title, int line) {
     gtk_box_pack_end(GTK_BOX(outer), nx_ui.status, FALSE, FALSE, 0);
     gtk_container_add(GTK_CONTAINER(nx_ui.win), outer);
     nx_ui.content = main_col;
-    nx_ui.items[1] = (nx_ui_item){main_col, main_col, NX_UI_COLUMN, 0, NULL, NULL};
-    nx_ui.n = 2;
+    nx_ui.n = 1;
+    nx_ui_new_item(main_col, main_col, NX_UI_COLUMN, 0);
 
     g_signal_connect(nx_ui.win, "delete-event", G_CALLBACK(nx_ui_on_delete), NULL);
     g_signal_connect(nx_ui.win, "key-press-event", G_CALLBACK(nx_ui_on_key), NULL);
@@ -368,30 +438,40 @@ NX_RT nx_R_v nx_b___ui_start(nx_str app_id, nx_str title, int line) {
 }
 
 /* Add a new widget to `parent` (a column or a row). */
-static int64_t nx_ui_add(int64_t parent, GtkWidget *w, GtkWidget *outer, int kind, int line) {
+static int64_t nx_ui_add(int64_t parent, GtkWidget *w, GtkWidget *outer, int kind, int style, int line) {
     nx_ui_item *p = nx_ui_want(parent, 1u << NX_UI_COLUMN | 1u << NX_UI_ROW, "hold other widgets (use a column or a row)", line);
-    if (nx_ui.n >= NX_UI_MAX_WIDGETS) nx_trap(line, "a window can have at most %d widgets; use a list for many items", NX_UI_MAX_WIDGETS);
+    if (g_hash_table_size(nx_ui.items) >= NX_UI_MAX_WIDGETS) nx_trap(line, "a window can have at most %d widgets; use a list for many items", NX_UI_MAX_WIDGETS);
     bool in_row = p->kind == NX_UI_ROW;
     GtkWidget *box = p->w;
-    if (nx_ui.n == nx_ui.cap) {
-        nx_ui.cap *= 2;
-        nx_ui.items = g_realloc_n(nx_ui.items, (gsize)nx_ui.cap, sizeof *nx_ui.items);
-    }
-    int64_t id = nx_ui.n++;
-    nx_ui.items[id] = (nx_ui_item){w, outer, kind, 0, NULL, NULL};
-    /* lists, text fields in a row and columns in a row take the free space */
-    bool grow = kind == NX_UI_LIST || (in_row && (kind == NX_UI_ENTRY || kind == NX_UI_COLUMN));
+    if (nx_ui.n >= G_MAXINT) nx_trap(line, "this window has made too many widgets");
+    int64_t id = nx_ui_new_item(w, outer, kind, style)->id;
+    /* lists, code, text fields in a row and columns in a row take the free space */
+    bool grow = kind == NX_UI_LIST || kind == NX_UI_CODE || (in_row && (kind == NX_UI_ENTRY || kind == NX_UI_COLUMN));
     if (!in_row && kind == NX_UI_BUTTON) gtk_widget_set_halign(outer, GTK_ALIGN_START);
     if (in_row && kind != NX_UI_LIST) gtk_widget_set_valign(outer, GTK_ALIGN_CENTER);
     gtk_box_pack_start(GTK_BOX(box), outer, grow, TRUE, 0);
     gtk_widget_show_all(outer);
+    /* a list or code view in a row or column makes that row or column take
+       the free height too, all the way up to the window (0.7) */
+    if (kind == NX_UI_LIST || kind == NX_UI_CODE) {
+        GtkWidget *child = box;
+        while (child != nx_ui.content) {
+            GtkWidget *up = gtk_widget_get_parent(child);
+            if (!up || !GTK_IS_BOX(up)) break;
+            if (gtk_orientable_get_orientation(GTK_ORIENTABLE(up)) == GTK_ORIENTATION_VERTICAL)
+                gtk_container_child_set(GTK_CONTAINER(up), child, "expand", TRUE, NULL);
+            else
+                gtk_widget_set_valign(child, GTK_ALIGN_FILL);
+            child = up;
+        }
+    }
     return id;
 }
 
 NX_RT int64_t nx_b___ui_box(int64_t parent, bool across, int line) {
     nx_ui_need_start(line);
     GtkWidget *b = gtk_box_new(across ? GTK_ORIENTATION_HORIZONTAL : GTK_ORIENTATION_VERTICAL, 8);
-    return nx_ui_add(parent, b, b, across ? NX_UI_ROW : NX_UI_COLUMN, line);
+    return nx_ui_add(parent, b, b, across ? NX_UI_ROW : NX_UI_COLUMN, 0, line);
 }
 
 /* style: 0 text, 1 heading, 2 note, 3 mono (numbers that update), 4 display (one big number) */
@@ -405,7 +485,7 @@ NX_RT int64_t nx_b___ui_label(int64_t parent, nx_str text, int64_t style, int li
     gtk_label_set_line_wrap_mode(GTK_LABEL(l), PANGO_WRAP_WORD_CHAR);
     static const char *const cls[] = {NULL, "nx-heading", "nx-note", "nx-mono", "nx-display"};
     if (style > 0 && style < 5) gtk_style_context_add_class(gtk_widget_get_style_context(l), cls[style]);
-    return nx_ui_add(parent, l, l, NX_UI_LABEL, line);
+    return nx_ui_add(parent, l, l, NX_UI_LABEL, (int)style, line);
 }
 
 /* style: 0 normal, 1 primary (one per window), 2 danger */
@@ -422,8 +502,8 @@ NX_RT int64_t nx_b___ui_button(int64_t parent, nx_str text, int64_t style, int l
     if (GTK_IS_LABEL(l)) gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
     if (style == 1) gtk_style_context_add_class(gtk_widget_get_style_context(b), "nx-primary");
     if (style == 2) gtk_style_context_add_class(gtk_widget_get_style_context(b), "nx-danger");
-    int64_t id = nx_ui_add(parent, b, b, NX_UI_BUTTON, line);
-    nx_ui.items[id].sig = g_signal_connect(b, "clicked", G_CALLBACK(nx_ui_on_clicked), GINT_TO_POINTER((int)id));
+    int64_t id = nx_ui_add(parent, b, b, NX_UI_BUTTON, (int)style, line);
+    nx_ui_get(id, line)->sig = g_signal_connect(b, "clicked", G_CALLBACK(nx_ui_on_clicked), GINT_TO_POINTER((int)id));
     return id;
 }
 
@@ -434,8 +514,8 @@ NX_RT int64_t nx_b___ui_entry(int64_t parent, nx_str placeholder, int line) {
     gtk_entry_set_placeholder_text(GTK_ENTRY(e), c);
     g_free(c);
     gtk_entry_set_width_chars(GTK_ENTRY(e), 8);
-    int64_t id = nx_ui_add(parent, e, e, NX_UI_ENTRY, line);
-    nx_ui.items[id].sig = g_signal_connect(e, "changed", G_CALLBACK(nx_ui_on_changed), GINT_TO_POINTER((int)id));
+    int64_t id = nx_ui_add(parent, e, e, NX_UI_ENTRY, 0, line);
+    nx_ui_get(id, line)->sig = g_signal_connect(e, "changed", G_CALLBACK(nx_ui_on_changed), GINT_TO_POINTER((int)id));
     g_signal_connect(e, "activate", G_CALLBACK(nx_ui_on_activate), GINT_TO_POINTER((int)id));
     return id;
 }
@@ -451,8 +531,8 @@ NX_RT int64_t nx_b___ui_check(int64_t parent, nx_str text, bool on, int line) {
         gtk_label_set_line_wrap_mode(GTK_LABEL(l), PANGO_WRAP_WORD_CHAR);
     }
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(b), on);
-    int64_t id = nx_ui_add(parent, b, b, NX_UI_CHECK, line);
-    nx_ui.items[id].sig = g_signal_connect(b, "toggled", G_CALLBACK(nx_ui_on_toggled), GINT_TO_POINTER((int)id));
+    int64_t id = nx_ui_add(parent, b, b, NX_UI_CHECK, 0, line);
+    nx_ui_get(id, line)->sig = g_signal_connect(b, "toggled", G_CALLBACK(nx_ui_on_toggled), GINT_TO_POINTER((int)id));
     return id;
 }
 
@@ -475,14 +555,48 @@ NX_RT int64_t nx_b___ui_list(int64_t parent, nx_str empty, int line) {
     gtk_style_context_add_class(gtk_widget_get_style_context(ph), "nx-empty");
     gtk_widget_show(ph);
     gtk_list_box_set_placeholder(GTK_LIST_BOX(lb), ph);
+    g_object_set_data(G_OBJECT(lb), "nx-empty", ph);
     gtk_container_add(GTK_CONTAINER(sc), lb);
-    int64_t id = nx_ui_add(parent, lb, sc, NX_UI_LIST, line);
-    nx_ui.items[id].sig = g_signal_connect(lb, "row-selected", G_CALLBACK(nx_ui_on_row_selected), GINT_TO_POINTER((int)id));
+    int64_t id = nx_ui_add(parent, lb, sc, NX_UI_LIST, 0, line);
+    nx_ui_get(id, line)->sig = g_signal_connect(lb, "row-selected", G_CALLBACK(nx_ui_on_row_selected), GINT_TO_POINTER((int)id));
     g_signal_connect(lb, "row-activated", G_CALLBACK(nx_ui_on_row_activated), GINT_TO_POINTER((int)id));
     return id;
 }
 
-#define NX_UI_TEXTUAL (1u << NX_UI_LABEL | 1u << NX_UI_BUTTON | 1u << NX_UI_ENTRY | 1u << NX_UI_CHECK)
+static void nx_ui_code_set(GtkWidget *tv, nx_str text) {
+    GtkTextBuffer *b = gtk_text_view_get_buffer(GTK_TEXT_VIEW(tv));
+    char *c = nx_ui_cstr(text);
+    gtk_text_buffer_set_text(b, c, -1);
+    g_free(c);
+    GtkTextIter s, e;
+    gtk_text_buffer_get_bounds(b, &s, &e);
+    gtk_text_buffer_apply_tag_by_name(b, "nx-plain", &s, &e);
+}
+
+/* Read-only text in JetBrains Mono that scrolls: code, logs (0.7). The
+   person can select and copy it; Tab moves on to the next widget. */
+NX_RT int64_t nx_b___ui_code(int64_t parent, nx_str text, int line) {
+    nx_ui_need_start(line);
+    GtkWidget *sc = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sc), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(sc), 160);
+    gtk_style_context_add_class(gtk_widget_get_style_context(sc), "nx-code");
+    GtkWidget *tv = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(tv), FALSE);
+    gtk_text_view_set_accepts_tab(GTK_TEXT_VIEW(tv), FALSE);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(tv), TRUE);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(tv), 12);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(tv), 12);
+    gtk_text_view_set_top_margin(GTK_TEXT_VIEW(tv), 8);
+    gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(tv), 8);
+    /* no ligatures: what's shown is what's typed (-> stays ->, == stays ==) */
+    gtk_text_buffer_create_tag(gtk_text_view_get_buffer(GTK_TEXT_VIEW(tv)), "nx-plain", "font-features", "-calt, -liga", NULL);
+    gtk_container_add(GTK_CONTAINER(sc), tv);
+    nx_ui_code_set(tv, text);
+    return nx_ui_add(parent, tv, sc, NX_UI_CODE, 0, line);
+}
+
+#define NX_UI_TEXTUAL (1u << NX_UI_LABEL | 1u << NX_UI_BUTTON | 1u << NX_UI_ENTRY | 1u << NX_UI_CHECK | 1u << NX_UI_CODE)
 
 /* Changes made by the program never come back as events. */
 NX_RT void nx_b___ui_set_text(int64_t id, nx_str text, int line) {
@@ -495,6 +609,7 @@ NX_RT void nx_b___ui_set_text(int64_t id, nx_str text, int line) {
         gtk_entry_set_text(GTK_ENTRY(it->w), c);
         g_signal_handler_unblock(it->w, it->sig);
         break;
+    case NX_UI_CODE: nx_ui_code_set(it->w, text); break;
     default: gtk_button_set_label(GTK_BUTTON(it->w), c); break;
     }
     g_free(c);
@@ -505,6 +620,15 @@ NX_RT nx_str nx_b___ui_get_text(int64_t id, int line) {
     switch (it->kind) {
     case NX_UI_LABEL: return nx_ui_str(gtk_label_get_text(GTK_LABEL(it->w)));
     case NX_UI_ENTRY: return nx_ui_str(gtk_entry_get_text(GTK_ENTRY(it->w)));
+    case NX_UI_CODE: {
+        GtkTextBuffer *b = gtk_text_view_get_buffer(GTK_TEXT_VIEW(it->w));
+        GtkTextIter s, e;
+        gtk_text_buffer_get_bounds(b, &s, &e);
+        char *t = gtk_text_buffer_get_text(b, &s, &e, TRUE);
+        nx_str r = nx_ui_str(t);
+        g_free(t);
+        return r;
+    }
     default: return nx_ui_str(gtk_button_get_label(GTK_BUTTON(it->w)));
     }
 }
@@ -579,7 +703,17 @@ NX_RT void nx_b___ui_set_visible(int64_t id, bool on, int line) {
 }
 
 NX_RT void nx_b___ui_focus(int64_t id, int line) {
-    gtk_widget_grab_focus(nx_ui_get(id, line)->w);
+    nx_ui_item *it = nx_ui_get(id, line);
+    if (it->kind == NX_UI_LIST) {
+        /* into the list: its selected row, or the first (0.7) */
+        GtkListBoxRow *row = gtk_list_box_get_selected_row(GTK_LIST_BOX(it->w));
+        if (!row) row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(it->w), 0);
+        if (row) {
+            gtk_widget_grab_focus(GTK_WIDGET(row));
+            return;
+        }
+    }
+    gtk_widget_grab_focus(it->w);
 }
 
 static void nx_ui_update_tip(nx_ui_item *it) {
@@ -642,6 +776,203 @@ NX_RT void nx_b___ui_shortcut(int64_t id, nx_str keys, int line) {
     g_free(it->keys);
     it->keys = gtk_accelerator_get_label(key, mods);
     nx_ui_update_tip(it);
+}
+
+/* ---- removing widgets (0.7) ---- */
+
+/* Forget `outer`'s widget and everything inside it: their numbers stop
+   working, their shortcuts and waiting events go, and a primary button
+   can be made again. GTK destroys the widgets afterwards. */
+static void nx_ui_forget(GtkWidget *outer) {
+    int64_t id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(outer), "nx-id"));
+    nx_ui_item *it = id ? g_hash_table_lookup(nx_ui.items, &id) : NULL;
+    if (!it) return;
+    if (it->kind == NX_UI_COLUMN || it->kind == NX_UI_ROW) {
+        GList *kids = gtk_container_get_children(GTK_CONTAINER(it->w));
+        for (GList *l = kids; l; l = l->next) nx_ui_forget(GTK_WIDGET(l->data));
+        g_list_free(kids);
+    }
+    int64_t k = 0;
+    for (int64_t i = 0; i < nx_ui.nkeys; i++)
+        if (nx_ui.keys[i].id != id) nx_ui.keys[k++] = nx_ui.keys[i];
+    nx_ui.nkeys = k;
+    int64_t q = nx_ui.qhead;
+    for (int64_t i = nx_ui.qhead; i < nx_ui.qlen; i++) {
+        if (nx_ui.q[i].id == id && nx_ui.q[i].kind != NX_EV_CLOSED && nx_ui.q[i].kind != NX_EV_TICK) g_free(nx_ui.q[i].text);
+        else nx_ui.q[q++] = nx_ui.q[i];
+    }
+    nx_ui.qlen = q;
+    if (it->kind == NX_UI_BUTTON && it->style == 1) nx_ui.has_primary = false;
+    g_hash_table_remove(nx_ui.items, &id); /* frees it */
+}
+
+/* clear: remove what's inside a column or row; otherwise remove the widget. */
+NX_RT void nx_b___ui_remove(int64_t id, bool inside_only, int line) {
+    nx_ui_item *it = inside_only ? nx_ui_want(id, 1u << NX_UI_COLUMN | 1u << NX_UI_ROW, "be cleared (only columns and rows hold widgets)", line)
+                                 : nx_ui_get(id, line);
+    if (!inside_only && id == 1) nx_trap(line, "the window's main column can't be removed (ui.clear(page) empties it)");
+    if (inside_only) {
+        GList *kids = gtk_container_get_children(GTK_CONTAINER(it->w));
+        for (GList *l = kids; l; l = l->next) {
+            nx_ui_forget(GTK_WIDGET(l->data));
+            gtk_widget_destroy(GTK_WIDGET(l->data));
+        }
+        g_list_free(kids);
+    } else {
+        GtkWidget *outer = it->outer;
+        nx_ui_forget(outer);
+        gtk_widget_destroy(outer);
+    }
+}
+
+/* ---- the clipboard (0.7) ---- */
+NX_RT void nx_b___ui_to_clipboard(nx_str text, int line) {
+    nx_ui_need_start(line);
+    char *c = nx_ui_cstr(text);
+    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), c, -1);
+    g_free(c);
+}
+
+/* ---- choosing a file (0.7) ----
+   The file chooser runs in the program, so an installed app can only use
+   what nexa-run lets it (its own folders and its files.* folders); it
+   starts in Documents. `name`: a suggested file name (saving) or a
+   pattern like "*.nx" (opening; "" for every file). A name that isn't
+   UTF-8 can't be NexaLang text, so the chooser says so and stays open. */
+/* GTK's chooser sizes itself from settings that may be missing (and
+   then comes out bigger than a small screen); keep it to the window it
+   belongs to, or 720 x 480. */
+static void nx_ui_chooser_size(GtkWidget *d, gpointer p) {
+    (void)p;
+    int w = 720, h = 480, pw = 0, ph = 0;
+    gtk_window_get_size(GTK_WINDOW(nx_ui.win), &pw, &ph);
+    GdkRectangle area = {0, 0, 0, 0};
+    GdkMonitor *m = gdk_display_get_monitor_at_window(gtk_widget_get_display(d), gtk_widget_get_window(nx_ui.win));
+    if (m) gdk_monitor_get_workarea(m, &area);
+    if (area.width > 0 && w > area.width - 32) w = area.width - 32;
+    if (area.height > 0 && h > area.height - 32) h = area.height - 32;
+    w = w < 360 ? 360 : w;
+    h = h < 320 ? 320 : h;
+    gtk_window_resize(GTK_WINDOW(d), w, h);
+    /* over the middle of its window (where the desktop lets programs place
+       windows; on Wayland the desktop decides) */
+    int px = 0, py = 0;
+    gtk_window_get_position(GTK_WINDOW(nx_ui.win), &px, &py);
+    int x = px + (pw - w) / 2, y = py + (ph - h) / 2;
+    gtk_window_move(GTK_WINDOW(d), x < area.x ? area.x : x, y < area.y ? area.y : y);
+}
+
+NX_RT nx_M_s nx_b___ui_choose(nx_str title, nx_str name, bool save, int line) {
+    nx_ui_need_start(line);
+    nx_M_s r = {false, {"", 0, NULL}};
+    char *t = nx_ui_cstr(title), *n = nx_ui_cstr(name);
+    GtkWidget *d = gtk_file_chooser_dialog_new(t, GTK_WINDOW(nx_ui.win), save ? GTK_FILE_CHOOSER_ACTION_SAVE : GTK_FILE_CHOOSER_ACTION_OPEN,
+                                               "Cancel", GTK_RESPONSE_CANCEL, save ? "Save" : "Open", GTK_RESPONSE_ACCEPT, NULL);
+    GtkWidget *bar = gtk_header_bar_new();
+    gtk_header_bar_set_title(GTK_HEADER_BAR(bar), t);
+    gtk_window_set_titlebar(GTK_WINDOW(d), bar);
+    gtk_widget_show(bar);
+    gtk_window_set_modal(GTK_WINDOW(d), TRUE);
+    g_signal_connect_after(d, "map", G_CALLBACK(nx_ui_chooser_size), NULL);
+    GtkWidget *ok = gtk_dialog_get_widget_for_response(GTK_DIALOG(d), GTK_RESPONSE_ACCEPT);
+    gtk_style_context_add_class(gtk_widget_get_style_context(ok), "nx-primary");
+    gtk_dialog_set_default_response(GTK_DIALOG(d), GTK_RESPONSE_ACCEPT);
+    GtkFileChooser *fc = GTK_FILE_CHOOSER(d);
+    gtk_file_chooser_set_local_only(fc, TRUE);
+    gtk_file_chooser_set_do_overwrite_confirmation(fc, TRUE);
+    const char *docs = g_get_user_special_dir(G_USER_DIRECTORY_DOCUMENTS);
+    char *fallback = g_build_filename(g_get_home_dir(), "Documents", NULL);
+    if (docs && g_file_test(docs, G_FILE_TEST_IS_DIR)) gtk_file_chooser_set_current_folder(fc, docs);
+    else if (g_file_test(fallback, G_FILE_TEST_IS_DIR)) gtk_file_chooser_set_current_folder(fc, fallback);
+    else gtk_file_chooser_set_current_folder(fc, g_get_home_dir());
+    g_free(fallback);
+    if (save && *n) gtk_file_chooser_set_current_name(fc, n);
+    if (!save && *n) {
+        GtkFileFilter *f = gtk_file_filter_new();
+        gtk_file_filter_set_name(f, n);
+        gtk_file_filter_add_pattern(f, n);
+        gtk_file_chooser_add_filter(fc, f);
+    }
+    GtkWidget *bad = gtk_label_new("");
+    gtk_label_set_xalign(GTK_LABEL(bad), 0);
+    gtk_label_set_line_wrap(GTK_LABEL(bad), TRUE);
+    gtk_style_context_add_class(gtk_widget_get_style_context(bad), "nx-error");
+    gtk_widget_set_no_show_all(bad, TRUE);
+    gtk_file_chooser_set_extra_widget(fc, bad);
+    g_free(t);
+    g_free(n);
+    bool was_busy = nx_ui.busy;
+    nx_ui.busy = true;
+    while (gtk_dialog_run(GTK_DIALOG(d)) == GTK_RESPONSE_ACCEPT) {
+        char *path = gtk_file_chooser_get_filename(fc);
+        if (path && g_utf8_validate(path, -1, NULL)) {
+            r.has = true;
+            r.v = nx_ui_str(path);
+            g_free(path);
+            break;
+        }
+        g_free(path);
+        gtk_label_set_text(GTK_LABEL(bad), "That name has characters NexaOS can't read here. Pick another file or name.");
+        gtk_widget_show(bad);
+    }
+    nx_ui.busy = was_busy;
+    gtk_widget_destroy(d);
+    return r;
+}
+
+/* ---- for tests: the widgets as text (NEXALANG_UI_TREE, Ctrl+Shift+F12) ---- */
+static void nx_ui_tree_text(const char *t) {
+    putchar('"');
+    for (; *t; t++) {
+        if (*t == '"' || *t == '\\') printf("\\%c", *t);
+        else if (*t == '\n') fputs("\\n", stdout);
+        else putchar(*t);
+    }
+    putchar('"');
+}
+static void nx_ui_tree(GtkWidget *outer, int depth) {
+    int64_t id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(outer), "nx-id"));
+    nx_ui_item *it = id ? g_hash_table_lookup(nx_ui.items, &id) : NULL;
+    if (!it || !gtk_widget_get_visible(outer)) return;
+    printf("%*s", depth * 2, "");
+    static const char *const labels[] = {"text", "heading", "note", "mono", "display"};
+    static const char *const buttons[] = {"button", "primary button", "danger button"};
+    switch (it->kind) {
+    case NX_UI_COLUMN: case NX_UI_ROW: fputs(it->kind == NX_UI_ROW ? "row" : "column", stdout); break;
+    case NX_UI_LABEL: printf("%s ", labels[it->style]); nx_ui_tree_text(gtk_label_get_text(GTK_LABEL(it->w))); break;
+    case NX_UI_BUTTON: printf("%s ", buttons[it->style]); nx_ui_tree_text(gtk_button_get_label(GTK_BUTTON(it->w))); break;
+    case NX_UI_ENTRY:
+        fputs("field ", stdout);
+        nx_ui_tree_text(gtk_entry_get_placeholder_text(GTK_ENTRY(it->w)));
+        if (gtk_entry_get_text_length(GTK_ENTRY(it->w))) { fputs(" = ", stdout); nx_ui_tree_text(gtk_entry_get_text(GTK_ENTRY(it->w))); }
+        break;
+    case NX_UI_CHECK:
+        printf("check %s ", gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(it->w)) ? "on" : "off");
+        nx_ui_tree_text(gtk_button_get_label(GTK_BUTTON(it->w)));
+        break;
+    case NX_UI_LIST: {
+        GList *rows = gtk_container_get_children(GTK_CONTAINER(it->w));
+        fputs("list ", stdout);
+        nx_ui_tree_text(gtk_label_get_text(GTK_LABEL(g_object_get_data(G_OBJECT(it->w), "nx-empty"))));
+        printf(" (%u rows)", g_list_length(rows));
+        GtkListBoxRow *sel = gtk_list_box_get_selected_row(GTK_LIST_BOX(it->w));
+        for (GList *l = rows; l; l = l->next) {
+            GtkWidget *lab = gtk_bin_get_child(GTK_BIN(l->data));
+            printf("\n%*s%s ", depth * 2 + 2, "", l->data == (gpointer)sel ? "*" : "-");
+            nx_ui_tree_text(GTK_IS_LABEL(lab) ? gtk_label_get_text(GTK_LABEL(lab)) : "");
+        }
+        g_list_free(rows);
+        break;
+    }
+    default: printf("code (%d lines)", gtk_text_buffer_get_line_count(gtk_text_view_get_buffer(GTK_TEXT_VIEW(it->w)))); break;
+    }
+    if (!gtk_widget_get_sensitive(outer)) fputs(" (off)", stdout);
+    putchar('\n');
+    if (it->kind == NX_UI_COLUMN || it->kind == NX_UI_ROW) {
+        GList *kids = gtk_container_get_children(GTK_CONTAINER(it->w));
+        for (GList *l = kids; l; l = l->next) nx_ui_tree(GTK_WIDGET(l->data), depth + 1);
+        g_list_free(kids);
+    }
 }
 
 /* The status line at the bottom: plain (style 0) or an error (1). Empty

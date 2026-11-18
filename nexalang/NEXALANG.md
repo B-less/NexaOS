@@ -1,6 +1,6 @@
 # NexaLang: the programming language of NexaOS
 
-Started 2026-11-16. Current version **0.6** (compiler `nexac`, in `nexalang/`).
+Started 2026-11-16. Current version **0.7** (compiler `nexac`, in `nexalang/`).
 
 NexaLang is a small, safe, readable language for writing NexaOS programs.
 The compiler `nexac` (Rust, no dependencies) turns a `.nx` file into C11
@@ -91,6 +91,22 @@ nexac lsp                           # a language server, for editors
 Colours for NexaOS's text editor and VS Code, and how to use the language
 server in other editors: `editors/README.md`.
 
+Windows you can change, and files the person picks (0.7):
+
+```nx
+let notes = ui.column(page)
+ui.clear(notes)                                  // empty it, to fill it again
+let code = ui.code(page, "fn main() \{ \}")       // read-only code that scrolls
+match ui.save_file("Save the notes", "notes.txt") {
+    some(path) => { files.write(path, ui.get_text(code))? }
+    none => { }                                  // they cancelled
+}
+ui.to_clipboard("copied")
+```
+
+`apps/window-designer` builds a window from parts, shows it, and writes
+the NexaLang program for it (a NexaOS app written in NexaLang).
+
 ---
 
 ## 1. Design decisions (and why)
@@ -147,9 +163,21 @@ and for the compiler itself.
 | **One expected colouring for both grammars** (0.6) | The GtkSourceView file and the VS Code (TextMate) grammar are separate files, so they could drift; a test colours one sample with both (GtkSourceView itself, and VS Code's own engine `vscode-textmate`) and compares each with the same expected letters | Testing only that the files load |
 | **`nexac` has its own small JSON reader and writer** (0.6) | No crates (the compiler stays std-only and builds offline); 300 lines, strict, 64 levels deep at most, tested against Python's `json` by the fuzzer and with every prefix and flipped byte of a message | A JSON crate (the first dependency); hand-building JSON strings (escaping mistakes) |
 | **Nexa Mind isn't wired to `nexac explain` yet** (0.6) | Nexa Mind's tools (`nexa-tools`, docs/NEXA_MIND.md) read and change files; none runs programs, and adding one that runs a compiler is a new permission to design, not a side effect of a compiler release. What 0.6 gives it is `nexac explain --json`: offline, plain-language text (title, summary, explanation, examples) written for people and small models. The NexaLang code editor (0.8) shows it directly | Inventing a Nexa Mind interface it doesn't have |
+| **Widgets can be removed: `ui.remove(id)`, `ui.clear(column or row)`** (0.7) | Window Designer rebuilds its preview after every change, and any app that shows things that come and go needs the same. A removed widget's number is never used again: using it stops the program with "widget 7 was removed", instead of silently meaning some newer widget (the classic stale-handle bug). Its shortcut, its events still waiting in the queue and, for the main button, the "one primary" place go with it | Reusing numbers (a kept number would quietly point at a different widget); only hiding (every rebuild would leave hidden widgets behind until the 100,000 limit) |
+| **Widgets are kept in a table by number, and the 100,000 limit counts only widgets that exist** (0.7) | Numbers keep growing (to 2^31), so a program that rebuilds part of its window for hours never runs out; the memory is what's on screen, not everything ever made | An array indexed by number (it would grow with every widget ever made) |
+| **The file chooser runs inside the program, and starts in Documents** (`ui.save_file`, `ui.open_file`) (0.7) | WRITING_NEXA_APPS.md §3: the person's files only through a file chooser. GTK's own chooser, with Hexa's colours, sized to the screen; it asks before replacing a file. Installed apps are confined by `nexa-run`, so it can save only where the app's permissions allow (an app that exports declares `files.documents`, never `files.home`); writing elsewhere fails with the app's own message. A name that isn't UTF-8 can't be NexaLang text, so the chooser says so and stays open | A desktop portal (NexaOS has no `xdg-desktop-portal`: a new D-Bus service to secure first); `files.home` for every app that saves (far too much); `GtkFileChooserNative` (without a portal it's the same dialog, with less say over its size and look); replacing bytes that aren't UTF-8 (it would write to a different file) |
+| **Recent files are left as GTK keeps them** (0.7) | Switching GTK's recent files off makes it write an **empty** `recently-used.xbel` (tested): it would wipe the list every other app shares. Left on, GTK adds the chosen file, like every GTK app does; under `nexa-run` it can't, and GTK says so on stderr (two warnings) | Turning recent files off (data loss for other apps) |
+| **`ui.code`: read-only text in JetBrains Mono, without ligatures** (0.7) | The designer shows the program it wrote; a beginner must see `->` and `==` as they type them, not as arrows. Read-only keeps it one-way: the program sets it, the person reads and copies it | An editable text area now (0.8's code editor brings an editing widget over GtkSourceView; two editing widgets would be two sets of rules to keep right) |
+| **A list or code view makes the rows and columns around it take the free height** (0.7) | Before, a list inside a row inside a column stayed 120 px tall in a big window. Now what's meant to grow does, however deep it is; nothing else changes size | Asking programs to say what grows (more to get wrong) |
+| **`ui.focus(list)` puts the keyboard on its selected row (or the first)** (0.7) | Focusing the list itself left the keyboard nowhere useful: Up and Down did nothing until Tab | Focusing the list widget (GTK's default) |
+| **Tests can print a window's widgets: `NEXALANG_UI_TREE=1`, then Ctrl+Shift+F12** (0.7) | Window Designer must be shown to make the same window as the program it writes; printing both windows' visible widgets (kind, words, state, list rows, the status line) makes that an exact text comparison. Without the variable the key does nothing, so apps can't depend on it | Accessibility (AT-SPI: needs a session bus and much more code); screenshots alone (can't be compared exactly) |
+| **Window Designer shows the preview in its own window, made with the same `ui` calls as the program it writes** (0.7) | What the preview shows is what the program will show; a test compares the two, widget by widget. It has no main button of its own, so the design's main button can be in the preview | A second window (`ui` has one window per program: every part of it would have to become per-window); running the exported program (needs `nexac` and a C compiler on the person's computer, and starting programs, which is 0.8's work) |
+| **Designs are an outline: parts in order, each with a depth** (0.7) | NexaLang has no types that contain themselves (that's what keeps reference counting free of cycles), so a tree of parts can't be a NexaLang type. A list with depths can, it's easy to check (each part at most one level deeper than the one before, and only after a row or column), and moving a part is moving a run of the list. A file that breaks a rule is refused as a whole and left alone, never half-read | A tree in JSON (needs recursive types); a list of parts with parent numbers (numbers that can point anywhere, or in a circle) |
+| **The written program names each part after its words and its kind** (`save_button`, `your_name_field`, `row1`) (0.7) | Readable for a beginner, and the ending (`_button`, `_field`, a number) means a name can never be a NexaLang word, a name the program already uses (`page`, `id`, `text`, `on`, `index`) or another part's name. Texts are escaped (`\` `"` `{` `}`), so words like `{Save}` stay words | Numbered names (`button3`: unreadable); names from the words alone (could be `if` or `page`) |
+| **Window Designer needs only `files.documents`** (0.7) | Exporting saves where the person picks, and installed it can only be Documents; Copy (Ctrl+Shift+C) needs no permission at all. It explains this when a save elsewhere fails | No permissions (Export could only save in its own hidden folder); `files.home` |
 | **Passwords are asked for by `ui`, checked by the broker** (0.4) | `ui.broker_call` shows a password dialog when the broker asks, three tries, the way `nexa_common/broker.py` does; the password goes only into the request to the broker. Apps never check or keep it | Apps asking with their own dialogs |
 
-## 2. The language (v0.6: no changes since 0.5; 0.6 is tools)
+## 2. The language (v0.7: no changes since 0.5; `ui` grew in 0.7)
 
 **Types:** `int` (64-bit, checked), `float` (64-bit), `bool`, `str`
 (immutable UTF-8 text), `[T]` (growable list), `?T` (a `T` or `none`),
@@ -271,7 +299,10 @@ widget's number.
 | Layout | `column(parent)`, `row(parent)` (text fields and columns in a row share the free width) |
 | Text | `label`, `heading`, `note` (small, quiet), `mono` (JetBrains Mono: numbers that update), `display` (one big number: JetBrains Mono, 22 pt; 0.5) — all `(parent, text) -> int`; long text wraps |
 | Controls | `button(parent, text)`, `primary_button` (one per window, accent colour), `danger_button`, `entry(parent, hint)`, `check(parent, text, on)`, `list(parent, empty_text)` (scrolling rows of text) |
-| Changing | `set_text(id, text)`, `get_text(id)`, `set_checked`, `is_checked`, `set_items(list, [str])` (clears the selection), `selected(list) -> ?int`, `select(list, i)`, `select_none`, `set_enabled`, `set_visible`, `focus`, `tooltip(id, text)`, `shortcut(button, "Ctrl+N")` (shown in the tooltip), `status(text)`, `show_error(text)` (the line at the bottom) |
+| Code (0.7) | `code(parent, text) -> int`: read-only text in JetBrains Mono that scrolls (no ligatures: `->` shows as typed); `set_text` and `get_text` work on it |
+| Changing | `set_text(id, text)`, `get_text(id)`, `set_checked`, `is_checked`, `set_items(list, [str])` (clears the selection), `selected(list) -> ?int`, `select(list, i)`, `select_none`, `set_enabled`, `set_visible`, `focus` (a list: its selected row, or the first), `tooltip(id, text)`, `shortcut(button, "Ctrl+N")` (shown in the tooltip), `status(text)`, `show_error(text)` (the line at the bottom) |
+| Removing (0.7) | `remove(id)` (the widget and what's in it), `clear(column or row)` (what's in it). Removed numbers are never used again; using one stops the program with a message |
+| Files and clipboard (0.7) | `save_file(title, name) -> ?str` (the chooser, starting in Documents, `name` suggested; asks before replacing), `open_file(title, "*.nx") -> ?str` (`""` for every file); none when cancelled. `to_clipboard(text)` |
 | Events | `wait() -> UiEvent`, `wait_ms(ms) -> UiEvent` (`Tick` when nothing happened) |
 | Questions | `confirm(heading, message, yes, danger) -> bool`, `ask_password(what, why) -> ?str`, `broker_call(action, args) -> !Json` (the broker, asking for the password in the window when needed: three tries) |
 
@@ -291,7 +322,13 @@ pub enum UiEvent {
 Keyboard: Tab moves between widgets (and out of a list; arrow keys move
 inside it), Space and Enter press, Esc and Ctrl+Q close. `Closed` doesn't
 close the window by itself: the program decides (returning from `main`
-does). Windows are 560×640 to start and work down to 360 px wide.
+does). Windows are 560×640 to start and work down to 360 px wide. Lists
+and code views take the free height, and so do the rows and columns they
+are in (0.7).
+
+For tests (0.7): with `NEXALANG_UI_TREE=1` in the environment,
+Ctrl+Shift+F12 prints the window's visible widgets and the status line
+(`tests/ui/drive.py` sets it; without it the key does nothing).
 
 JSON numbers are `float`, as in JavaScript: whole numbers beyond 2^53
 are rounded, and numbers too big for a `float` are refused (JSON has no
@@ -360,7 +397,10 @@ borrowed: the runtime copies what GTK needs and keeps nothing. Text that
 comes back (`get_text`, event text, a password) is a new NexaLang string
 with one owner, freed like any other. GTK's own memory is GTK's;
 `--check-memory` counts every NexaLang byte exactly, with or without a
-window.
+window. A chosen file's path (0.7) is new text with one owner, like
+`get_text`. Removing a widget (0.7) frees the runtime's record of it
+(its tooltip, its shortcut, the text of its events still waiting) at
+once; GTK frees the widget.
 
 Text pieces from `slice`, `split` and `trim` share the original bytes
 instead of copying them. Literal text is never counted or freed.
@@ -388,7 +428,7 @@ nexalang/
   src/lsp.rs       `nexac lsp` (0.6): the language server
   src/std/*.nx     the standard modules, built into nexac
   examples/*.nx    + .out expected output (+ .in input, .args arguments)
-  tests/fail/*.nx  programs that must be rejected (53)
+  tests/fail/*.nx  programs that must be rejected (64)
   tests/trap/*.nx  programs that must stop with a runtime error (11)
   tests/modules/   a three-file program, and 11 module mistakes
   tests/broker/    a stand-in broker (Python) and a client
@@ -396,14 +436,16 @@ nexalang/
   tests/stress/    2-million-round memory churn
   tests/ui/        window programs driven by real key presses on a
                    headless X server (drive.py: Xvfb + xdotool), *.steps
-                   with exact *.out; tests/ui/trap: misuse (14)
+                   with exact *.out; tests/ui/trap: misuse (20)
   tests/fuzz/      the compiler fuzzer (fuzz.py)
   examples/ui/     window examples
   tests/tooling.rs fmt / check --json / explain / lsp tests (0.6)
   tests/highlight/ both colour grammars against one expected colouring
   editors/         gtksourceview/nexalang.lang, vscode/ (grammar), README
-../apps/*/src/main.nx   NexaOS apps written in NexaLang (0.5); their
-                 tests/*.steps run with the window tests, three ways
+../apps/*/src/main.nx   NexaOS apps written in NexaLang (0.5): Focus Timer,
+                 Window Designer (0.7); their tests/*.steps run with the
+                 window tests, three ways; the programs Window Designer
+                 exports in them are built and run too
 ../tools/nexa-pack      `nexa-pack new --lang nexa` (src/templates.rs)
 ```
 
@@ -417,6 +459,64 @@ only. A runtime error knows its file: the location passed to the runtime
 is file number × 1,000,000 + line.
 
 ## 5. Testing done
+
+**0.7 (2026-11-18)** — Ubuntu 24.04 here: gcc 13.3, clang, GTK 3.24.41,
+Xvfb, xdotool, Inter, JetBrains Mono, Valgrind, Sway 1.9 + grim.
+`cd nexalang && cargo test`: **62 tests, all pass** (27 unit, 23 end to
+end: one new, 12 in `tests/tooling.rs`). No earlier test was removed or
+weakened; the window tests now also run `tests/ui/remove.steps` and
+Window Designer's 11 scenarios, three ways each.
+
+| Check | Result |
+|---|---|
+| Every earlier check (examples with gcc and clang, ASan + UBSan, Valgrind, window scenarios, theme, misuse, broker, modules, rejected programs, runtime errors, Focus Timer's 8 scenarios, the 0.6 tools, reproducible builds) | all still pass |
+| **`tests/ui/remove.steps`** (`remove`, `clear`, 500 rebuilds of a row, a removed widget's shortcut gone and the main button made again, `code` with braces and a zero byte, `to_clipboard` then Ctrl+V into a text field, `save_file` (starts in Documents, saves, asks before replacing: cancelled), `open_file` with `*.txt`, the window's widgets printed before and after) | exact output, 3 ways (leak counter; ASan + UBSan; Valgrind): 0 memory errors, 0 leaks from the program's own code |
+| Misuse (6 new, 20 in all): a removed widget used (after `remove` and after `clear`), removing the main column, clearing a text, checking a code view, a second main button after clearing another row | each stops with its message in the program's own file and line |
+| Rejected programs (3 new, 64 in all): `save_file`'s `?str` used as `str`, `code` given a number, `clear` used as a value | refused with the expected message |
+| **Window Designer, 11 scenarios driven by real key presses** (`apps/window-designer/tests`): normal use (title, app id, a heading, a text field, a row with two buttons, the main button moved first, a list moved out of the row, a check box turned on, a second main button refused, the preview, the code, Export through the file chooser, Copy); editing at the edges (moving past the ends, Into and Out where they can't, removing a row with a part in it: asked, cancelled, then accepted; no title; an app id that can't be used; a name without `.nx`; a cancelled export; 360 px wide); a saved design with every kind of part, three levels of rows and columns and words to escape (`"`, `{}`, `\`, an emoji, a tab, 260 bytes); an empty file; a file cut off; not UTF-8; 3 MB; a part inside a button; two main buttons; an unknown kind; 201 parts | 11 × 3 ways = **33/33**, exact output (every window's widgets and status line, and the files it saved); 0 memory errors, 0 leaks from the program's own code; files it couldn't read are left byte for byte as they were |
+| **Every program Window Designer exported in those tests** (3 designs: the notes window, the every-part window, the empty window) | accepted by `nexac check` and `nexac fmt --check`, built with the hardened flags, and when run show **exactly** the widgets the designer's preview showed (compared as text) |
+| **Its package**: `nexa-pack build` twice in different folders | byte-identical (sha256 `f9983fd7…`), `nexa-pack verify`: `"ok":true`, `"permissions":["files.documents"]`, unsigned; PIE, `BIND_NOW`, fortify |
+| **Installed, confined by the real `nexa-run`** (Landlock; the extracted program; only `files.documents`; home folder outside `/tmp`) | `nexa-run --explain` lists its own folders, `files.documents`, no internet. The normal scenario gives exactly the same output, and the exported program is byte for byte the expected one, in `~/Documents`. Exporting to the home folder itself is refused by Landlock, and the window says where it can save. GTK can't write `recently-used.xbel` there and prints two warnings (see the known limits) |
+| **Wayland**: the extracted app in a headless Sway (pixman), screenshot with grim | draws correctly; looked at |
+| **Fuzzing the compiler** (`tests/fuzz/fuzz.py`, seeded with the new window programs and Window Designer, with `ui.clear`, `ui.remove`, `ui.code`, `ui.to_clipboard`, the file choosers among the inserted pieces): every accepted mutant built with the **exact hardened `-O2 -Werror` flags** and run under ASan + UBSan + the leak counter, and through every 0.6 tool check | **9,000 mutants** (seeds 2036-2038), **1,942 accepted** and run (286 of them window programs): **0 compiler crashes, 0 C build failures, 0 memory errors, 0 leaks**, 0 tool findings |
+| **Fuzzing the tools** (`--tools-only`: `check --json`, `fmt` twice and the C of the formatted program, `explain`, a language server session) | **30,000 mutants** (seeds 107-116): 6,418 accepted, 8,636 formattable (5,930 re-laid out), 25,795 mistakes explained: **0 crashes, 0 non-idempotent formats, 0 changes of meaning, 0 disagreements** |
+
+**Screenshots** (`shots/0.7/`, all looked at): Window Designer empty,
+editing, after exporting, the preview, the code, the export chooser, the
+question before removing a row, a damaged file and the question before
+replacing it, an unreadable file, a file that isn't a window, the
+every-part design (editing, preview, code), the empty preview, 360 px wide
+(editing and preview), installed and saving outside Documents, on Wayland;
+and `ui`'s save and open choosers and GTK's "replace it?" question. No
+clipped text, no default grey GTK, no dark-on-dark.
+
+Found and fixed while building 0.7:
+- GTK's "replace it?" question (asked by the save chooser) was light grey
+  with light text: unreadable. `ui` now gives GTK's own dialogs Hexa's
+  colours;
+- the file chooser came out bigger than the screen with its title bar
+  off the top (GTK sizes it from settings that may be missing), and its
+  own title bar never showed: it's now sized to the screen and placed
+  over its window;
+- JetBrains Mono showed `->` and `==` as joined symbols in the code view;
+  a beginner would copy the wrong thing. Ligatures are off there;
+- a list inside a row inside a column stayed 120 px tall in any window;
+- `ui.focus(list)` left the keyboard on the list itself, where arrow keys
+  did nothing;
+- switching GTK's recent files off (tried first, to keep the chooser out
+  of `~/.local/share`) made GTK write an **empty** `recently-used.xbel`,
+  wiping every app's recent files; that was reverted (see the decisions);
+- Valgrind reported glibc's AVX2 `wcpncpy` reading past a file name when
+  the chooser sorts names: a known false alarm of that optimised copy;
+  suppressed for exactly that path (`tests/ui/valgrind.supp`);
+- the test driver: under Valgrind, a key could reach the window while a
+  file chooser was still closing; `gone TITLE` now waits for a dialog to
+  close;
+- Window Designer itself, from its tests and screenshots: the preview of
+  an empty design showed the designer's own note as if it were part of
+  the window; "The 1 parts inside it go too"; old messages stayed in the
+  status line after the next change worked; the buttons at the bottom
+  stopped half-way down in a short preview (they're at the top now).
 
 **0.6 (2026-11-18)** — Ubuntu 24.04 here: gcc 13.3, GTK 3.24.41,
 GtkSourceView 4.8.4, Xvfb, Node 22 with `vscode-textmate` 9.2.0 (VS Code's
@@ -599,7 +699,31 @@ Found and fixed while building 0.2: strings inside `{...}` were refused,
 which made the new text functions awkward (now allowed, 8 levels max);
 floats printed as `1e+03` (now `1000.0`).
 
-## 6. Known limits of 0.6
+## 6. Known limits of 0.7
+
+Window Designer and `ui` (0.7):
+- **Window Designer makes the window, not what it does**: the program it
+  writes has a place for each button, text field, check box and list, and
+  a status line saying what was used. It can't set tooltips, shortcuts,
+  `mono`, `display` or danger buttons, has no undo, and can't read a
+  `.nx` file back in (the design file is what it keeps). Parts are moved
+  with keys and buttons, not dragged.
+- The preview fills the designer's window, so it's as wide as that window,
+  not the 560 px a new program starts with.
+- **The file chooser can only save where the app may**: installed, an app
+  without `files.documents` (or another `files.*` folder) can only save in
+  its own folders. While it's confined, GTK can't note the chosen file in
+  `recently-used.xbel` and prints two warnings on stderr (see the
+  decisions). The chooser keeps its own settings (size, sort order) with
+  GTK's settings system (dconf on NexaOS); that's GTK's behaviour, not the
+  app's.
+- `ui.code` is read-only; an editable code widget is 0.8.
+- Not tested here: picking a file whose name isn't UTF-8 (the chooser
+  refuses it with a message and stays open; such a name can't be typed by
+  the test driver), and the clipboard after the program has ended (GTK
+  hands it to a clipboard manager if the desktop has one).
+- `NEXALANG_UI_TREE` prints what a test needs (kinds, words, states, list
+  rows), not sizes or colours; those are checked by looking at screenshots.
 
 Tools (0.6):
 - **`nexac fmt` doesn't wrap long lines** (moving a line break could
@@ -626,16 +750,12 @@ Tools (0.6):
 - The VS Code grammar is tested with VS Code's own engine, not inside VS
   Code; the extension around it is 0.9.
 
-The language and `ui` (unchanged since 0.5):
+The language and `ui` (the language unchanged since 0.5):
 
-- **One window per program**, and widgets can't be removed (hide them
-  with `set_visible`, or use a list for things that come and go).
-- **List rows are text only**; no images, menus, tabs, sliders, file
-  chooser or drag and drop yet. **No file chooser yet**, so a NexaLang app
-  can't open the person's files the way WRITING_NEXA_APPS.md §3 asks
-  (0.4 planned it for 0.5; it was moved to later, because 0.5's sample app
-  doesn't open files and an untested file chooser is worse than none).
-  Until then, write apps that keep their own data, like Focus Timer.
+- **One window per program** (dialogs aside). Widgets can be removed
+  since 0.7 (`ui.remove`, `ui.clear`).
+- **List rows are text only**; no images, menus, tabs, sliders or drag and
+  drop yet. The file chooser (0.7) picks one file at a time; no folders.
 - **No hexagon shape** inside windows yet (the NexaOS mark for one or two
   things per screen); apps carry it in their icon (`nexa-pack new` makes one).
 - Widgets are `int`s: passing a count where a widget is meant is caught
@@ -682,7 +802,7 @@ The language and `ui` (unchanged since 0.5):
 | **0.4** ✅ | **`ui`: GTK 3 windows with Hexa built in** (theme colours with the fallback block, live theme following, Inter / JetBrains Mono, one primary action, empty states, keyboard use); the program-driven event loop; password prompts and the broker's real protocol (`BrokerReply`); functions that always call themselves refused; running out of stack reported | §5. (WRITING_NEXA_APPS.md §6 for a packaged app is 0.5's sample app) |
 | **0.5** ✅ | `nexa-pack new my-app --lang nexa`; `.nexa` packages built from `.nx`, reproducibly; `apps/focus-timer`, a NexaOS app in NexaLang; `files.size`, `ui.display` | §5. In the Store once `make nexa-apps` builds and signs it on the release machine |
 | **0.6** ✅ | `nexac fmt` (meaning-preserving, idempotent, keeps comments); `nexac check --json`; `nexac explain` (20 topics; 19 with a refused and a fixed program, both tested); `nexac lsp` (diagnostics, formatting, hover); colours for GtkSourceView 4 (NexaOS's text editor) and VS Code | §5. Nexa Mind integration waits for a tool that may run programs |
-| **0.7** | **Window Designer**, a NexaOS app written in NexaLang: build a window from headings, labels, buttons, fields, lists, rows and columns; see it; get the `ui` code. Whatever `ui` lacks for it first (a file chooser for exporting, removing widgets, ...) | the generated code is accepted by `nexac check`, builds with the hardened flags and shows the same widgets |
+| **0.7** ✅ | **Window Designer** (`apps/window-designer`), a NexaOS app written in NexaLang: build a window from headings, text, notes, buttons, a main button, text fields, check boxes, lists, rows and columns; move them; see the preview; get the `ui` program (export or copy). First, in `ui`: `remove`, `clear`, `code`, `save_file`, `open_file`, `to_clipboard`; lists grow with their rows and columns; tests can print a window's widgets | §5: every exported program is accepted by `nexac check` and `fmt --check`, builds with the hardened flags and shows exactly the preview's widgets |
 | **0.8** | **A NexaLang code editor** (NexaOS app, written in NexaLang): GtkSourceView with 0.6's colours, mistakes as you type, `fmt`, `explain`, Run (with Stop) | driven by key presses, packaged, run confined |
 | **0.9** | **Editing NexaLang on Windows**: a VS Code extension (0.6's grammar and language server, format on save, explanations); `nexac` for Windows | tested as far as possible without a Windows PC (Wine) |
 | later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (images, menus); a hexagon widget; in-place string append; completion in the language server; self-hosting | |

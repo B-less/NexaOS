@@ -60,7 +60,10 @@ TOKENS = ["0", "1", "-1", "9223372036854775807", "-9223372036854775808", "0.5", 
           "break", "continue", "=>", "_", "struct", "enum", "pub", "use", "\n", "ui.wait()", "ui.label(1, \"t\")",
           "ui.set_items(2, [\"a\"])", "ui.select(2, 0)", "ui.status(\"s\")", "ui.focus(1)", "ui.get_text(1)",
           "ui.button(1, \"b\")", "ui.list(1, \"e\")", "ui.wait_ms(1)", "broker.no_args()", "json.parse(\"[1]\")",
-          "files.size(\"x\")", "files.size(\"\")", "ui.display(1, \"9:00\")"]
+          "files.size(\"x\")", "files.size(\"\")", "ui.display(1, \"9:00\")",
+          # 0.7: removing widgets, code, the clipboard (file choosers wait for a person: stopped like a window)
+          "ui.clear(1)", "ui.remove(2)", "ui.remove(1)", "ui.code(1, \"x\\n\")", "ui.to_clipboard(\"c\")",
+          "ui.focus(2)", "ui.save_file(\"t\", \"a.nx\")", "ui.open_file(\"t\", \"*.nx\")"]
 
 def mutate(rng, src):
     lines = src.split("\n")

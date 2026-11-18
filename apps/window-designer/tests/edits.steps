@@ -1,0 +1,73 @@
+# program: ../apps/window-designer/src/main.nx
+# Editing at the edges: moving the last part down, Into with nothing to go
+# into, Out of nothing, Out and Into a row; removing a row with a part in
+# it (asked first: cancel, then accept); a title and an app id that can't
+# be used (export and copy refuse and say why); a file name without .nx;
+# the export cancelled; the window at 360 px wide.
+file Documents/.keep 
+window Window Designer
+# a row, a button "Inside" in it, a heading "After" after the button
+key Down Down Down Down Down Down Down Down Return
+key Up Up Up Up Up Return
+type Inside
+key Return Up Up Up Return
+type After
+key Return
+key alt+Down
+key ctrl+shift+F12
+key alt+Up alt+Right
+key ctrl+shift+F12
+key alt+Left alt+Right
+key ctrl+shift+F12
+key alt+Left alt+Left
+key ctrl+shift+F12
+# remove the row: it has a part inside, so it asks
+key Tab Up Up
+key alt+Delete
+window Remove this row\?
+shot edits-confirm
+key Escape
+gone Remove this row\?
+window Window Designer
+key alt+Delete
+window Remove this row\?
+key Return
+gone Remove this row\?
+window Window Designer
+key ctrl+shift+F12
+# no title: export refuses
+key shift+Tab shift+Tab shift+Tab ctrl+a BackSpace
+key ctrl+e
+key ctrl+shift+F12
+# an app id that can't be used: copy refuses
+type Tiny
+key Tab ctrl+a
+type Nexa-App
+key ctrl+shift+c
+key ctrl+shift+F12
+key ctrl+a
+type tiny-app
+# a name without .nx, then a cancelled export
+key ctrl+e
+window Export the program
+key ctrl+a
+type tiny.txt
+key Return
+gone Export the program
+window Window Designer
+key ctrl+shift+F12
+key ctrl+e
+window Export the program
+key Escape
+gone Export the program
+window Window Designer
+size 360 640
+wait 0.5
+shot narrow
+key F5
+wait 0.3
+shot narrow-preview
+key F5
+key Escape
+show Documents/tiny.txt
+show .local/share/window-designer/design.json

@@ -1,0 +1,10 @@
+# program: ../apps/window-designer/src/main.nx
+# Valid JSON that isn't a window: a part inside a button (depth jumps
+# under something that isn't a row or column). Refused as a whole; nothing
+# is guessed, and the file stays as it was.
+file .local/share/window-designer/design.json {"version": 1, "title": "T", "app_id": "t", "parts": [{"kind": "button", "text": "a", "depth": 0}, {"kind": "text", "text": "b", "depth": 1}]}
+window Window Designer
+key ctrl+shift+F12
+shot hostile
+key Escape
+show .local/share/window-designer/design.json

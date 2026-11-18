@@ -1,0 +1,82 @@
+column
+  row
+    button "Edit"
+    button "Code"
+    button "Export…"
+    button "Copy"
+  note "Preview: this is how “Every \"part\" {here}” will look. Try it: the parts work, but do nothing yet."
+  column
+    column
+      heading "Settings ✓"
+      note "Back\\slash and tab"
+      row
+        column
+          text "Name"
+          field "Your name"
+          row
+            check on "Remember me"
+            check off "Remember me"
+        column
+          button "Cancel"
+          primary button "{Save}"
+      list "Nothing yet. This text is long on purpose so that it has to be cut short somewhere, because a part's words can't be longer than two hundred bytes; the rest is dropped when the design is read back in a" (0 rows)
+      column
+--- Documents/every part.nx
+// Every "part" {here}: made with Window Designer.
+// Fill in what each part does where it says "your code here".
+use ui
+
+fn main() -> !void {
+    let page = ui.start("every-part", "Every \"part\" \{here\}")?
+    ui.heading(page, "Settings ✓")
+    ui.note(page, "Back\\slash and tab")
+    let row1 = ui.row(page)
+    let column1 = ui.column(row1)
+    ui.label(column1, "Name")
+    let your_name_field = ui.entry(column1, "Your name")
+    let row2 = ui.row(column1)
+    let remember_me_check = ui.check(row2, "Remember me", true)
+    let remember_me_check2 = ui.check(row2, "Remember me", false)
+    let column2 = ui.column(row1)
+    let cancel_button = ui.button(column2, "Cancel")
+    let save_button = ui.primary_button(column2, "\{Save\}")
+    let nothing_yet_this_list = ui.list(page, "Nothing yet. This text is long on purpose so that it has to be cut short somewhere, because a part's words can't be longer than two hundred bytes; the rest is dropped when the design is read back in a")
+    ui.column(page)
+    while true {
+        match ui.wait() {
+            Clicked(id) => {
+                if id == cancel_button {
+                    // your code here
+                    ui.status("You pressed “Cancel”.")
+                } else if id == save_button {
+                    // your code here
+                    ui.status("You pressed “\{Save\}”.")
+                }
+            }
+            Submitted(id, text) => {
+                if id == your_name_field {
+                    // your code here: Enter was pressed in the text field
+                    ui.status("You wrote: {text}")
+                }
+            }
+            Toggled(id, on) => {
+                if id == remember_me_check {
+                    // your code here
+                    ui.status("“Remember me” is now {on}.")
+                } else if id == remember_me_check2 {
+                    // your code here
+                    ui.status("“Remember me” is now {on}.")
+                }
+            }
+            Selected(id, index) => {
+                if id == nothing_yet_this_list {
+                    // your code here: fill the list with ui.set_items
+                    ui.status("Row {index} was picked.")
+                }
+            }
+            Closed => { return ok() }
+            _ => { }
+        }
+    }
+    return ok()
+}

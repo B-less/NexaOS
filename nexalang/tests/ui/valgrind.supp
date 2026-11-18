@@ -11,3 +11,14 @@
    Memcheck:Value8
    obj:*/librsvg-2.so*
 }
+# glibc's AVX2 wcpncpy reads whole 32-byte blocks past the end of a string
+# (allowed, since it never crosses a page); Valgrind doesn't know that and
+# reports it. GTK's file chooser (0.7) reaches it when it sorts file names
+# (g_utf8_collate_key_for_filename -> wcsxfrm_l). Only that path matches.
+{
+   glibc-avx2-wcpncpy-overread
+   Memcheck:Addr32
+   fun:__wcpncpy_avx2
+   fun:wcsxfrm_l
+   fun:g_utf8_collate_key
+}

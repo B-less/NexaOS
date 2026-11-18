@@ -1,0 +1,10 @@
+# program: ../apps/window-designer/src/main.nx
+# A design file that isn't text: an error, and the file is left as it is
+# even when a part is added.
+file .local/share/window-designer/design.json {"version": 1, "title": "\xff\xfe"}
+window Window Designer
+key ctrl+shift+F12
+shot unreadable
+key Return
+key Escape
+show .local/share/window-designer/design.json

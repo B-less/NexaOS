@@ -79,6 +79,10 @@ fn std_primitive(name: &str) -> Option<(Vec<Type>, Type)> {
         "__ui_event_text" => (vec![], s()),
         "__ui_ask_password" => (vec![s(), s()], Maybe(Box::new(s()))),
         "__ui_confirm" => (vec![s(), s(), s(), Bool], Bool),
+        "__ui_code" => (vec![Int, s()], Int),
+        "__ui_remove" => (vec![Int, Bool], Void),
+        "__ui_to_clipboard" => (vec![s()], Void),
+        "__ui_choose" => (vec![s(), s(), Bool], Maybe(Box::new(s()))),
         _ => return None,
     })
 }

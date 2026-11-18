@@ -1,0 +1,6 @@
+# program: ../apps/window-designer/src/main.nx
+# A 3 MB "design": refused without reading it all; left alone.
+fill .local/share/window-designer/design.json 3000000 {"parts": [
+window Window Designer
+key ctrl+shift+F12
+key Escape

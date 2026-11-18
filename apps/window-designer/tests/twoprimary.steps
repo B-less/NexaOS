@@ -1,0 +1,7 @@
+# program: ../apps/window-designer/src/main.nx
+# Two main buttons (a window has one), an unknown kind, too many parts:
+# (unknownkind.steps and toomany.steps are the others.)
+file .local/share/window-designer/design.json {"version": 1, "title": "T", "app_id": "t", "parts": [{"kind": "primary", "text": "a", "depth": 0}, {"kind": "primary", "text": "b", "depth": 0}]}
+window Window Designer
+key ctrl+shift+F12
+key Escape

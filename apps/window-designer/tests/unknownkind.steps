@@ -1,0 +1,6 @@
+# program: ../apps/window-designer/src/main.nx
+# A part of a kind this version doesn't know: the file is refused.
+file .local/share/window-designer/design.json {"version": 1, "title": "T", "app_id": "t", "parts": [{"kind": "slider", "text": "a", "depth": 0}]}
+window Window Designer
+key ctrl+shift+F12
+key Escape

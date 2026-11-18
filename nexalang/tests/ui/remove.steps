@@ -1,0 +1,42 @@
+# program: tests/ui/remove.nx
+file Documents/old.txt old notes
+window Remove
+shot remove-start
+key ctrl+shift+F12
+# copy, then paste into the text field
+key ctrl+k
+key ctrl+v
+# save: the chooser starts in Documents with the name filled in
+key ctrl+s
+window Save the notes
+shot remove-save
+key Return
+gone Save the notes
+window Remove
+# again: the same name asks before replacing; cancel that, then the chooser
+key ctrl+s
+window Save the notes
+key Return
+wait 1.5
+shot remove-replace
+key Escape
+wait 1
+key Escape
+gone Save the notes
+window Remove
+# open a file by typing its name
+key ctrl+o
+window Open notes
+shot remove-open
+key ctrl+l
+wait 0.5
+type old.txt
+wait 1
+key Return
+gone Open notes
+window Remove
+# the primary button's shortcut rebuilds the row with one button
+key ctrl+m
+key ctrl+shift+F12
+key Escape
+show Documents/notes.txt

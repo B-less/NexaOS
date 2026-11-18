@@ -729,3 +729,103 @@ fn windows_follow_the_theme_live() {
     assert!(accent("theme-start") && accent("theme-changed"), "the accent colour didn't follow the theme");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// Window Designer (apps/window-designer, 0.7): every program it exported in
+// its tests (`--- Documents/NAME.nx` in a tests/*.out, which the window
+// tests above check byte for byte) must be accepted by `nexac check`, be
+// laid out the way `nexac fmt` would, build with the hardened flags, and
+// run showing exactly the widgets the designer's preview showed (both
+// printed by Ctrl+Shift+F12 with NEXALANG_UI_TREE set).
+
+/// The parts of the designer's preview in a tree print: what's inside its
+/// frame (`  note "Preview: ..."`, `  column`, `    column`, then the parts),
+/// moved left to where they'd be in a window of their own.
+fn preview_parts(out: &str) -> Option<String> {
+    let lines: Vec<&str> = out.lines().collect();
+    let at = lines.iter().position(|l| l.starts_with("  note \"Preview:"))?;
+    assert_eq!(lines[at + 1], "  column", "the preview's column");
+    assert_eq!(lines[at + 2], "    column", "the preview's frame");
+    let mut tree = String::from("column\n");
+    for l in &lines[at + 3..] {
+        if !l.starts_with("      ") {
+            break;
+        }
+        tree.push_str(&l[4..]);
+        tree.push('\n');
+    }
+    Some(tree)
+}
+
+fn exported_programs(out: &str) -> Vec<(String, String)> {
+    let mut v = Vec::new();
+    let mut cur: Option<(String, String)> = None;
+    for l in out.split_inclusive('\n') {
+        if let Some(h) = l.strip_prefix("--- ") {
+            v.extend(cur.take());
+            let name = h.trim_end();
+            if name.starts_with("Documents/") && name.ends_with(".nx") {
+                cur = Some((name["Documents/".len()..].to_string(), String::new()));
+            }
+        } else if let Some((_, text)) = cur.as_mut() {
+            text.push_str(l);
+        }
+    }
+    v.extend(cur);
+    v
+}
+
+/// The window title in `ui.start("id", "TITLE")`, as a regular expression
+/// for drive.py's `window` step.
+fn title_pattern(program: &str) -> String {
+    let line = program.lines().find(|l| l.contains("ui.start(")).unwrap();
+    let start = line.find(", \"").unwrap() + 3;
+    let end = line.rfind("\")?").unwrap();
+    let mut title = String::new();
+    let mut chars = line[start..end].chars();
+    while let Some(c) = chars.next() {
+        let c = if c == '\\' { chars.next().unwrap() } else { c };
+        if "\\^$.|?*+()[]{}".contains(c) {
+            title.push('\\');
+        }
+        title.push(c);
+    }
+    title
+}
+
+#[test]
+fn window_designer_programs_build_and_show_what_the_preview_showed() {
+    if !have_gtk() || !have_display_tools() || !have("python3") {
+        eprintln!("GTK 3, Xvfb, xdotool or python3 missing; skipped");
+        return;
+    }
+    let dir = tmpdir("designer-programs");
+    let tests = root().join("../apps/window-designer/tests");
+    let mut outs: Vec<PathBuf> = std::fs::read_dir(&tests).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "out")).collect();
+    outs.sort();
+    let mut checked = 0;
+    for out_file in outs {
+        let out = std::fs::read_to_string(&out_file).unwrap();
+        for (name, program) in exported_programs(&out) {
+            let want = preview_parts(&out).unwrap_or_else(|| panic!("{}: exports {} but never shows the preview", out_file.display(), name));
+            let prog = dir.join(name.replace(' ', "_"));
+            std::fs::write(&prog, &program).unwrap();
+            let c = nexac().arg("check").arg(&prog).output().unwrap();
+            assert!(c.status.success(), "{} ({}): nexac check refused it:\n{}", name, out_file.display(), String::from_utf8_lossy(&c.stderr));
+            let f = nexac().arg("fmt").arg("--check").arg(&prog).output().unwrap();
+            assert!(f.status.success(), "{}: not laid out as nexac fmt would", name);
+            let exe = dir.join("designed");
+            let b = nexac().arg("build").arg(&prog).arg("-o").arg(&exe).output().unwrap();
+            assert!(b.status.success(), "{}: didn't build:\n{}", name, String::from_utf8_lossy(&b.stderr));
+            let steps = dir.join("designed.steps");
+            std::fs::write(&steps, format!("# program: none\nwindow {}\nkey ctrl+shift+F12\nkey Escape\n", title_pattern(&program))).unwrap();
+            let s = Steps { file: steps, program: prog.clone(), broker: false };
+            let cmd: Vec<&std::ffi::OsStr> = vec![env!("CARGO_BIN_EXE_nexac").as_ref(), "run".as_ref(), "--check-memory".as_ref(), prog.as_os_str()];
+            let run = drive(&s, &dir, &cmd, 30, None);
+            assert!(run.status.success(), "{}: failed ({:?}):\n{}", name, run.status.code(), String::from_utf8_lossy(&run.stderr));
+            assert_eq!(String::from_utf8_lossy(&run.stdout), want, "{}: the program's window isn't what the preview showed", name);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 3, "only {} exported programs in the designer's tests", checked);
+    let _ = std::fs::remove_dir_all(&dir);
+}

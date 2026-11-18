@@ -9,6 +9,7 @@ STEPS is a file with one step per line:
                       (TEXT may use \\xNN escapes for bytes)
     write PATH TEXT   while it runs: write a file in $HOME (same escapes)
     window TITLE      wait until a window with this title is shown, focus it
+    gone TITLE        wait until no window has this title (a dialog closed)
     size W H          resize the last window found (W and H in pixels)
     type TEXT         type the text
     key K [K...]      press keys (xdotool names: Return, Tab, ctrl+n, Escape)
@@ -25,7 +26,11 @@ STEPS is a file with one step per line:
 The program's output is passed through (with the new $HOME shown as
 /HOME); the exit code is the program's (124 if it hasn't finished
 $NX_WINDOW_WAIT seconds, default 15, after the last step). $HOME is a new
-empty folder unless NX_KEEP_HOME is set.
+empty folder unless NX_KEEP_HOME is set. NEXALANG_UI_TREE is set, so
+`key ctrl+shift+F12` prints the window's visible widgets (0.7).
+NX_SCREEN sets the screen's size (default 1024x768; a bigger one keeps the
+pointer, which starts in the middle, off the window: no tooltips in
+screenshots).
 """
 import os, shutil, subprocess, sys, tempfile, time
 
@@ -64,7 +69,7 @@ def main():
         lock = f"/tmp/.X{n}-lock"
         if os.path.exists(lock) or os.path.exists(f"/tmp/.X11-unix/X{n}"):
             continue
-        xvfb = subprocess.Popen(["Xvfb", f":{n}", "-screen", "0", "1024x768x24", "-nolisten", "tcp"],
+        xvfb = subprocess.Popen(["Xvfb", f":{n}", "-screen", "0", os.environ.get("NX_SCREEN", "1024x768") + "x24", "-nolisten", "tcp"],
                                 stderr=subprocess.DEVNULL)
         ok = False
         for _ in range(100):
@@ -93,6 +98,10 @@ def main():
             env.pop(k, None)
     env["GDK_BACKEND"] = "x11"
     env["NO_AT_BRIDGE"] = "1"  # no accessibility bus in a headless test
+    # no session bus here: GTK's file chooser keeps its settings in memory
+    env["GSETTINGS_BACKEND"] = "memory"
+    # Ctrl+Shift+F12 prints the window's widgets (0.7): steps compare them
+    env["NEXALANG_UI_TREE"] = "1"
     shows = []
     for raw in open(steps_file, encoding="utf-8"):
         if raw.startswith("file ") and home:
@@ -145,6 +154,20 @@ def main():
                 last_window = wid
                 x("windowfocus", "--sync", wid)
                 time.sleep(0.3)
+            elif word == "gone":
+                # wait until no window has this title any more (a dialog closed)
+                deadline = time.time() + window_wait
+                while prog.poll() is None and time.time() < deadline:
+                    r = x("search", "--onlyvisible", "--name", "^" + rest + "$")
+                    if r.returncode != 0 or not r.stdout.split():
+                        break
+                    time.sleep(0.2)
+                else:
+                    if prog.poll() is None:
+                        print(f"drive: the window {rest!r} is still there", file=sys.stderr)
+                        break
+                time.sleep(0.3)
+                continue
             elif word == "size":
                 w, h = rest.split()
                 x("windowsize", "--sync", last_window, w, h)

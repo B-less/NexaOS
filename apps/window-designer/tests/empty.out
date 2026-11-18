@@ -1,0 +1,35 @@
+column
+  row
+    button "Edit"
+    button "Code"
+    button "Export…"
+    button "Copy"
+  note "Preview: “My window” is empty so far. Go back (F5) and add some parts."
+  column
+    column
+column
+  row
+    button "Preview"
+    button "Edit"
+    button "Export…"
+    button "Copy"
+  note "The program for this window. Export it (Ctrl+E) or copy it (Ctrl+Shift+C), then build it with nexac."
+  column
+    code (15 lines)
+status "Saved my-app.nx. Build it with: nexac run my-app.nx"
+--- Documents/my-app.nx
+// My window: made with Window Designer.
+// Fill in what each part does where it says "your code here".
+use ui
+
+fn main() -> !void {
+    let page = ui.start("my-app", "My window")?
+    while true {
+        match ui.wait() {
+            Closed => { return ok() }
+            _ => { }
+        }
+    }
+    return ok()
+}
+--- .local/share/window-designer/design.json

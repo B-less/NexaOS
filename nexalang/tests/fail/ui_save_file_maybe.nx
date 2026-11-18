@@ -1,0 +1,9 @@
+// error: expected `str`, but this is `?str`
+use ui
+use files
+fn main() -> !void {
+    let page = ui.start("app", "App")?
+    let path = ui.save_file("Save", "notes.txt")
+    files.write(path, "x")?
+    return ok()
+}

@@ -1,0 +1,94 @@
+// ui.remove, ui.clear, ui.code, ui.to_clipboard and the file chooser
+// (0.7), driven by the keyboard (tests/ui/remove.steps).
+use ui
+use files
+
+fn show(e: UiEvent) {
+    match e {
+        Clicked(id) => { print("clicked {id}") }
+        Changed(id, text) => { print("changed {id}: {text}") }
+        Submitted(id, text) => { print("submitted {id}: {text}") }
+        Toggled(id, on) => { print("toggled {id}: {on}") }
+        Selected(id, row) => { print("selected {id}: row {row}") }
+        Activated(id, row) => { print("activated {id}: row {row}") }
+        Closed => { print("closed") }
+        Tick => { print("tick") }
+    }
+}
+
+// `n` buttons in `box`; the first is the window's primary action
+fn build(box: int, n: int) -> [int] {
+    var ids: [int] = []
+    for i in 0..n {
+        if i == 0 {
+            push(ids, ui.primary_button(box, "Main of {n}"))
+        } else {
+            push(ids, ui.button(box, "Other {i}"))
+        }
+    }
+    return ids
+}
+
+fn main() -> !void {
+    let page = ui.start("remove-test", "Remove")?
+    let area = ui.row(page)
+    var ids = build(area, 2)
+    ui.shortcut(ids[0], "Ctrl+M")
+    let field = ui.entry(page, "Type here")
+    let gone = ui.label(page, "goes away")
+    let inner = ui.column(page)
+    ui.check(inner, "inside", true)
+    ui.remove(gone)
+    ui.remove(inner)
+    let code = ui.code(page, "line 1\nline 2")
+    print("code: {ui.get_text(code)}")
+    ui.set_text(code, "first\nsecond \{in braces\}\n\0third")
+    print("code now: {ui.get_text(code)}")
+    let actions = ui.row(page)
+    let save = ui.button(actions, "Save as")
+    ui.shortcut(save, "Ctrl+S")
+    let open = ui.button(actions, "Open")
+    ui.shortcut(open, "Ctrl+O")
+    let copy = ui.button(actions, "Copy")
+    ui.shortcut(copy, "Ctrl+K")
+    // many rebuilds: numbers are never used twice, and only widgets that
+    // still exist count toward the limit
+    for i in 0..500 {
+        ui.clear(area)
+        ids = build(area, 3)
+    }
+    print("after rebuilds: {ids[0]} {ids[1]} {ids[2]}")
+    ui.shortcut(ids[0], "Ctrl+M")  // the old Ctrl+M went with its button
+    ui.focus(field)
+    while true {
+        let e = ui.wait()
+        show(e)
+        match e {
+            Clicked(id) => {
+                if id == save {
+                    match ui.save_file("Save the notes", "notes.txt") {
+                        some(path) => {
+                            files.write(path, "saved by the remove test\n")?
+                            print("saved {path}")
+                        }
+                        none => { print("not saved") }
+                    }
+                } else if id == open {
+                    match ui.open_file("Open notes", "*.txt") {
+                        some(path) => { print("opened {path}: {trim(files.read(path)?)}") }
+                        none => { print("nothing opened") }
+                    }
+                } else if id == copy {
+                    ui.to_clipboard("copied ✓ \{text\}")
+                } else if id == ids[0] {
+                    ui.clear(area)
+                    ids = build(area, 1)
+                    print("rebuilt: {ids[0]}")
+                }
+            }
+            Closed => { return ok() }
+            _ => { }
+        }
+    }
+    return ok()
+}

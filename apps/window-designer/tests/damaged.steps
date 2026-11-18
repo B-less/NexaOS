@@ -1,0 +1,21 @@
+# program: ../apps/window-designer/src/main.nx
+# A design file cut off half-way: the window says so and leaves it alone,
+# even after changes. New design (Ctrl+N) asks first: cancel, then accept.
+file .local/share/window-designer/design.json {"version": 1, "title": "Half", "parts": [{"kind": "head
+window Window Designer
+key ctrl+shift+F12
+shot damaged
+key Return
+key ctrl+n
+window Start a new design\?
+shot damaged-confirm
+key Escape
+gone Start a new design\?
+window Window Designer
+key ctrl+n
+window Start a new design\?
+key Return
+gone Start a new design\?
+window Window Designer
+key Escape
+show .local/share/window-designer/design.json

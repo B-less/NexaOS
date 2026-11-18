@@ -1,0 +1,21 @@
+[package]
+id = "window-designer"
+name = "Window Designer"
+version = "1.0.0"
+description = "Build a NexaLang window from headings, buttons, text fields and lists, see it, and get its program"
+categories = "Development;"
+icon = "icon.svg"
+screenshots = ["shots/editing.png", "shots/preview.png", "shots/code.png"]
+
+[build]
+# Written in NexaLang (nexalang/): nexac builds it with the hardened flags.
+command = "nexac build src/main.nx -o build/window-designer"
+binary = "build/window-designer"
+
+[requires]
+# Already part of NexaOS, so installing needs no internet.
+depends = ["gtk+3.0"]
+# Its own data folder always; Documents so "Export…" can save the program
+# there (the file chooser runs inside the app, so it can only write where
+# the app may).
+permissions = ["files.documents"]

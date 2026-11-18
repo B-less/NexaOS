@@ -130,6 +130,26 @@ pub fn list(parent: int, empty: str) -> int {
     return __ui_list(parent, empty)
 }
 
+// Read-only text in JetBrains Mono that scrolls: code, a log, a long
+// result (0.7). The person can select and copy it. `set_text` replaces it.
+pub fn code(parent: int, text: str) -> int {
+    return __ui_code(parent, text)
+}
+
+// ---- removing widgets (0.7) ----
+
+// Remove a widget (and, for a column or row, everything in it). Its
+// number can't be used again: using it stops the program with a message.
+pub fn remove(id: int) {
+    __ui_remove(id, false)
+}
+
+// Remove everything inside a column or row, keeping the column or row:
+// the way to rebuild part of a window.
+pub fn clear(id: int) {
+    __ui_remove(id, true)
+}
+
 // ---- changing widgets ----
 
 // The text of a label, button, check box or text field.
@@ -204,6 +224,11 @@ pub fn show_error(text: str) {
     __ui_status(text, 1)
 }
 
+// Put text on the clipboard, for the person to paste somewhere else (0.7).
+pub fn to_clipboard(text: str) {
+    __ui_to_clipboard(text)
+}
+
 // ---- events ----
 
 // Wait for the person to do something.
@@ -236,6 +261,20 @@ fn event(kind: int) -> UiEvent {
 // `yes` as an action that can't be undone.
 pub fn confirm(heading: str, message: str, yes: str, danger: bool) -> bool {
     return __ui_confirm(heading, message, yes, danger)
+}
+
+// Let the person pick where to save a file (0.7). `name` is the suggested
+// file name ("window.nx"). The full path, or none when they cancel. It
+// starts in Documents; an installed app can only write where its
+// permissions let it (nexa.toml: files.documents for Documents).
+pub fn save_file(title: str, name: str) -> ?str {
+    return __ui_choose(title, name, true)
+}
+
+// Let the person pick a file to open (0.7). `pattern` shows only matching
+// files ("*.nx"), or "" for all. The full path, or none when they cancel.
+pub fn open_file(title: str, pattern: str) -> ?str {
+    return __ui_choose(title, pattern, false)
 }
 
 // Ask for the person's password for `what` (the broker says what it's

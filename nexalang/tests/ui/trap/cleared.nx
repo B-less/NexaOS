@@ -1,0 +1,11 @@
+// trap: widget 3 was removed (ui.remove or ui.clear), so it can't be used any more
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let box = ui.row(page)
+    let go = ui.button(box, "Go")
+    ui.clear(box)
+    ui.button(box, "Again")
+    ui.shortcut(go, "Ctrl+G")
+    return ok()
+}

@@ -1,0 +1,7 @@
+// trap: the window's main column can't be removed (ui.clear(page) empties it)
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    ui.remove(page)
+    return ok()
+}
