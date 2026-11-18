@@ -15,7 +15,7 @@ const path = require('path');
 const NEXAC = path.resolve(process.env.NEXAC || path.join(__dirname, '..', '..', '..', 'target', 'release', 'nexac'));
 
 function fakeVscode(settings) {
-  const log = { commands: {}, providers: [], warnings: [], errors: [], shown: [], clients: [], picks: [], config: [] };
+  const log = { commands: {}, providers: [], warnings: [], errors: [], shown: [], clients: [], picks: [], config: [], channels: [], output: [] };
   const vscode = {
     log,
     ViewColumn: { Beside: -2 },
@@ -28,7 +28,15 @@ function fakeVscode(settings) {
     },
     Uri: { from: (o) => ({ scheme: o.scheme, path: o.path, toString: () => `${o.scheme}:${o.path}` }) },
     window: {
-      createOutputChannel: () => ({ appendLine: () => {}, dispose: () => {} }),
+      // like VS Code: only a channel made with { log: true } has .error() etc.
+      createOutputChannel: (name, opts) => {
+        log.channels.push([name, opts]);
+        const c = { appendLine: (m) => log.output.push(m), dispose: () => {} };
+        if (opts && opts.log === true) {
+          for (const k of ['error', 'warn', 'info', 'debug', 'trace']) c[k] = (m) => log.output.push(`${k}: ${m}`);
+        }
+        return c;
+      },
       showWarningMessage: async (m, ...buttons) => {
         log.warnings.push([m, buttons]);
         return undefined;
@@ -81,6 +89,10 @@ function fakeVscode(settings) {
       }
       async start() {
         this.started++;
+        // the real client logs with these (an error, a warning, information)
+        this.options.outputChannel.error('test error');
+        this.options.outputChannel.warn('test warning');
+        this.options.outputChannel.info('test info');
       }
       async stop() {
         this.stopped++;
@@ -140,6 +152,8 @@ test('activation registers the commands and providers, and starts `nexac lsp`', 
     { scheme: 'untitled', language: 'nexalang' },
   ]);
   assert.deepEqual(log.warnings, []);
+  assert.deepEqual(log.channels, [['NexaLang', { log: true }]]);
+  assert.ok(log.output.includes('error: test error'), JSON.stringify(log.output));
 
   // the quick fix: one "Explain" per topic of nexac's own mistakes
   const actions = log.providers.find((p) => p[0] === 'actions');

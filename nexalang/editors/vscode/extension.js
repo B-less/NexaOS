@@ -68,7 +68,7 @@ async function startClient() {
   try {
     await client.start();
   } catch (e) {
-    const message = `nexac's language server didn't start: ${e && e.message ? e.message : e}`;
+    const message = `nexac's language server didn't start: ${e && e.message ? e.message : e} (details: View, Output, NexaLang)`;
     output.appendLine(message);
     warn(message);
     client = null;
@@ -144,7 +144,10 @@ const explainActions = {
 };
 
 function activate(context) {
-  output = vscode.window.createOutputChannel('NexaLang');
+  // a log channel: vscode-languageclient writes to it with .error(),
+  // .warn() and .info(), which a plain output channel doesn't have (0.9.2:
+  // found on the first run in a real VS Code)
+  output = vscode.window.createOutputChannel('NexaLang', { log: true });
   context.subscriptions.push(
     output,
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, {

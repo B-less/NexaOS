@@ -1,5 +1,13 @@
 # Changes
 
+## 0.9.2
+
+- The language server starts in a real VS Code: the client logs with
+  `.error()`/`.info()`, which only a log output channel has; 0.9.0 and
+  0.9.1 made a plain one, so any message from the client stopped it with
+  "this.outputChannel.error is not a function". The tests' stand-in client now
+  writes to the channel like the real one.
+
 ## 0.9.1
 
 - `nexalang.path` can be the folder that holds `nexac.exe` (or `nexac`), not

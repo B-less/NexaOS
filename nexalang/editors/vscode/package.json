@@ -2,7 +2,7 @@
   "name": "nexalang",
   "displayName": "NexaLang",
   "description": "NexaLang, the programming language of NexaOS: colours, mistakes as you type, layout on save and explanations, all from nexac.",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "publisher": "nexaos",
   "license": "MIT",
   "repository": {

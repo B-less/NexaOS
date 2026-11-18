@@ -131,7 +131,7 @@ as you type, Lay out, Explain, and Run with Stop.
 Writing NexaLang on Microsoft Windows (0.9), in VS Code:
 
 ```sh
-sh editors/windows/build.sh     # dist/nexac.exe and dist/nexalang-0.9.1.vsix
+sh editors/windows/build.sh     # dist/nexac.exe and dist/nexalang-0.9.2.vsix
 ```
 
 Put `nexac.exe` in a folder of `PATH` on Windows, install the `.vsix` in VS
@@ -580,6 +580,15 @@ Found and fixed while building 0.9:
   was set to the folder holding `nexac.exe`, and the extension refused
   it. Extension 0.9.1 accepts the folder too (and quotes around the path,
   as Windows' "Copy as path" adds them); tested.
+- Then, in the real VS Code: "nexac's language server didn't start:
+  this.outputChannel.error is not a function". The extension made a plain
+  output channel; `vscode-languageclient` 10 writes to it with `.error()`
+  and `.info()`, which only a log channel (`{ log: true }`) has. The
+  stand-in language client in the tests never wrote to the channel, so
+  they couldn't see it; now it writes like the real one, the stand-in
+  channel has `.error()` only when made with `{ log: true }` (as in VS
+  Code), and the test fails on 0.9.1's code. Extension 0.9.2.
+  (Whatever the client was logging at that moment is shown properly now.)
 - `vscode-languageclient` adds `--stdio` to the server's arguments when
   the transport is stdio, and 0.6's `nexac lsp` refused any argument: the
   server would never have started in VS Code. Found by reading the
