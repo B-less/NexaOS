@@ -1,0 +1,13 @@
+# program: ../apps/code-studio/src/main.nx
+# env PATH=/usr/bin:/bin
+# nexac isn't installed: editing works, and the window says what's missing.
+window Code Studio
+key ctrl+n
+until Code Studio needs nexac
+shot no-nexac
+key ctrl+shift+F12
+key ctrl+shift+f
+key ctrl+shift+F12
+key ctrl+q
+window Close without saving\?
+key Return

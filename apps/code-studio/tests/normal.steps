@@ -1,0 +1,54 @@
+# program: ../apps/code-studio/src/main.nx
+# Normal use: the empty state; a new program; a mistake shown as you type,
+# marked in the editor and explained; fixed; laid out (and undone, and
+# again); run (saved first, through the file chooser), its output shown.
+file Documents/.keep 
+window Code Studio
+shot normal-empty
+key ctrl+shift+F12
+key ctrl+n
+until No mistakes found.
+key End Return
+type let total = count + 1
+until Line 4: unknown name
+shot normal-mistake
+key ctrl+shift+F12
+# the list: the first mistake, its hint; F1 explains it
+key F8
+key F1
+until code (22 lines)
+shot normal-explained
+key ctrl+shift+F12
+# fix it: typed badly laid out, so Format has work to do
+key ctrl+a
+type fn main() {
+key Return
+type var total=1
+key Return
+type     total+=   2
+key Return
+type print("total: {total}")
+key Return
+type }
+until No mistakes found.
+key ctrl+shift+F12
+key ctrl+shift+f
+until Laid out the standard way
+key ctrl+shift+F12
+key ctrl+z
+wait 1
+key ctrl+shift+F12
+key ctrl+shift+f
+until Laid out the standard way
+# run: it isn't saved yet, so it asks where
+key F5
+window Save the program
+type total
+key Return
+gone Save the program
+window Code Studio
+until Output: the program ended
+shot normal-ran
+key ctrl+shift+F12
+key ctrl+q
+show Documents/total.nx

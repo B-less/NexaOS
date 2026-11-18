@@ -1,0 +1,85 @@
+// The editor (0.8), driven by the keyboard (tests/ui/editing.steps): text
+// in and out, typing (one Changed per wait, whatever the key presses),
+// Enter keeping the indentation, Tab, undo not going back past set_text,
+// marks (also outside the text), the cursor, plain and missing languages,
+// a 100,000-letter line, 2 MB of text, a zero byte.
+use ui
+use editor
+
+fn main() -> !void {
+    let page = ui.start("editor-test", "Editor")?
+    let bar = ui.row(page)
+    let show_b = ui.button(bar, "Show")
+    ui.shortcut(show_b, "Ctrl+P")
+    let go_b = ui.button(bar, "Go")
+    ui.shortcut(go_b, "Ctrl+G")
+    let mark_b = ui.button(bar, "Mark")
+    ui.shortcut(mark_b, "Ctrl+M")
+    let clear_b = ui.button(bar, "Clear")
+    ui.shortcut(clear_b, "Ctrl+L")
+    let big_b = ui.button(bar, "Big")
+    ui.shortcut(big_b, "Ctrl+B")
+    let more_b = ui.button(bar, "More")
+    ui.shortcut(more_b, "Ctrl+E")
+    ui.shortcut(more_b, "F6")
+    let code = editor.new(page, "nexalang")
+    ui.set_text(code, "fn main() \{\n    print(1)\n}\n")
+    print("start: line {editor.cursor_line(code)}, column {editor.cursor_column(code)}")
+    var changed = ""
+    var changes = 0
+    while true {
+        match ui.wait() {
+            Changed(id, text) => {
+                if id == code {
+                    changed = text
+                    changes += 1
+                }
+            }
+            Clicked(id) => {
+                if id == show_b {
+                    if changes > 0 {
+                        print("changed: {replace(changed, "\n", "|")}")
+                    } else {
+                        print("not changed")
+                    }
+                    changes = 0
+                    print("text: {replace(ui.get_text(code), "\n", "|")}")
+                    print("cursor {editor.cursor_line(code)}:{editor.cursor_column(code)}")
+                } else if id == go_b {
+                    editor.go_to(code, 2, 13)
+                    print("went to {editor.cursor_line(code)}:{editor.cursor_column(code)}")
+                    editor.go_to(code, 99, 99)
+                    print("far away is {editor.cursor_line(code)}:{editor.cursor_column(code)}")
+                    editor.go_to(code, 2, 13)
+                } else if id == mark_b {
+                    ui.set_text(code, "fn main() \{\n    print(1)\n}\n")
+                    editor.mark(code, 2, 5, 5)     // print
+                    editor.mark(code, 1, 99, 0)    // past the end of line 1: its last letter
+                    editor.mark(code, 3, 1, 50)    // longer than the line: to its end
+                    editor.mark(code, -5, -5, -5)  // before the start: the first letter
+                    editor.mark(code, 99, 1, 3)    // after the last line (empty): nothing
+                } else if id == clear_b {
+                    editor.clear_marks(code)
+                } else if id == big_b {
+                    let line = repeat("x", 100000)
+                    ui.set_text(code, line)
+                    print("long line: {len(ui.get_text(code))} letters back")
+                    let many = repeat("let a = 1 // é\n", 130000)
+                    ui.set_text(code, many)
+                    let back = ui.get_text(code)
+                    print("2 MB: {len(many)} bytes in, {len(back)} back, same: {back == many}")
+                    editor.go_to(code, 100000, 3)
+                    print("cursor {editor.cursor_line(code)}:{editor.cursor_column(code)}")
+                    ui.set_text(code, "a\0b")
+                    print("zero byte: {ui.get_text(code)}")
+                } else if id == more_b {
+                    editor.new(page, "")
+                    editor.new(page, "no-such-language")
+                }
+            }
+            Closed => { return ok() }
+            _ => { }
+        }
+    }
+    return ok()
+}

@@ -1,0 +1,39 @@
+# program: ../apps/code-studio/src/main.nx
+# Changes that aren't saved: opening another file, starting a new one and
+# closing all ask first (cancel, then accept).
+file Documents/a.nx fn main() {\n    print("a")\n}\n
+window Code Studio
+key ctrl+n
+until No mistakes found.
+key ctrl+o
+window Open another file\?
+shot unsaved-ask
+key Escape
+gone Open another file\?
+window Code Studio
+key ctrl+n
+window Start a new program\?
+key Escape
+gone Start a new program\?
+window Code Studio
+key ctrl+shift+F12
+key Escape
+window Close without saving\?
+key Escape
+gone Close without saving\?
+window Code Studio
+key ctrl+o
+window Open another file\?
+key Return
+window Open a NexaLang file
+key ctrl+l
+type a.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+until No mistakes found.
+key ctrl+shift+F12
+type x
+key Escape
+window Close without saving\?
+key Return

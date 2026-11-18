@@ -67,6 +67,7 @@ const STD: &[(&str, &str)] = &[
     ("json", include_str!("std/json.nx")),
     ("broker", include_str!("std/broker.nx")),
     ("ui", include_str!("std/ui.nx")),
+    ("editor", include_str!("std/editor.nx")),
 ];
 
 const MAX_LINES: usize = 999_999;
@@ -92,10 +93,12 @@ fn parse_module(name: &str, file: String, src: String, is_std: bool) -> Result<a
     Ok(ast::Module { name: name.to_string(), file, src, is_std, prog })
 }
 
-/// Generated C, and whether it needs GTK (the program uses `ui`).
+/// Generated C, and whether it needs GTK (the program uses `ui`) and
+/// GtkSourceView (it uses `editor`, 0.8).
 pub struct Compiled {
     pub c: String,
     pub gtk: bool,
+    pub sourceview: bool,
 }
 
 /// Load the main file and everything it uses, then check and generate C.
@@ -166,7 +169,7 @@ pub fn compile_source(main_path: &Path, main_src: Option<String>, lines: bool) -
     }
     check_cycles(&mods)?;
     let checked = checker::check(&mut mods).map_err(|ds| render_all(&ds, &mods))?;
-    Ok(Compiled { c: codegen::generate(&mods, &checked, lines), gtk: codegen::uses_ui(&mods) })
+    Ok(Compiled { c: codegen::generate(&mods, &checked, lines), gtk: codegen::uses_ui(&mods), sourceview: codegen::uses_editor(&mods) })
 }
 
 /// Modules can't use each other in a circle.
@@ -232,10 +235,19 @@ fn to_c_or_exit(path: &str) -> Compiled {
 
 /// GTK 3's compiler and linker flags, from pkg-config (run with an
 /// argument list, never a shell). Each flag is one argument.
-fn gtk_flags(which: &str) -> Vec<String> {
-    let out = Command::new("pkg-config").arg(which).arg("gtk+-3.0").output();
-    match out {
+/// With `editor` (0.8), GtkSourceView 4's flags come with GTK's.
+fn gtk_flags(which: &str, sourceview: bool) -> Vec<String> {
+    let mut cmd = Command::new("pkg-config");
+    cmd.arg(which).arg("gtk+-3.0");
+    if sourceview {
+        cmd.arg("gtksourceview-4");
+    }
+    match cmd.output() {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).split_whitespace().map(String::from).collect(),
+        _ if sourceview => {
+            eprintln!("error: this program uses `editor`, which needs GtkSourceView 4, GTK 3 and pkg-config (on NexaOS: apk add gtksourceview4-dev gtk+3.0-dev pkgconf)");
+            exit(1);
+        }
         _ => {
             eprintln!("error: this program uses `ui`, which needs GTK 3 and pkg-config (on NexaOS: apk add gtk+3.0-dev pkgconf)");
             exit(1);
@@ -268,11 +280,11 @@ fn build_c(prog: &Compiled, out: &Path, check_memory: bool) {
         cmd.arg("-DNX_LEAK_CHECK");
     }
     if prog.gtk {
-        cmd.args(gtk_flags("--cflags"));
+        cmd.args(gtk_flags("--cflags", prog.sourceview));
     }
     cmd.arg(&c_path).arg("-o").arg(out).arg("-lm");
     if prog.gtk {
-        cmd.args(gtk_flags("--libs"));
+        cmd.args(gtk_flags("--libs", prog.sourceview));
     }
     let status = cmd.status();
     let _ = std::fs::remove_file(&c_path);

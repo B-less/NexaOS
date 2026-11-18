@@ -1,0 +1,7 @@
+// trap: 5 isn't a program this window started
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    ui.stop_program(5)
+    return ok()
+}

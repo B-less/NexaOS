@@ -1,0 +1,165 @@
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note ""
+  column
+    heading "Code Studio"
+    text "Open a .nx file or start a new one."
+    note "Ctrl+O opens a NexaLang file and Ctrl+N starts a new program. Mistakes show as you type; F5 runs the program."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "New program (not saved)"
+  column
+    editor "nexalang" (6 lines, cursor 4:26) mark 4:17-4:22
+      | // A new NexaLang program. Press F5 to run it.
+      | fn main() {
+      |     print("Hello from NexaLang")
+      |     let total = count + 1
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "Line 4: unknown name `count`"
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "New program (not saved)"
+  column
+    editor "nexalang" (6 lines, cursor 4:17) mark 4:17-4:22
+      | // A new NexaLang program. Press F5 to run it.
+      | fn main() {
+      |     print("Hello from NexaLang")
+      |     let total = count + 1
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      * "Line 4: unknown name `count`"
+    note "Nothing with this name exists here: check the spelling, or define it first."
+    note "Explanation: unknown name `count`"
+    code (22 lines)
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "New program (not saved)"
+  column
+    editor "nexalang" (5 lines, cursor 5:6)
+      | fn main() {
+      | var total=1
+      |     total+=   2
+      |     print("total: {total}")
+      |     }
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Explanation: unknown name `count`"
+    code (22 lines)
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "New program (not saved)"
+  column
+    editor "nexalang" (6 lines, cursor 5:1)
+      | fn main() {
+      |     var total = 1
+      |     total += 2
+      |     print("total: {total}")
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Explanation: unknown name `count`"
+    code (22 lines)
+status "Laid out the standard way. Ctrl+Z undoes it."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "New program (not saved)"
+  column
+    editor "nexalang" (5 lines, cursor 5:6)
+      | fn main() {
+      | var total=1
+      |     total+=   2
+      |     print("total: {total}")
+      |     }
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Explanation: unknown name `count`"
+    code (22 lines)
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "total.nx"
+  column
+    editor "nexalang" (6 lines, cursor 5:1)
+      | fn main() {
+      |     var total = 1
+      |     total += 2
+      |     print("total: {total}")
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Output: the program ended"
+    code (2 lines)
+--- Documents/total.nx
+fn main() {
+    var total = 1
+    total += 2
+    print("total: {total}")
+}

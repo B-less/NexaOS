@@ -1,0 +1,725 @@
+// Code Studio: write NexaLang programs, see mistakes as you type, lay the
+// code out, have mistakes explained, and run the program.
+// A NexaOS app written in NexaLang (nexalang/NEXALANG.md).
+//
+// Keys: Ctrl+N new program, Ctrl+O open, Ctrl+S save, Ctrl+Shift+S save
+// as, F5 or Ctrl+Return run (it's saved first), Shift+F5 stop, Ctrl+Shift+F
+// lay the code out, F1 explain the selected mistake, F8 go to the next
+// mistake, Esc or Ctrl+Q close. In the editor, Tab indents and Ctrl+Tab
+// moves on; in the list of mistakes, Enter goes to the mistake.
+//
+// It uses nexac (the NexaLang compiler) for everything about the language:
+// `nexac check --json` for mistakes, `nexac fmt`, `nexac explain`,
+// `nexac build`. Each is started with an argument list, never a shell.
+use ui
+use editor
+use files
+use json
+use time
+
+// A mistake nexac found.
+struct Mistake {
+    file: str  // "" when it's in the open file, else the module's file
+    line: int  // from 1; 0 when it isn't at a place in the text
+    column: int
+    length: int
+    message: str
+    hint: str
+    topic: str  // for `nexac explain`
+    summary: str
+}
+
+// What's running: one check, one layout, one explanation and one program
+// at a time.
+struct Job {
+    p: int      // the program's number, 0 when nothing runs
+    out: [str]  // its output so far
+}
+
+// ---- limits: files are untrusted ----
+
+fn max_file_bytes() -> int {
+    return 2_000_000
+}
+
+// The output view shows this much of a program's output; more is read
+// (so the program isn't held up) but not shown.
+fn max_output_bytes() -> int {
+    return 400_000
+}
+
+// Wait this long after the last key press before checking.
+fn check_delay_ms() -> int {
+    return 400
+}
+
+fn idle() -> Job {
+    return Job { p: 0, out: [] }
+}
+
+fn new_program() -> str {
+    return "// A new NexaLang program. Press F5 to run it.\nfn main() \{\n    print(\"Hello from NexaLang\")\n}\n"
+}
+
+// The open file's name, as the person knows it.
+fn shown_name(path: str) -> str {
+    if path == "" {
+        return "the new program"
+    }
+    return files.name(path)
+}
+
+// The end of an error message from `files` ("...: it doesn't exist").
+fn reason(e: str) -> str {
+    let parts = split(e, ": ")
+    return parts[len(parts) - 1]
+}
+
+// Read a file to edit. Refuses what isn't a NexaLang text file.
+fn load(path: str) -> !str {
+    let name = files.name(path)
+    if not ends_with(path, ".nx") {
+        return err("{name} isn't a NexaLang file. Code Studio opens files whose names end in .nx.")
+    }
+    match files.size(path) {
+        ok(size) => {
+            if size > max_file_bytes() {
+                return err("{name} is too big to edit here ({size / 1_000_000} MB). Code Studio opens NexaLang files up to 2 MB.")
+            }
+        }
+        err(e) => { return err("{name} couldn't be opened: {reason(e)}.") }
+    }
+    match files.read(path) {
+        ok(text) => {
+            if contains(text, "\0") {
+                return err("{name} has zero bytes in it, so it isn't a text file Code Studio can edit.")
+            }
+            return ok(text)
+        }
+        err(e) => {
+            if contains(e, "isn't UTF-8") {
+                return err("{name} isn't UTF-8 text, so Code Studio can't open it. Is it really a NexaLang file?")
+            }
+            return err("{name} couldn't be opened: {reason(e)}.")
+        }
+    }
+}
+
+fn text_of(j: Json, key: str) -> str {
+    match json.get(j, key) {
+        some(v) => { return unwrap_or(json.as_text(v), "") }
+        none => { return "" }
+    }
+}
+
+fn int_of(j: Json, key: str) -> int {
+    match json.get(j, key) {
+        some(v) => { return unwrap_or(json.as_int(v), 0) }
+        none => { return 0 }
+    }
+}
+
+// The mistakes in `nexac check --json`'s answer.
+fn mistakes_of(answer: str) -> ![Mistake] {
+    let j = json.parse(answer)?
+    let main_file = text_of(j, "file")
+    var found: [Mistake] = []
+    match json.get(j, "diagnostics") {
+        some(list) => {
+            for d in json.items(list) {
+                var file = text_of(d, "file")
+                if file == main_file {
+                    file = ""
+                }
+                push(found, Mistake {
+                    file: file,
+                    line: int_of(d, "line"),
+                    column: int_of(d, "column"),
+                    length: int_of(d, "length"),
+                    message: text_of(d, "message"),
+                    hint: text_of(d, "hint"),
+                    topic: text_of(d, "topic"),
+                    summary: text_of(d, "summary"),
+                })
+            }
+        }
+        none => { return err("it has no list of mistakes") }
+    }
+    return ok(found)
+}
+
+// At most `n` bytes of `text`, with "…" when it was cut (a message can
+// quote a 200,000-letter name).
+fn short(text: str, n: int) -> str {
+    if len(text) <= n {
+        return text
+    }
+    return slice(text, 0, letter_start(text, n)) + "…"
+}
+
+fn row_of(m: Mistake) -> str {
+    let message = short(m.message, 200)
+    if m.line == 0 {
+        return message
+    }
+    if m.file != "" {
+        return "{m.file}, line {m.line}: {message}"
+    }
+    return "Line {m.line}: {message}"
+}
+
+fn rows_of(found: [Mistake]) -> [str] {
+    var rows: [str] = []
+    for m in found {
+        push(rows, row_of(m))
+    }
+    return rows
+}
+
+// The first line of a message, without nexac's "error: ".
+fn first_line(text: str) -> str {
+    let line = trim(split(trim(text), "\n")[0])
+    if starts_with(line, "error: ") {
+        return slice(line, 7, len(line))
+    }
+    return line
+}
+
+// Start one of nexac's commands; 0 when it couldn't be started (the
+// window says why).
+fn start_nexac(args: [str], input: str) -> int {
+    match ui.start_program(args, input) {
+        ok(p) => { return p }
+        err(e) => {
+            if contains(e, "no such program") {
+                ui.show_error("Code Studio needs nexac, the NexaLang compiler, and it isn't installed here. Install NexaLang to see mistakes, lay programs out and run them.")
+            } else {
+                ui.show_error("nexac couldn't be started: {reason(e)}.")
+            }
+            return 0
+        }
+    }
+}
+
+// Where a letter starts, at `at` or before it (text is cut there without
+// cutting a letter in half).
+fn letter_start(text: str, at: int) -> int {
+    var i = at
+    while i > 0 and i < len(text) and byte_at(text, i) >= 128 and byte_at(text, i) < 192 {
+        i -= 1
+    }
+    return i
+}
+
+// nexac explain's paragraphs as one line each, so the view can wrap them
+// at its own width; examples (indented) and empty lines stay as they are.
+fn paragraphs(text: str) -> str {
+    var out: [str] = []
+    var joinable = false
+    for line in split(text, "\n") {
+        let prose = line != "" and not starts_with(line, " ")
+        if prose and joinable {
+            out[len(out) - 1] = out[len(out) - 1] + " " + line
+        } else {
+            push(out, line)
+        }
+        joinable = prose
+    }
+    return join(out, "\n")
+}
+
+// Gather a job's output.
+fn poll(job: Job) -> Job {
+    if job.p == 0 {
+        return job
+    }
+    var out = job.out
+    let got = ui.program_output(job.p)
+    if got != "" {
+        push(out, got)
+    }
+    return Job { p: job.p, out: out }
+}
+
+fn main() -> !void {
+    let cache = files.cache_dir("code-studio")?
+    let page = ui.start("code-studio", "Code Studio")?
+    let bar = ui.row(page)
+    let new_b = ui.button(bar, "New")
+    ui.shortcut(new_b, "Ctrl+N")
+    ui.tooltip(new_b, "Start a new program")
+    let open_b = ui.button(bar, "Open…")
+    ui.shortcut(open_b, "Ctrl+O")
+    ui.tooltip(open_b, "Open a NexaLang file (.nx)")
+    let save_b = ui.button(bar, "Save")
+    ui.shortcut(save_b, "Ctrl+S")
+    let save_as_b = ui.button(bar, "Save as…")
+    ui.shortcut(save_as_b, "Ctrl+Shift+S")
+    ui.tooltip(save_as_b, "Save it under a new name")
+    let file_note = ui.note(page, "")
+
+    // nothing open yet
+    let empty = ui.column(page)
+    ui.heading(empty, "Code Studio")
+    ui.label(empty, "Open a .nx file or start a new one.")
+    ui.note(empty, "Ctrl+O opens a NexaLang file and Ctrl+N starts a new program. Mistakes show as you type; F5 runs the program.")
+
+    // a file is open
+    let work = ui.column(page)
+    let code = editor.new(work, "nexalang")
+    let actions = ui.row(work)
+    let run_b = ui.primary_button(actions, "Run")
+    ui.shortcut(run_b, "F5")
+    ui.shortcut(run_b, "Ctrl+Return")
+    ui.tooltip(run_b, "Save the program, build it and run it")
+    let stop_b = ui.button(actions, "Stop")
+    ui.shortcut(stop_b, "Shift+F5")
+    ui.tooltip(stop_b, "Stop the program that's running")
+    let fmt_b = ui.button(actions, "Format")
+    ui.shortcut(fmt_b, "Ctrl+Shift+F")
+    ui.tooltip(fmt_b, "Lay the code out the standard way (nexac fmt); Ctrl+Z undoes it")
+    let explain_b = ui.button(actions, "Explain")
+    ui.shortcut(explain_b, "F1")
+    ui.tooltip(explain_b, "Explain the mistake picked in the list")
+    let found_row = ui.row(work)
+    let found_note = ui.note(found_row, "")
+    let next_b = ui.button(found_row, "Next")
+    ui.shortcut(next_b, "F8")
+    ui.tooltip(next_b, "Go to the next mistake")
+    let mistakes = ui.list(work, "No mistakes found.")
+    ui.tooltip(mistakes, "Enter goes to the mistake; F1 explains it")
+    let hint = ui.note(work, "")
+    let out_title = ui.note(work, "Output")
+    let output = ui.code(work, "")
+    // shown when there's something in them, so the editor has the room
+    for w in [next_b, mistakes, hint, out_title, output] {
+        ui.set_visible(w, false)
+    }
+    ui.set_visible(work, false)
+    ui.set_enabled(stop_b, false)
+
+    var has_file = false
+    var path = ""   // "" for a new program not saved yet
+    var saved = ""  // the text as it was opened or last saved
+    var modified = false
+    var found: [Mistake] = []
+    var next_at = 0    // the mistake F8 goes to
+    var dirty = false  // changed since the last check started
+    var changed_at = 0
+    var check = idle()
+    var check_of = ""  // the text being checked
+    var layout = idle()
+    var layout_of = ""  // the text being laid out
+    var explaining = idle()
+    var run = idle()
+    var building = false
+    var stopping = false
+    var shown = 0  // bytes of output shown
+    let exe = files.join_path(files.join_path(cache, "run"), "program")
+
+    // a file named on the command line ("code-studio app.nx")
+    var open_now = ""
+    let given = args()
+    if len(given) > 0 {
+        open_now = given[0]
+    }
+
+    while true {
+        var want_open = ""  // a file to open now
+        var want_new = false
+        var want_save = false
+        var want_save_as = false
+        var want_run = false
+        if open_now != "" {
+            want_open = open_now
+            open_now = ""
+        } else {
+            let busy = dirty or check.p != 0 or layout.p != 0 or explaining.p != 0 or run.p != 0
+            var e = UiEvent.Tick
+            if busy {
+                e = ui.wait_ms(50)
+            } else {
+                e = ui.wait()
+            }
+            match e {
+                Clicked(id) => {
+                    if id == new_b {
+                        want_new = true
+                    } else if id == open_b {
+                        if not modified or ui.confirm("Open another file?", "Your changes to {shown_name(path)} aren't saved and will be lost.", "Don't save", true) {
+                            match ui.open_file("Open a NexaLang file", "*.nx") {
+                                some(p) => { want_open = p }
+                                none => { }
+                            }
+                        }
+                    } else if id == save_b {
+                        want_save = true
+                    } else if id == save_as_b {
+                        want_save_as = true
+                    } else if id == run_b {
+                        want_run = true
+                    } else if id == stop_b {
+                        if run.p != 0 {
+                            ui.stop_program(run.p)
+                            stopping = true
+                        }
+                    } else if id == fmt_b {
+                        if layout.p == 0 and has_file {
+                            layout_of = ui.get_text(code)
+                            layout = Job { p: start_nexac(["nexac", "fmt", "--stdin"], layout_of), out: [] }
+                        }
+                    } else if id == explain_b {
+                        if run.p != 0 {
+                            ui.show_error("The output shows the running program. Stop it or let it finish, then press Explain again.")
+                        } else if len(found) == 0 {
+                            ui.status("There's no mistake to explain.")
+                        } else if explaining.p == 0 {
+                            let m = found[unwrap_or(ui.selected(mistakes), 0)]
+                            if m.topic == "" {
+                                ui.status("nexac has no explanation for this mistake.")
+                            } else {
+                                explaining = Job { p: start_nexac(["nexac", "explain", m.topic], ""), out: [] }
+                                if explaining.p != 0 {
+                                    ui.set_text(out_title, "Explanation: {short(m.message, 200)}")
+                                    ui.set_visible(out_title, true)
+                                    ui.set_visible(output, true)
+                                }
+                            }
+                        }
+                    } else if id == next_b {
+                        if len(found) == 0 {
+                            ui.status("There are no mistakes.")
+                        } else {
+                            if next_at >= len(found) {
+                                next_at = 0
+                            }
+                            ui.select(mistakes, next_at)
+                            let m = found[next_at]
+                            if m.hint != "" {
+                                ui.set_text(hint, "Hint: {short(m.hint, 400)}")
+                            } else {
+                                ui.set_text(hint, m.summary)
+                            }
+                            ui.set_visible(hint, true)
+                            if m.file == "" and m.line > 0 {
+                                editor.go_to(code, m.line, m.column)
+                            } else if m.file != "" {
+                                ui.status("This mistake is in {m.file}: open that file to fix it.")
+                            }
+                            next_at += 1
+                        }
+                    }
+                }
+                Changed(id, text) => {
+                    if id == code {
+                        modified = text != saved
+                        dirty = true
+                        changed_at = time.millis()
+                        ui.status("")  // what it said was about the text before
+                    }
+                }
+                Selected(id, row) => {
+                    if id == mistakes and row < len(found) {
+                        let m = found[row]
+                        if m.hint != "" {
+                            ui.set_text(hint, "Hint: {short(m.hint, 400)}")
+                        } else {
+                            ui.set_text(hint, m.summary)
+                        }
+                        ui.set_visible(hint, true)
+                        next_at = row + 1
+                    }
+                }
+                Activated(id, row) => {
+                    if id == mistakes and row < len(found) {
+                        let m = found[row]
+                        if m.file == "" and m.line > 0 {
+                            editor.go_to(code, m.line, m.column)
+                        } else if m.file != "" {
+                            ui.status("This mistake is in {m.file}: open that file to fix it.")
+                        }
+                    }
+                }
+                Closed => {
+                    if not modified or ui.confirm("Close without saving?", "Your changes to {shown_name(path)} aren't saved and will be lost.", "Don't save", true) {
+                        return ok()
+                    }
+                }
+                _ => { }
+            }
+        }
+
+        // ---- new, open ----
+        var fresh = false  // a new text: the last one's mistakes go
+        if want_new {
+            if not modified or ui.confirm("Start a new program?", "Your changes to {shown_name(path)} aren't saved and will be lost.", "Don't save", true) {
+                path = ""
+                saved = ""
+                ui.set_text(code, new_program())
+                modified = true
+                has_file = true
+                dirty = true
+                changed_at = 0
+                ui.status("")
+                editor.go_to(code, 3, 11)
+                fresh = true
+            }
+        }
+        if want_open != "" {
+            match load(want_open) {
+                ok(text) => {
+                    path = want_open
+                    saved = text
+                    ui.set_text(code, text)
+                    modified = false
+                    has_file = true
+                    dirty = true
+                    changed_at = 0
+                    ui.status("")
+                    editor.go_to(code, 1, 1)
+                    fresh = true
+                }
+                err(e) => { ui.show_error(e) }
+            }
+        }
+        if fresh {
+            found = []
+            ui.set_items(mistakes, [])
+            ui.set_visible(mistakes, false)
+            ui.set_visible(next_b, false)
+            ui.set_visible(hint, false)
+            ui.set_text(found_note, "")
+        }
+
+        // ---- save, save as (Run saves first) ----
+        if want_run and has_file and run.p == 0 and (path == "" or modified) {
+            if path == "" {
+                want_save_as = true
+            } else {
+                want_save = true
+            }
+        }
+        if want_save and has_file and path == "" {
+            want_save = false
+            want_save_as = true
+        }
+        var target = path  // where to save: the file's own path, or a new one
+        if want_save_as and has_file {
+            var name = files.name(path)
+            if path == "" {
+                name = "program.nx"
+            }
+            match ui.save_file("Save the program", name) {
+                some(p) => {
+                    if ends_with(p, ".nx") {
+                        target = p
+                        want_save = true
+                    } else {
+                        ui.show_error("Give the file a name ending in .nx (like {name}), so nexac can build it.")
+                        want_run = false
+                    }
+                }
+                none => { want_run = false }
+            }
+        }
+        if want_save and has_file and target != "" {
+            let text = ui.get_text(code)
+            match files.write(target, text) {
+                ok => {
+                    // only now is it the file's name: a failed save keeps the old one
+                    path = target
+                    saved = text
+                    modified = false
+                    if not want_run {
+                        ui.status("Saved {files.name(path)}.")
+                    }
+                }
+                err(e) => {
+                    var why = reason(e)
+                    if why == "it doesn't exist" {
+                        why = "that folder can't hold files"
+                    }
+                    ui.show_error("{files.name(target)} couldn't be saved: {why}. Installed, Code Studio can save in your Documents folder; Save as… (Ctrl+Shift+S) picks a place there.")
+                    want_run = false
+                }
+            }
+        }
+
+        // ---- run: build, then start the program ----
+        if want_run and has_file and run.p == 0 and path != "" and not modified {
+            match files.make_dir(files.join_path(cache, "run")) {
+                ok => { }
+                err(e) => { }
+            }
+            ui.set_text(output, "")
+            shown = 0
+            ui.set_text(out_title, "Output: building {files.name(path)}…")
+            ui.set_visible(out_title, true)
+            ui.set_visible(output, true)
+            ui.status("")
+            run = Job { p: start_nexac(["nexac", "build", path, "-o", exe], ""), out: [] }
+            building = run.p != 0
+            stopping = false
+        }
+
+        // ---- mistakes as you type: check once typing has paused ----
+        if dirty and has_file and check.p == 0 and time.millis() - changed_at >= check_delay_ms() {
+            var name = path
+            if name == "" {
+                name = files.join_path(cache, "program.nx")
+            }
+            dirty = false
+            check_of = ui.get_text(code)
+            check = Job { p: start_nexac(["nexac", "check", "--json", "--stdin", name], check_of), out: [] }
+        }
+
+        // ---- what the programs started above have done ----
+        check = poll(check)
+        if check.p != 0 {
+            match ui.program_result(check.p) {
+                some(_) => {
+                    // only for the text as it is now: if it changed, the
+                    // next check (already waiting) will say
+                    var answer = join(check.out, "")
+                    if ui.get_text(code) != check_of {
+                        answer = ""
+                    }
+                    match mistakes_of(answer) {
+                        ok(list) => {
+                            found = list
+                            next_at = 0
+                            ui.set_items(mistakes, rows_of(found))
+                            ui.set_text(hint, "")
+                            ui.set_visible(mistakes, len(found) > 0)
+                            ui.set_visible(next_b, len(found) > 0)
+                            ui.set_visible(hint, false)
+                            if len(found) == 0 {
+                                ui.set_text(found_note, "No mistakes found.")
+                            } else if len(found) == 1 {
+                                ui.set_text(found_note, "1 mistake. Enter in the list goes to it; F1 explains it.")
+                            } else {
+                                ui.set_text(found_note, "{len(found)} mistakes. Enter in the list goes to one; F1 explains it.")
+                            }
+                            editor.clear_marks(code)
+                            for m in found {
+                                if m.file == "" and m.line > 0 {
+                                    editor.mark(code, m.line, m.column, m.length)
+                                }
+                            }
+                        }
+                        err(e) => {
+                            if answer != "" {
+                                ui.show_error("nexac's list of mistakes couldn't be read: {first_line(answer)}")
+                            }
+                        }
+                    }
+                    check = idle()
+                }
+                none => { }
+            }
+        }
+        layout = poll(layout)
+        if layout.p != 0 {
+            match ui.program_result(layout.p) {
+                some(result) => {
+                    let laid_out = join(layout.out, "")
+                    if result != 0 {
+                        ui.show_error("It can't be laid out while it has this mistake: {first_line(laid_out)}")
+                    } else if ui.get_text(code) != layout_of {
+                        ui.status("The code changed while it was being laid out; press Format again.")
+                    } else if laid_out == layout_of {
+                        ui.status("It's already laid out the standard way.")
+                    } else {
+                        let line = editor.cursor_line(code)
+                        editor.replace_text(code, laid_out)
+                        editor.go_to(code, line, 1)
+                        modified = laid_out != saved
+                        dirty = true
+                        changed_at = 0
+                        ui.status("Laid out the standard way. Ctrl+Z undoes it.")
+                    }
+                    layout = idle()
+                }
+                none => { }
+            }
+        }
+        explaining = poll(explaining)
+        if explaining.p != 0 {
+            match ui.program_result(explaining.p) {
+                some(_) => {
+                    ui.set_text(output, paragraphs(join(explaining.out, "")))
+                    explaining = idle()
+                }
+                none => { }
+            }
+        }
+        if run.p != 0 {
+            // the output as it comes, up to what the view shows
+            let got = ui.program_output(run.p)
+            if got != "" and shown < max_output_bytes() {
+                let room = max_output_bytes() - shown
+                if len(got) < room {
+                    ui.add_text(output, got)
+                    shown += len(got)
+                } else {
+                    ui.add_text(output, slice(got, 0, letter_start(got, room)))
+                    ui.add_text(output, "\n[There's more output than Code Studio shows. The rest isn't shown.]\n")
+                    shown = max_output_bytes()
+                }
+            }
+            match ui.program_result(run.p) {
+                some(result) => {
+                    run = idle()
+                    if stopping {
+                        ui.set_text(out_title, "Output: stopped")
+                        ui.status("Stopped.")
+                    } else if building and result != 0 {
+                        ui.set_text(out_title, "Output: not built")
+                        ui.show_error("{files.name(path)} wasn't built: fix the mistakes shown in the output, then run it again.")
+                    } else if building {
+                        match ui.start_program([exe], "") {
+                            ok(p) => {
+                                run = Job { p: p, out: [] }
+                                ui.set_text(out_title, "Output: {files.name(path)} is running")
+                            }
+                            err(e) => {
+                                ui.set_text(out_title, "Output")
+                                if contains(e, "isn't allowed") {
+                                    ui.show_error("NexaOS doesn't let an installed app start a program it built, so Run can't work here yet. Checking, Format and Explain still work. To run it, type in a terminal: nexac run {files.name(path)}")
+                                } else {
+                                    ui.show_error("The program couldn't be started: {reason(e)}.")
+                                }
+                            }
+                        }
+                    } else if result == 0 {
+                        ui.set_text(out_title, "Output: the program ended")
+                    } else {
+                        ui.set_text(out_title, "Output: the program ended with exit code {result}")
+                    }
+                    building = false
+                    stopping = false
+                }
+                none => { }
+            }
+        }
+        // ---- what the window shows ----
+        ui.set_visible(empty, not has_file)
+        ui.set_visible(work, has_file)
+        ui.set_enabled(save_b, has_file)
+        ui.set_enabled(save_as_b, has_file)
+        ui.set_enabled(run_b, has_file and run.p == 0)
+        ui.set_enabled(stop_b, run.p != 0)
+        if has_file {
+            var name = files.name(path)
+            if path == "" {
+                name = "New program"
+            }
+            if modified {
+                ui.set_text(file_note, "{name} (not saved)")
+            } else {
+                ui.set_text(file_note, name)
+            }
+        }
+    }
+    return ok()
+}

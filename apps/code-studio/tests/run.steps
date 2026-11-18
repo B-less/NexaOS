@@ -1,0 +1,71 @@
+# program: ../apps/code-studio/src/main.nx
+# Running: a program that never stops printing (the output view keeps the
+# first 400,000 bytes; stopped); one that never ends quietly (stopped); one
+# with a mistake (not built); one ending with an error (exit code 1); a
+# new program saved under a name with spaces and quotes, then run.
+file Documents/forever.nx fn main() {\n    var i = 0\n    while true {\n        print("line {i}: é ✓")\n        i += 1\n    }\n}\n
+file Documents/quiet.nx fn main() {\n    var i = 0\n    while true {\n        i = (i + 1) % 7\n    }\n}\n
+file Documents/broken.nx fn main() {\n    print(nothing)\n}\n
+file Documents/ends-badly.nx fn main() -> !void {\n    print("trying")\n    return err("it didn't work")\n}\n
+window Code Studio
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type forever.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+key F5
+until code (21640 lines)
+key shift+F5
+until Output: stopped
+shot run-stopped
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type quiet.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+Return
+until quiet.nx is running
+key ctrl+shift+F12
+key shift+F5
+until Output: stopped
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type broken.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+key F5
+until Output: not built
+shot run-not-built
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type ends-badly.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+key F5
+until exit code 1
+key ctrl+shift+F12
+# a new program, saved under an awkward name and run
+key ctrl+n
+wait 1
+key F5
+window Save the program
+type my "odd" file
+key Return
+gone Save the program
+window Code Studio
+until Output: the program ended
+shot run-odd-name
+key ctrl+shift+F12
+key ctrl+q
+show Documents/my "odd" file.nx

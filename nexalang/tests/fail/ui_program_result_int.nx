@@ -1,0 +1,8 @@
+// error: expected `int`, but this is `?int`
+use ui
+fn main() -> !void {
+    let page = ui.start("app", "App")?
+    let p = ui.start_program(["ls"], "")?
+    let code: int = ui.program_result(p)
+    return ok()
+}

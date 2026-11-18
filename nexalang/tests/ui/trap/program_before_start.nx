@@ -1,0 +1,6 @@
+// trap: call ui.start first, to open the window
+use ui
+fn main() -> !void {
+    ui.start_program(["true"], "")?
+    return ok()
+}

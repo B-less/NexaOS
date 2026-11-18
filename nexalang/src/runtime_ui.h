@@ -20,8 +20,10 @@
  * twice: after ui.remove or ui.clear (0.7), a removed widget's number stops
  * the program if it's used again, instead of meaning some newer widget. */
 #include <gtk/gtk.h>
+#include <glib-unix.h>
+#include <sys/wait.h>
 
-enum { NX_UI_COLUMN = 1, NX_UI_ROW, NX_UI_LABEL, NX_UI_BUTTON, NX_UI_ENTRY, NX_UI_CHECK, NX_UI_LIST, NX_UI_CODE };
+enum { NX_UI_COLUMN = 1, NX_UI_ROW, NX_UI_LABEL, NX_UI_BUTTON, NX_UI_ENTRY, NX_UI_CHECK, NX_UI_LIST, NX_UI_CODE, NX_UI_EDITOR };
 enum { NX_EV_CLICKED = 1, NX_EV_CHANGED, NX_EV_SUBMITTED, NX_EV_TOGGLED, NX_EV_SELECTED, NX_EV_ACTIVATED, NX_EV_CLOSED, NX_EV_TICK };
 #define NX_UI_MAX_WIDGETS 100000
 
@@ -47,7 +49,14 @@ static struct {
     nx_ui_ev cur;
     nx_ui_key *keys; int64_t nkeys, kcap;
     GtkCssProvider *live;
+    GHashTable *progs;  /* number -> nx_ui_prog*, programs started (0.8) */
+    int64_t np;         /* the next program number (never used twice) */
 } nx_ui;
+
+/* The editor (std/editor.nx, runtime_editor.h, 0.8) is only in programs
+   that `use editor` (they link GtkSourceView); these are set when it is. */
+static void (*nx_ui_editor_set)(GtkWidget *view, const char *text);
+static void (*nx_ui_editor_tree)(GtkWidget *view, int depth);
 
 /* ---- the look: Hexa (WRITING_NEXA_APPS.md section 4) ---- */
 static const char NX_UI_CSS[] =
@@ -114,6 +123,9 @@ static const char NX_UI_CSS[] =
     ".nx-code textview, .nx-code text { background-color: @nexa_field; color: @nexa_text_strong; font-family: \"JetBrains Mono\", monospace; }\n"
     ".nx-code text selection { background-color: @nexa_selected; color: @nexa_selected_text; }\n"
     ".nx-code:focus-within, .nx-code textview:focus { border-color: @nexa_accent; }\n"
+    /* the editor (0.8): its colours come from a scheme made from these
+       @nexa_* colours (runtime_editor.h) */
+    ".nx-editor gutter, .nx-editor border { background-color: @nexa_bg_deep; }\n"
     /* the file chooser (0.7): its places, folders and files on Hexa colours */
     "filechooser, filechooser box, filechooser stack, filechooser paned { background-color: @nexa_bg; color: @nexa_text; }\n"
     "filechooser .sidebar, placessidebar, placessidebar list { background-color: @nexa_surface; color: @nexa_text; border: none; }\n"
@@ -209,6 +221,7 @@ static const char *nx_ui_kind_name(int k) {
     case NX_UI_ENTRY: return "a text field";
     case NX_UI_CHECK: return "a check box";
     case NX_UI_CODE: return "a code view";
+    case NX_UI_EDITOR: return "an editor";
     default: return "a list";
     }
 }
@@ -264,6 +277,16 @@ static void nx_ui_on_row_selected(GtkListBox *l, GtkListBoxRow *row, gpointer d)
 static void nx_ui_on_row_activated(GtkListBox *l, GtkListBoxRow *row, gpointer d) {
     (void)l;
     if (row && !nx_ui.busy) nx_ui_push(NX_EV_ACTIVATED, GPOINTER_TO_INT(d), gtk_list_box_row_get_index(row), NULL);
+}
+/* An editor's text changed (0.8): one waiting event per editor, whatever
+   the number of key presses; its text is read when ui.wait() hands it out,
+   so typing in a big file doesn't copy it at every key. */
+__attribute__((unused)) static void nx_ui_on_buffer_changed(GtkTextBuffer *b, gpointer d) {
+    (void)b;
+    int64_t id = GPOINTER_TO_INT(d);
+    for (int64_t i = nx_ui.qhead; i < nx_ui.qlen; i++)
+        if (nx_ui.q[i].kind == NX_EV_CHANGED && nx_ui.q[i].id == id && nx_ui.q[i].num == 1) return;
+    nx_ui_push(NX_EV_CHANGED, id, 1, NULL);
 }
 static gboolean nx_ui_on_delete(GtkWidget *w, GdkEvent *e, gpointer d) {
     (void)w; (void)e; (void)d;
@@ -446,14 +469,14 @@ static int64_t nx_ui_add(int64_t parent, GtkWidget *w, GtkWidget *outer, int kin
     if (nx_ui.n >= G_MAXINT) nx_trap(line, "this window has made too many widgets");
     int64_t id = nx_ui_new_item(w, outer, kind, style)->id;
     /* lists, code, text fields in a row and columns in a row take the free space */
-    bool grow = kind == NX_UI_LIST || kind == NX_UI_CODE || (in_row && (kind == NX_UI_ENTRY || kind == NX_UI_COLUMN));
+    bool grow = kind == NX_UI_LIST || kind == NX_UI_CODE || kind == NX_UI_EDITOR || (in_row && (kind == NX_UI_ENTRY || kind == NX_UI_COLUMN));
     if (!in_row && kind == NX_UI_BUTTON) gtk_widget_set_halign(outer, GTK_ALIGN_START);
     if (in_row && kind != NX_UI_LIST) gtk_widget_set_valign(outer, GTK_ALIGN_CENTER);
     gtk_box_pack_start(GTK_BOX(box), outer, grow, TRUE, 0);
     gtk_widget_show_all(outer);
     /* a list or code view in a row or column makes that row or column take
        the free height too, all the way up to the window (0.7) */
-    if (kind == NX_UI_LIST || kind == NX_UI_CODE) {
+    if (kind == NX_UI_LIST || kind == NX_UI_CODE || kind == NX_UI_EDITOR) {
         GtkWidget *child = box;
         while (child != nx_ui.content) {
             GtkWidget *up = gtk_widget_get_parent(child);
@@ -585,6 +608,9 @@ NX_RT int64_t nx_b___ui_code(int64_t parent, nx_str text, int line) {
     gtk_text_view_set_editable(GTK_TEXT_VIEW(tv), FALSE);
     gtk_text_view_set_accepts_tab(GTK_TEXT_VIEW(tv), FALSE);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(tv), TRUE);
+    /* long lines wrap at the edge, as in a terminal (0.8: a program's
+       output and explanations are read, not scrolled sideways) */
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(tv), GTK_WRAP_WORD_CHAR);
     gtk_text_view_set_left_margin(GTK_TEXT_VIEW(tv), 12);
     gtk_text_view_set_right_margin(GTK_TEXT_VIEW(tv), 12);
     gtk_text_view_set_top_margin(GTK_TEXT_VIEW(tv), 8);
@@ -596,7 +622,7 @@ NX_RT int64_t nx_b___ui_code(int64_t parent, nx_str text, int line) {
     return nx_ui_add(parent, tv, sc, NX_UI_CODE, 0, line);
 }
 
-#define NX_UI_TEXTUAL (1u << NX_UI_LABEL | 1u << NX_UI_BUTTON | 1u << NX_UI_ENTRY | 1u << NX_UI_CHECK | 1u << NX_UI_CODE)
+#define NX_UI_TEXTUAL (1u << NX_UI_LABEL | 1u << NX_UI_BUTTON | 1u << NX_UI_ENTRY | 1u << NX_UI_CHECK | 1u << NX_UI_CODE | 1u << NX_UI_EDITOR)
 
 /* Changes made by the program never come back as events. */
 NX_RT void nx_b___ui_set_text(int64_t id, nx_str text, int line) {
@@ -610,6 +636,11 @@ NX_RT void nx_b___ui_set_text(int64_t id, nx_str text, int line) {
         g_signal_handler_unblock(it->w, it->sig);
         break;
     case NX_UI_CODE: nx_ui_code_set(it->w, text); break;
+    case NX_UI_EDITOR:
+        g_signal_handler_block(gtk_text_view_get_buffer(GTK_TEXT_VIEW(it->w)), it->sig);
+        nx_ui_editor_set(it->w, c);
+        g_signal_handler_unblock(gtk_text_view_get_buffer(GTK_TEXT_VIEW(it->w)), it->sig);
+        break;
     default: gtk_button_set_label(GTK_BUTTON(it->w), c); break;
     }
     g_free(c);
@@ -620,7 +651,7 @@ NX_RT nx_str nx_b___ui_get_text(int64_t id, int line) {
     switch (it->kind) {
     case NX_UI_LABEL: return nx_ui_str(gtk_label_get_text(GTK_LABEL(it->w)));
     case NX_UI_ENTRY: return nx_ui_str(gtk_entry_get_text(GTK_ENTRY(it->w)));
-    case NX_UI_CODE: {
+    case NX_UI_CODE: case NX_UI_EDITOR: {
         GtkTextBuffer *b = gtk_text_view_get_buffer(GTK_TEXT_VIEW(it->w));
         GtkTextIter s, e;
         gtk_text_buffer_get_bounds(b, &s, &e);
@@ -773,8 +804,12 @@ NX_RT void nx_b___ui_shortcut(int64_t id, nx_str keys, int line) {
         nx_ui.keys = g_realloc_n(nx_ui.keys, (gsize)nx_ui.kcap, sizeof *nx_ui.keys);
     }
     nx_ui.keys[nx_ui.nkeys++] = (nx_ui_key){key, mods, id};
+    /* a second shortcut for the same button is shown beside the first (0.8) */
+    char *label = gtk_accelerator_get_label(key, mods);
+    char *both = it->keys ? g_strdup_printf("%s or %s", it->keys, label) : g_strdup(label);
+    g_free(label);
     g_free(it->keys);
-    it->keys = gtk_accelerator_get_label(key, mods);
+    it->keys = both;
     nx_ui_update_tip(it);
 }
 
@@ -920,6 +955,272 @@ NX_RT nx_M_s nx_b___ui_choose(nx_str title, nx_str name, bool save, int line) {
     return r;
 }
 
+static gboolean nx_ui_scroll_end(gpointer d) {
+    GtkTextView *tv = d;
+    g_object_set_data(G_OBJECT(tv), "nx-scroll", NULL);
+    GtkTextMark *m = gtk_text_buffer_get_mark(gtk_text_view_get_buffer(tv), "nx-end");
+    if (m && gtk_widget_get_realized(GTK_WIDGET(tv))) gtk_text_view_scroll_to_mark(tv, m, 0.0, TRUE, 0.0, 1.0);
+    return G_SOURCE_REMOVE;
+}
+
+/* Add text at the end of a code view and show the end (0.8): a program's
+   output as it comes, without setting the whole text again each time. */
+NX_RT void nx_b___ui_add_text(int64_t id, nx_str text, int line) {
+    nx_ui_item *it = nx_ui_want(id, 1u << NX_UI_CODE, "have text added (only code views can)", line);
+    if (text.len == 0) return;
+    GtkTextBuffer *b = gtk_text_view_get_buffer(GTK_TEXT_VIEW(it->w));
+    char *c = nx_ui_cstr(text);
+    GtkTextIter end;
+    gtk_text_buffer_get_end_iter(b, &end);
+    gtk_text_buffer_insert_with_tags_by_name(b, &end, c, -1, "nx-plain", NULL);
+    g_free(c);
+    gtk_text_buffer_get_end_iter(b, &end);
+    GtkTextMark *m = gtk_text_buffer_get_mark(b, "nx-end");
+    if (!m) m = gtk_text_buffer_create_mark(b, "nx-end", &end, FALSE);
+    else gtk_text_buffer_move_mark(b, m, &end);
+    /* once GTK has measured the new lines: scrolling now would use guessed
+       heights and stop short of the end of a long output (seen with 20,000
+       lines added at once). Measuring runs at GTK_TEXT_VIEW_PRIORITY_VALIDATE;
+       this runs after it. One waiting scroll per view. */
+    if (!g_object_get_data(G_OBJECT(it->w), "nx-scroll")) {
+        g_object_set_data(G_OBJECT(it->w), "nx-scroll", GINT_TO_POINTER(1));
+        g_idle_add_full(GTK_TEXT_VIEW_PRIORITY_VALIDATE + 1, nx_ui_scroll_end, g_object_ref(it->w), g_object_unref);
+    }
+}
+
+/* ---- programs started by the program (0.8) ----
+   ui.start_program runs another program with an argument list (never a
+   shell), in its own process group, with `input` on its standard input
+   and its output (stdout and stderr together, in order) gathered while
+   the window waits. Nothing here runs NexaLang code or touches NexaLang
+   memory: the output is plain bytes until ui.program_output hands it out.
+   At most NX_UI_PROG_BUF bytes wait unread; then the program is simply
+   not read from (it waits) until the output is taken, so a program that
+   never stops talking can't fill the memory. */
+#define NX_UI_MAX_PROGS 32
+#define NX_UI_PROG_BUF (256 << 10)
+
+typedef struct {
+    int64_t id;
+    GPid pid;                   /* also its process group */
+    int out_fd, in_fd;          /* -1 once closed */
+    guint out_src, in_src, child_src;
+    GByteArray *out;            /* output not yet taken */
+    char *in; size_t in_len, in_off;
+    bool exited, eof;
+    int code;                   /* exit code, or 128 + the signal that stopped it */
+} nx_ui_prog;
+
+static void nx_ui_prog_free(gpointer p) {
+    nx_ui_prog *r = p;
+    if (r->out_src) g_source_remove(r->out_src);
+    if (r->in_src) g_source_remove(r->in_src);
+    if (r->child_src) g_source_remove(r->child_src);
+    if (r->out_fd >= 0) close(r->out_fd);
+    if (r->in_fd >= 0) close(r->in_fd);
+    g_byte_array_free(r->out, TRUE);
+    g_free(r->in);
+    g_free(r);
+}
+
+static gboolean nx_ui_prog_read(gint fd, GIOCondition cond, gpointer d) {
+    (void)cond;
+    nx_ui_prog *r = d;
+    char buf[65536];
+    for (int rounds = 0; rounds < 4; rounds++) { /* then let the window draw */
+        ssize_t n = read(fd, buf, sizeof buf);
+        if (n > 0) {
+            g_byte_array_append(r->out, (const guint8 *)buf, (guint)n);
+            if (r->out->len >= NX_UI_PROG_BUF) { r->out_src = 0; return G_SOURCE_REMOVE; } /* full: wait */
+            continue;
+        }
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return G_SOURCE_CONTINUE;
+        close(fd); /* the end (or an error reading: the same for the program) */
+        r->out_fd = -1;
+        r->eof = true;
+        r->out_src = 0;
+        return G_SOURCE_REMOVE;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+static void nx_ui_prog_watch_out(nx_ui_prog *r) {
+    r->out_src = g_unix_fd_add(r->out_fd, G_IO_IN | G_IO_HUP | G_IO_ERR, nx_ui_prog_read, r);
+}
+
+static gboolean nx_ui_prog_write(gint fd, GIOCondition cond, gpointer d) {
+    (void)cond;
+    nx_ui_prog *r = d;
+    while (r->in_off < r->in_len) {
+        size_t k = r->in_len - r->in_off;
+        ssize_t n = write(fd, r->in + r->in_off, k > 65536 ? 65536 : k);
+        if (n > 0) { r->in_off += (size_t)n; continue; }
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return G_SOURCE_CONTINUE;
+        break; /* it stopped reading (EPIPE): the rest isn't wanted */
+    }
+    close(fd);
+    r->in_fd = -1;
+    r->in_src = 0;
+    return G_SOURCE_REMOVE;
+}
+
+static void nx_ui_prog_exited(GPid pid, gint status, gpointer d) {
+    nx_ui_prog *r = d;
+    r->exited = true;
+    r->child_src = 0;
+    r->code = WIFEXITED(status) ? WEXITSTATUS(status) : WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 1;
+    g_spawn_close_pid(pid);
+}
+
+/* In the new process, before it starts the program: its own process group
+   (so stopping it stops what it started too), and SIGPIPE back to normal
+   (this program ignores it, so a program that stops reading its input
+   can't stop the window). Only async-signal-safe calls. */
+static void nx_ui_prog_child(gpointer d) {
+    (void)d;
+    setpgid(0, 0);
+    signal(SIGPIPE, SIG_DFL);
+}
+
+/* When the program ends (or stops with an error), the programs it started
+   are stopped too, and everything is freed. */
+static void nx_ui_progs_end(void) {
+    if (!nx_ui.progs) return;
+    GHashTableIter i;
+    gpointer k, v;
+    g_hash_table_iter_init(&i, nx_ui.progs);
+    while (g_hash_table_iter_next(&i, &k, &v)) {
+        nx_ui_prog *r = v;
+        if (!r->exited) kill(-r->pid, SIGKILL);
+    }
+    g_hash_table_destroy(nx_ui.progs);
+    nx_ui.progs = NULL;
+}
+
+static nx_ui_prog *nx_ui_prog_get(int64_t id, int line) {
+    nx_ui_need_start(line);
+    nx_ui_prog *r = nx_ui.progs ? g_hash_table_lookup(nx_ui.progs, &id) : NULL;
+    if (r) return r;
+    if (id >= 1 && id < nx_ui.np)
+        nx_trap(line, "program %" PRId64 " has finished and its result was already taken (ui.program_result), so it can't be used any more", id);
+    nx_trap(line, "%" PRId64 " isn't a program this window started", id);
+}
+
+/* Start a program: ok(its number as text) or err(why). */
+NX_RT nx_R_s nx_b___ui_start_program(nx_arr *args, nx_str input, int line) {
+    nx_ui_need_start(line);
+    nx_R_s r = {false, {"", 0, NULL}, {"", 0, NULL}};
+    if (args->len == 0) nx_trap(line, "ui.start_program needs at least the program's name");
+    if (!nx_ui.progs) {
+        nx_ui.progs = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, nx_ui_prog_free);
+        nx_ui.np = 1;
+        signal(SIGPIPE, SIG_IGN);
+        atexit(nx_ui_progs_end);
+    }
+    if (g_hash_table_size(nx_ui.progs) >= NX_UI_MAX_PROGS) {
+        r.e = nx_fmt("%d programs are already running or haven't had their result taken; wait for one to finish", NX_UI_MAX_PROGS);
+        return r;
+    }
+    char **argv = g_new0(char *, (gsize)args->len + 1);
+    for (int64_t i = 0; i < args->len; i++) argv[i] = nx_ui_cstr(*(nx_str *)(args->data + i * args->esz));
+    if (!*argv[0]) {
+        g_strfreev(argv);
+        nx_trap(line, "ui.start_program was given an empty program name");
+    }
+    int pipefd[2];
+    GError *perr = NULL;
+    if (!g_unix_open_pipe(pipefd, FD_CLOEXEC, &perr)) {
+        r.e = nx_fmt("can't start %s: %s", argv[0], perr->message);
+        g_error_free(perr);
+        g_strfreev(argv);
+        return r;
+    }
+    GSpawnFlags flags = G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD;
+    if (input.len == 0) flags |= G_SPAWN_STDIN_FROM_DEV_NULL;
+    GPid pid = 0;
+    int in_fd = -1;
+    GError *err = NULL;
+    gboolean ok = g_spawn_async_with_pipes_and_fds(NULL, (const gchar *const *)argv, NULL, flags, nx_ui_prog_child, NULL,
+                                                   -1, pipefd[1], pipefd[1], NULL, NULL, 0, &pid,
+                                                   input.len ? &in_fd : NULL, NULL, NULL, &err);
+    close(pipefd[1]);
+    if (!ok) {
+        close(pipefd[0]);
+        const char *why = err->domain != G_SPAWN_ERROR ? err->message
+            : err->code == G_SPAWN_ERROR_NOENT ? "there's no such program"
+            : (err->code == G_SPAWN_ERROR_ACCES || err->code == G_SPAWN_ERROR_PERM) ? "it isn't allowed to be started here"
+            : err->code == G_SPAWN_ERROR_NOEXEC ? "it isn't a program"
+            : err->message;
+        r.e = nx_fmt("can't start %s: %s", argv[0], why);
+        g_error_free(err);
+        g_strfreev(argv);
+        return r;
+    }
+    g_strfreev(argv);
+    setpgid(pid, pid); /* also here, so it's in place before anyone stops it */
+    nx_ui_prog *p = g_new0(nx_ui_prog, 1);
+    p->id = nx_ui.np++;
+    p->pid = pid;
+    p->out_fd = pipefd[0];
+    p->in_fd = in_fd;
+    p->out = g_byte_array_new();
+    g_unix_set_fd_nonblocking(p->out_fd, TRUE, NULL);
+    nx_ui_prog_watch_out(p);
+    if (in_fd >= 0) {
+        p->in = nx_ui_cstr(input); /* zero bytes become U+FFFD, as in every widget */
+        p->in_len = strlen(p->in);
+        g_unix_set_fd_nonblocking(in_fd, TRUE, NULL);
+        p->in_src = g_unix_fd_add(in_fd, G_IO_OUT | G_IO_HUP | G_IO_ERR, nx_ui_prog_write, p);
+    }
+    p->child_src = g_child_watch_add(pid, nx_ui_prog_exited, p);
+    g_hash_table_insert(nx_ui.progs, &p->id, p);
+    r.v = nx_fmt("%" PRId64, p->id);
+    r.ok = true;
+    return r;
+}
+
+/* The output gathered since the last call, as text. While the program can
+   still write, a letter cut in half at the end waits for its other bytes. */
+NX_RT nx_str nx_b___ui_program_output(int64_t id, int line) {
+    nx_ui_prog *r = nx_ui_prog_get(id, line);
+    guint n = r->out->len;
+    if (!r->eof) {
+        /* hold back an unfinished UTF-8 letter at the end (at most 3 bytes) */
+        for (guint back = 1; back <= 3 && back <= n; back++) {
+            unsigned char c = r->out->data[n - back];
+            if ((c & 0xC0) != 0x80) {
+                guint need = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : c >= 0xC0 ? 2 : 1;
+                if (need > back) n -= back;
+                break;
+            }
+        }
+    }
+    nx_str s = nx_str_lossy((const char *)r->out->data, n);
+    g_byte_array_remove_range(r->out, 0, n);
+    if (!r->eof && !r->out_src && r->out->len < NX_UI_PROG_BUF) nx_ui_prog_watch_out(r); /* read again */
+    return s;
+}
+
+/* -1 while it runs or its output hasn't all been taken; then its exit code
+   (128 + the signal's number if a signal stopped it), and it's forgotten. */
+NX_RT int64_t nx_b___ui_program_result(int64_t id, int line) {
+    nx_ui_prog *r = nx_ui_prog_get(id, line);
+    if (!r->exited || !r->eof || r->out->len) return -1;
+    int code = r->code;
+    g_hash_table_remove(nx_ui.progs, &id); /* frees it */
+    return code;
+}
+
+/* Stop it now, with everything it started (its process group). Once it has
+   ended and its output is closed, its number may belong to nobody, so it
+   isn't used. */
+NX_RT void nx_b___ui_stop_program(int64_t id, int line) {
+    nx_ui_prog *r = nx_ui_prog_get(id, line);
+    if (!r->exited || !r->eof) kill(-r->pid, SIGKILL);
+}
+
 /* ---- for tests: the widgets as text (NEXALANG_UI_TREE, Ctrl+Shift+F12) ---- */
 static void nx_ui_tree_text(const char *t) {
     putchar('"');
@@ -964,6 +1265,7 @@ static void nx_ui_tree(GtkWidget *outer, int depth) {
         g_list_free(rows);
         break;
     }
+    case NX_UI_EDITOR: nx_ui_editor_tree(it->w, depth); break;
     default: printf("code (%d lines)", gtk_text_buffer_get_line_count(gtk_text_view_get_buffer(GTK_TEXT_VIEW(it->w)))); break;
     }
     if (!gtk_widget_get_sensitive(outer)) fputs(" (off)", stdout);
@@ -1006,6 +1308,18 @@ NX_RT int64_t nx_b___ui_wait(int64_t ms, int line) {
     while (nx_ui.qhead == nx_ui.qlen) gtk_main_iteration_do(TRUE);
     if (timer) g_source_remove(timer);
     nx_ui.cur = nx_ui.q[nx_ui.qhead++];
+    if (nx_ui.cur.kind == NX_EV_CHANGED && nx_ui.cur.num == 1) {
+        /* an editor's text, as it is now (0.8); a removed editor's events
+           were dropped with it */
+        nx_ui_item *it = g_hash_table_lookup(nx_ui.items, &nx_ui.cur.id);
+        nx_ui.cur.num = 0;
+        if (it) {
+            GtkTextBuffer *b = gtk_text_view_get_buffer(GTK_TEXT_VIEW(it->w));
+            GtkTextIter s, e;
+            gtk_text_buffer_get_bounds(b, &s, &e);
+            nx_ui.cur.text = gtk_text_buffer_get_text(b, &s, &e, TRUE);
+        }
+    }
     return nx_ui.cur.kind;
 }
 NX_RT int64_t nx_b___ui_event_id(int line) { (void)line; return nx_ui.cur.id; }

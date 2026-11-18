@@ -1,0 +1,155 @@
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "forever.nx"
+  column
+    editor "nexalang" (8 lines, cursor 1:1)
+      | fn main() {
+      |     var i = 0
+      |     while true {
+      |         print("line {i}: é ✓")
+      |         i += 1
+      |     }
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Output: stopped"
+    code (21640 lines)
+status "Stopped."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "quiet.nx"
+  column
+    editor "nexalang" (7 lines, cursor 1:1)
+      | fn main() {
+      |     var i = 0
+      |     while true {
+      |         i = (i + 1) % 7
+      |     }
+      | }
+      | 
+    row
+      primary button "Run" (off)
+      button "Stop"
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Output: quiet.nx is running"
+    code (1 lines)
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "quiet.nx"
+  column
+    editor "nexalang" (7 lines, cursor 1:1)
+      | fn main() {
+      |     var i = 0
+      |     while true {
+      |         i = (i + 1) % 7
+      |     }
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Output: stopped"
+    code (1 lines)
+status "Stopped."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "broken.nx"
+  column
+    editor "nexalang" (4 lines, cursor 1:1) mark 2:11-2:18
+      | fn main() {
+      |     print(nothing)
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "Line 2: unknown name `nothing`"
+    note "Output: not built"
+    code (6 lines)
+status error "broken.nx wasn't built: fix the mistakes shown in the output, then run it again."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "ends-badly.nx"
+  column
+    editor "nexalang" (5 lines, cursor 1:1)
+      | fn main() -> !void {
+      |     print("trying")
+      |     return err("it didn't work")
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Output: the program ended with exit code 1"
+    code (3 lines)
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "my \"odd\" file.nx"
+  column
+    editor "nexalang" (5 lines, cursor 3:11)
+      | // A new NexaLang program. Press F5 to run it.
+      | fn main() {
+      |     print("Hello from NexaLang")
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+    note "Output: the program ended"
+    code (2 lines)
+--- Documents/my "odd" file.nx
+// A new NexaLang program. Press F5 to run it.
+fn main() {
+    print("Hello from NexaLang")
+}

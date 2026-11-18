@@ -1,0 +1,88 @@
+# program: ../apps/code-studio/src/main.nx
+# Opening and saving: a program whose module has a mistake (shown with the
+# module's name, not marked in the open file); saving a change; files it
+# refuses with a message (not .nx, not UTF-8, a zero byte, 3 MB); an empty
+# file; a 200,000-letter line. (Names start with different letters: the
+# chooser's completion list then never pops up over the name being typed.)
+file Documents/app.nx use helpers\n\nfn main() {\n    print(helpers.twice(21))\n}\n
+file Documents/helpers.nx pub fn twice(n: int) -> int {\n    return n * 2 +\n}\n
+file Documents/notes.txt fn main() { }\n
+file Documents/latin1.nx // caf\xe9\nfn main() { }\n
+file Documents/zero.nx fn main() { }\x00\n
+fill Documents/big.nx 3000000 // a comment\n
+file Documents/empty.nx 
+fill Documents/one-line.nx 200000 x
+window Code Studio
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type app.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+until helpers.nx, line 3
+key ctrl+shift+F12
+key F8
+key ctrl+shift+F12
+# a change, saved
+key ctrl+End
+type // checked
+key ctrl+s
+wait 1
+key ctrl+shift+F12
+# files it refuses: the open file stays
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type notes.txt
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type latin1.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+shift+F12
+shot files-not-utf8
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type zero.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type big.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+shift+F12
+# an empty file, then one long line
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type empty.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+until the program has no
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type one-line.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+until found name
+shot files-long-line
+key ctrl+shift+F12
+key ctrl+q
+show Documents/app.nx

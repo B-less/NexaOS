@@ -1,0 +1,133 @@
+// Starting other programs (0.8), driven by tests/ui/programs.steps: output
+// as it comes (letters cut in half between reads, bytes that aren't UTF-8),
+// error output in order, exit codes, input, 3 MB in and out at once (no
+// deadlock), a program that never stops talking (1 MB waits, then it
+// waits) and one that never ends (stopped, with what it started), a
+// program that doesn't exist or can't be started, and too many at once.
+use ui
+use files
+
+// Run until it ends; gather its output. Stops it after `stop_after` bytes
+// (-1: never).
+fn run(args: [str], input: str, stop_after: int) -> str {
+    match ui.start_program(args, input) {
+        ok(p) => {
+            var parts: [str] = []
+            var size = 0
+            var stopped = false
+            while true {
+                match ui.wait_ms(20) {
+                    Closed => { return "closed" }
+                    _ => { }
+                }
+                let got = ui.program_output(p)
+                size += len(got)
+                push(parts, got)
+                if stop_after >= 0 and size >= stop_after and not stopped {
+                    ui.stop_program(p)
+                    stopped = true
+                }
+                match ui.program_result(p) {
+                    some(code) => {
+                        let all = join(parts, "")
+                        if stop_after >= 0 {
+                            return "stopped after at least {stop_after} bytes: exit {code}"
+                        }
+                        if len(all) > 200 {
+                            return "{len(all)} bytes, exit {code}"
+                        }
+                        return "\"{replace(all, "\n", "|")}\", exit {code}"
+                    }
+                    none => { }
+                }
+            }
+            return "?"
+        }
+        err(e) => { return "error: {e}" }
+    }
+}
+
+fn main() -> !void {
+    let page = ui.start("programs-test", "Programs")?
+    let out = ui.code(page, "")
+    let go = ui.primary_button(page, "Go")
+    ui.shortcut(go, "Ctrl+G")
+    let dir = files.join_path(files.home(), "work")
+    files.make_dir(dir)?
+    let script = files.join_path(dir, "not-a-program.sh")
+    files.write(script, "echo hi\n")?
+    while true {
+        match ui.wait() {
+            Clicked(_) => {
+                print(run(["echo", "hello", "two words", "\{x\}; $HOME"], "", -1))
+                print(run(["sh", "-c", "echo out; echo err >&2; echo out again; exit 3"], "", -1))
+                // é cut in half between two reads; then bytes that aren't UTF-8
+                print(run(["sh", "-c", "printf 'caf\\303'; sleep 0.3; printf '\\251\\n'; printf '\\377\\376 \\303\\n'"], "", -1))
+                print(run(["cat"], "line one\nlíne two ✓\n", -1))
+                print(run(["wc", "-c"], repeat("0123456789", 300000), -1))
+                print(run(["cat"], repeat("0123456789", 300000), -1))
+                print(run(["yes", "never stops"], "", 3000000))
+                print(run(["sh", "-c", "sleep 100 & sleep 100"], "", 0))
+                print(run(["no-such-program-anywhere"], "", -1))
+                print(run([script], "", -1))
+                print(run(["sh", "-c", "kill -TERM $$"], "", -1))
+                // the output view, added to as output comes
+                let p = ui.start_program(["sh", "-c", "echo first; sleep 0.2; echo second"], "")?
+                var done = false
+                while not done {
+                    ui.wait_ms(20)
+                    ui.add_text(out, ui.program_output(p))
+                    match ui.program_result(p) {
+                        some(_) => { done = true }
+                        none => { }
+                    }
+                }
+                print("view: {replace(ui.get_text(out), "\n", "|")}")
+                // 32 at once is the most; the 33rd is refused
+                var running: [int] = []
+                for i in 0..33 {
+                    match ui.start_program(["sleep", "100"], "") {
+                        ok(q) => { push(running, q) }
+                        err(e) => { print("program {i + 1}: {e}") }
+                    }
+                }
+                for q in running {
+                    ui.stop_program(q)
+                }
+                var stopped = 0
+                while len(running) > 0 {
+                    ui.wait_ms(20)
+                    var still: [int] = []
+                    for q in running {
+                        match ui.program_result(q) {
+                            some(code) => {
+                                assert(code == 137)
+                                stopped += 1
+                            }
+                            none => { push(still, q) }
+                        }
+                    }
+                    running = still
+                }
+                print("all {stopped} stopped")
+                // one left running when the program ends is stopped then
+                // (tests/programs.rs checks, with the file named by the argument)
+                var pid_file = files.join_path(dir, "pid")
+                if len(args()) > 0 {
+                    pid_file = args()[0]
+                }
+                let last = ui.start_program(["sh", "-c", "echo $$ > {pid_file}; exec sleep 100"], "")?
+                var waited = 0
+                while not files.exists(pid_file) and waited < 200 {
+                    ui.wait_ms(50)
+                    waited += 1
+                }
+                print("left running: {last > 0}")
+                return ok()
+            }
+            Closed => { return ok() }
+            _ => { }
+        }
+    }
+    return ok()
+}

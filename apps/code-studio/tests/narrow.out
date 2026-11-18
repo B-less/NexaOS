@@ -1,0 +1,29 @@
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "narrow.nx"
+  column
+    editor "nexalang" (6 lines, cursor 3:11) mark 3:11-3:14 mark 4:11-4:14
+      | fn main() {
+      |     let name = "a long line of text that goes past the edge of a narrow window"
+      |     print(nam)
+      |     print(nme)
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "2 mistakes. Enter in the list goes to one; F1 explains it."
+      button "Next"
+    list "No mistakes found." (2 rows)
+      * "Line 3: unknown name `nam`"
+      - "Line 4: unknown name `nme`"
+    note "Nothing with this name exists here: check the spelling, or define it first."
+    note "Explanation: unknown name `nam`"
+    code (22 lines)

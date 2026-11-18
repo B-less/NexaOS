@@ -31,11 +31,13 @@ SEED = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 TOOLS_ONLY = "--tools-only" in sys.argv[4:]
 FINDINGS = os.path.join(ROOT, "tests", "fuzz", "findings")
 
-def gtk(which):
-    r = subprocess.run(["pkg-config", which, "gtk+-3.0"], capture_output=True, text=True)
+def gtk(which, *more):
+    r = subprocess.run(["pkg-config", which, "gtk+-3.0", *more], capture_output=True, text=True)
     return r.stdout.split() if r.returncode == 0 else None
 
 GTK_CFLAGS, GTK_LIBS = gtk("--cflags"), gtk("--libs")
+# programs that `use editor` (0.8) also get GtkSourceView 4
+SV_CFLAGS, SV_LIBS = gtk("--cflags", "gtksourceview-4"), gtk("--libs", "gtksourceview-4")
 
 def seeds():
     out = []
@@ -63,7 +65,12 @@ TOKENS = ["0", "1", "-1", "9223372036854775807", "-9223372036854775808", "0.5", 
           "files.size(\"x\")", "files.size(\"\")", "ui.display(1, \"9:00\")",
           # 0.7: removing widgets, code, the clipboard (file choosers wait for a person: stopped like a window)
           "ui.clear(1)", "ui.remove(2)", "ui.remove(1)", "ui.code(1, \"x\\n\")", "ui.to_clipboard(\"c\")",
-          "ui.focus(2)", "ui.save_file(\"t\", \"a.nx\")", "ui.open_file(\"t\", \"*.nx\")"]
+          "ui.focus(2)", "ui.save_file(\"t\", \"a.nx\")", "ui.open_file(\"t\", \"*.nx\")",
+          # 0.8: the editor, other programs, adding to a code view
+          "editor.new(1, \"nexalang\")", "editor.new(1, \"\")", "editor.mark(2, 1, 1, 1)", "editor.mark(2, -1, 99, 0)",
+          "editor.go_to(2, 9, 9)", "editor.clear_marks(2)", "editor.replace_text(2, \"a\\nb\")", "editor.cursor_line(2)",
+          "ui.add_text(2, \"more\")", "ui.start_program([\"true\"], \"\")", "ui.start_program([\"cat\"], \"in\")",
+          "ui.start_program([\"no-such-program\"], \"\")", "ui.program_output(1)", "ui.program_result(1)", "ui.stop_program(1)"]
 
 def mutate(rng, src):
     lines = src.split("\n")
@@ -215,7 +222,10 @@ def tools(prog, text, work):
             return "fmt changed whether the program is accepted:\n" + formatted
         if before.returncode == 0 and before.stdout != after.stdout:
             return "fmt changed the generated C:\n" + formatted
-        if before.returncode != 0 and before.stderr.split(b"\n")[0] != after.stderr.split(b"\n")[0]:
+        # the same mistakes (all of them; their order can change when two
+        # end up at the same place, e.g. an empty first line removed)
+        said = lambda r: sorted(l for l in r.stderr.split(b"\n") if l.startswith(b"error: "))
+        if before.returncode != 0 and said(before) != said(after):
             return "fmt changed the mistake:\n%s\n%s" % (before.stderr[:300], after.stderr[:300])
     try:
         ldiags, edits = lsp_session(prog, text)
@@ -271,9 +281,10 @@ def one(job):
         asan = os.path.join(work, "prog-asan")
         flags = ["gcc", "-std=gnu11", "-O1", "-g", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                  "-fno-omit-frame-pointer", "-DNX_LEAK_CHECK", "-Wall", "-Wextra", "-Werror"]
+        uses_editor = "#include <gtksourceview/gtksource.h>" in c.stdout.decode(errors="replace")
         if uses_ui:
-            flags += GTK_CFLAGS
-        flags += [cfile, "-o", asan, "-lm"] + (GTK_LIBS if uses_ui else [])
+            flags += SV_CFLAGS if uses_editor else GTK_CFLAGS
+        flags += [cfile, "-o", asan, "-lm"] + ((SV_LIBS if uses_editor else GTK_LIBS) if uses_ui else [])
         s = run(flags, timeout=180)
         if s is None or s.returncode != 0:
             return ("c-build-failure", n, path, text, (s.stderr.decode(errors="replace") if s else "timeout") + " (sanitizer build)")

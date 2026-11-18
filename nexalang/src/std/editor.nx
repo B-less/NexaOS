@@ -1,0 +1,78 @@
+// Standard module `editor` (0.8): a code editor inside a window, over
+// GtkSourceView 4 (part of NexaOS). Line numbers, colours for the
+// language, the current line, matching brackets, undo (Ctrl+Z, Ctrl+Shift+Z),
+// Tab indents with 4 spaces, Enter keeps the indentation.
+//
+//   use ui
+//   use editor
+//
+//   fn main() -> !void {
+//       let page = ui.start("my-editor", "My editor")?
+//       let code = editor.new(page, "nexalang")
+//       ui.set_text(code, "fn main() \{\n    print(1)\n}\n")
+//       while true {
+//           match ui.wait() {
+//               Changed(id, text) => { }   // the person changed the text
+//               Closed => { return ok() }
+//               _ => { }
+//           }
+//       }
+//       return ok()
+//   }
+//
+// `ui.set_text` and `ui.get_text` work on it; setting the text can't be
+// undone by the person (it's a new start) and never comes back as an event.
+// While the person types, `Changed(id, text)` comes once for all the key
+// presses since the last `ui.wait()`, with the whole text as it is then.
+// Ctrl+Tab leaves the editor (Tab indents). A program with `use editor`
+// is linked with GtkSourceView; programs without it aren't.
+use ui
+
+// A code editor in `parent` (a column or a row); it takes the free height.
+// `language` names the colours: "nexalang", or another language the
+// computer has ("c", "json", "python3"), or "" for plain text. A language
+// the computer doesn't have gives plain text, not an error.
+pub fn new(parent: int, language: str) -> int {
+    return __editor_new(parent, language)
+}
+
+// Replace the whole text as one change the person can undo (Ctrl+Z), the
+// way a "lay it out" or "replace all" command should; `ui.set_text` is a
+// new start instead. Like `set_text`, it doesn't come back as an event.
+// The cursor goes to the end; put it back with `go_to`.
+pub fn replace_text(id: int, text: str) {
+    __editor_replace(id, text)
+}
+
+// Underline a mistake: from `line` and `column` (counted from 1, in
+// letters, the way `nexac check --json` gives them), `length` letters
+// (at least one). A place outside the text, which can happen when the text
+// changed since the mistake was found, is marked at the nearest place.
+pub fn mark(id: int, line: int, column: int, length: int) {
+    var at_line = line
+    if at_line < 1 {
+        at_line = 1
+    }
+    __editor_mark(id, at_line, column, length)
+}
+
+// Remove every mistake's mark.
+pub fn clear_marks(id: int) {
+    __editor_mark(id, 0, 0, 0)
+}
+
+// Put the cursor at `line` and `column` (from 1; the nearest place if
+// outside the text), show it, and give the editor the keyboard.
+pub fn go_to(id: int, line: int, column: int) {
+    __editor_go_to(id, line, column)
+}
+
+// The cursor's line (from 1).
+pub fn cursor_line(id: int) -> int {
+    return __editor_cursor(id, false)
+}
+
+// The cursor's column (from 1, in letters).
+pub fn cursor_column(id: int) -> int {
+    return __editor_cursor(id, true)
+}

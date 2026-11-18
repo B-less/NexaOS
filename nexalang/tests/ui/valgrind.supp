@@ -22,3 +22,14 @@
    fun:wcsxfrm_l
    fun:g_utf8_collate_key
 }
+# The editor (0.8): GtkSourceView colours text with GLib's regular
+# expressions, which PCRE2 compiles to machine code at run time (JIT).
+# Valgrind can't follow that code and reports its reads as uninitialised.
+# Code with no file behind it (???) is only that generated code: every
+# real function has a library or the program. Checked: an editor without a
+# language (no regular expressions) gives no such report.
+{
+   pcre2-jit-code
+   Memcheck:Cond
+   obj:???
+}

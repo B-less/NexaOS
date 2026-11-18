@@ -1,0 +1,8 @@
+// trap: ui.start_program needs at least the program's name
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let nothing: [str] = []
+    ui.start_program(nothing, "")?
+    return ok()
+}

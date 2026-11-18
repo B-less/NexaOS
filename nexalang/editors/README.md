@@ -3,6 +3,12 @@
 Everything here comes from `nexac` itself, so editors always agree with the
 compiler (0.6).
 
+On NexaOS, **Code Studio** (`apps/code-studio`, 0.8) is a NexaLang editor
+built on these: it shows `nexac check --json --stdin`'s mistakes as you
+type, lays code out with `nexac fmt --stdin`, explains with `nexac explain`
+and runs programs with `nexac build`. It's written in NexaLang itself,
+with the `editor` module (GtkSourceView 4 and `gtksourceview/nexalang.lang`).
+
 | What | How |
 |---|---|
 | Mistakes, as JSON | `nexac check --json app.nx` (or `--stdin app.nx` for unsaved text; the modules next to `app.nx` are read from the disk) |

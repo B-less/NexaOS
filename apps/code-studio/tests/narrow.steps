@@ -1,0 +1,19 @@
+# program: ../apps/code-studio/src/main.nx
+# 360 px wide, with mistakes, an explanation and output.
+file Documents/narrow.nx fn main() {\n    let name = "a long line of text that goes past the edge of a narrow window"\n    print(nam)\n    print(nme)\n}\n
+window Code Studio
+size 360 700
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+type narrow.nx
+key Return
+gone Open a NexaLang file
+window Code Studio
+until 2 mistakes
+key F8
+key F1
+until code (22 lines)
+shot narrow
+key ctrl+shift+F12
+key ctrl+q

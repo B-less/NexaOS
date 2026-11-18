@@ -24,10 +24,17 @@ use std::collections::{BTreeMap, HashSet};
 pub const RUNTIME: &str = include_str!("runtime.h");
 /// Windows (GTK 3): only in programs that `use ui`.
 pub const RUNTIME_UI: &str = include_str!("runtime_ui.h");
+/// The code editor (GtkSourceView 4): only in programs that `use editor`.
+pub const RUNTIME_EDITOR: &str = include_str!("runtime_editor.h");
 
 /// Whether the program uses the standard module `ui` (and so needs GTK).
 pub fn uses_ui(mods: &[Module]) -> bool {
     mods.iter().any(|m| m.is_std && m.name == "ui")
+}
+
+/// Whether the program uses the standard module `editor` (GtkSourceView, 0.8).
+pub fn uses_editor(mods: &[Module]) -> bool {
+    mods.iter().any(|m| m.is_std && m.name == "editor")
 }
 
 /// A C expression with no side effects, and whether it's an owned temporary.
@@ -162,6 +169,9 @@ pub fn generate(mods: &[Module], checked: &Checked, lines: bool) -> String {
     out += RUNTIME;
     if uses_ui(mods) {
         out += RUNTIME_UI;
+    }
+    if uses_editor(mods) {
+        out += RUNTIME_EDITOR;
     }
     out += "\n/* ---- types ---- */\n";
     out += &types;

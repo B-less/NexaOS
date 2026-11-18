@@ -1,0 +1,227 @@
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "app.nx"
+  column
+    editor "nexalang" (6 lines, cursor 1:1)
+      | use helpers
+      | 
+      | fn main() {
+      |     print(helpers.twice(21))
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "helpers.nx, line 3: expected a value, found `}`"
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "app.nx"
+  column
+    editor "nexalang" (6 lines, cursor 1:1)
+      | use helpers
+      | 
+      | fn main() {
+      |     print(helpers.twice(21))
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      * "helpers.nx, line 3: expected a value, found `}`"
+    note "Something is missing or in the wrong place; look just before the marked spot too."
+status "This mistake is in helpers.nx: open that file to fix it."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "app.nx"
+  column
+    editor "nexalang" (6 lines, cursor 6:11)
+      | use helpers
+      | 
+      | fn main() {
+      |     print(helpers.twice(21))
+      | }
+      | // checked
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "helpers.nx, line 3: expected a value, found `}`"
+status "Saved app.nx."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "app.nx"
+  column
+    editor "nexalang" (6 lines, cursor 6:11)
+      | use helpers
+      | 
+      | fn main() {
+      |     print(helpers.twice(21))
+      | }
+      | // checked
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "helpers.nx, line 3: expected a value, found `}`"
+status error "notes.txt isn't a NexaLang file. Code Studio opens files whose names end in .nx."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "app.nx"
+  column
+    editor "nexalang" (6 lines, cursor 6:11)
+      | use helpers
+      | 
+      | fn main() {
+      |     print(helpers.twice(21))
+      | }
+      | // checked
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "helpers.nx, line 3: expected a value, found `}`"
+status error "latin1.nx isn't UTF-8 text, so Code Studio can't open it. Is it really a NexaLang file?"
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "app.nx"
+  column
+    editor "nexalang" (6 lines, cursor 6:11)
+      | use helpers
+      | 
+      | fn main() {
+      |     print(helpers.twice(21))
+      | }
+      | // checked
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "helpers.nx, line 3: expected a value, found `}`"
+status error "zero.nx has zero bytes in it, so it isn't a text file Code Studio can edit."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "app.nx"
+  column
+    editor "nexalang" (6 lines, cursor 6:11)
+      | use helpers
+      | 
+      | fn main() {
+      |     print(helpers.twice(21))
+      | }
+      | // checked
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "helpers.nx, line 3: expected a value, found `}`"
+status error "big.nx is too big to edit here (3 MB). Code Studio opens NexaLang files up to 2 MB."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "empty.nx"
+  column
+    editor "nexalang" (1 lines, cursor 1:1)
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "Line 1: the program has no `fn main()`"
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "one-line.nx"
+  column
+    editor "nexalang" (1 lines, cursor 1:1) mark 1:1-1:200001 (200000 letters)
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "1 mistake. Enter in the list goes to it; F1 explains it."
+      button "Next"
+    list "No mistakes found." (1 rows)
+      - "Line 1: expected `fn`, `struct` or `enum`, found name `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+--- Documents/app.nx
+use helpers
+
+fn main() {
+    print(helpers.twice(21))
+}
+// checked

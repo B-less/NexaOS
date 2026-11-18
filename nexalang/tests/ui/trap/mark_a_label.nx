@@ -1,0 +1,9 @@
+// trap: widget 2 is a text, which can't mark mistakes (only editors can)
+use ui
+use editor
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let words = ui.label(page, "not an editor")
+    editor.mark(words, 1, 1, 1)
+    return ok()
+}

@@ -1,0 +1,17 @@
+// trap: program 1 has finished and its result was already taken (ui.program_result), so it can't be used any more
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let p = ui.start_program(["true"], "")?
+    var done = false
+    while not done {
+        ui.wait_ms(10)
+        ui.program_output(p)
+        match ui.program_result(p) {
+            some(_) => { done = true }
+            none => { }
+        }
+    }
+    ui.program_output(p)
+    return ok()
+}

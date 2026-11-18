@@ -1,0 +1,44 @@
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "New program (not saved)"
+  column
+    editor "nexalang" (5 lines, cursor 3:11)
+      | // A new NexaLang program. Press F5 to run it.
+      | fn main() {
+      |     print("Hello from NexaLang")
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note ""
+status error "Code Studio needs nexac, the NexaLang compiler, and it isn't installed here. Install NexaLang to see mistakes, lay programs out and run them."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "New program (not saved)"
+  column
+    editor "nexalang" (5 lines, cursor 3:11)
+      | // A new NexaLang program. Press F5 to run it.
+      | fn main() {
+      |     print("Hello from NexaLang")
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note ""
+status error "Code Studio needs nexac, the NexaLang compiler, and it isn't installed here. Install NexaLang to see mistakes, lay programs out and run them."

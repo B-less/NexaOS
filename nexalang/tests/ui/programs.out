@@ -1,0 +1,15 @@
+"hello two words {x}; $HOME|", exit 0
+"out|err|out again|", exit 3
+"café|�� �|", exit 0
+"line one|líne two ✓|", exit 0
+"3000000|", exit 0
+3000000 bytes, exit 0
+stopped after at least 3000000 bytes: exit 137
+stopped after at least 0 bytes: exit 137
+error: can't start no-such-program-anywhere: there's no such program
+error: can't start /HOME/work/not-a-program.sh: it isn't allowed to be started here
+"", exit 143
+view: first|second|
+program 33: 32 programs are already running or haven't had their result taken; wait for one to finish
+all 32 stopped
+left running: true

@@ -385,9 +385,37 @@ fn have_display_tools() -> bool {
     ["Xvfb", "xdotool"].iter().all(|t| Command::new("which").arg(t).output().is_ok_and(|o| o.status.success()))
 }
 
-fn gtk_flags(which: &str) -> Vec<String> {
-    let o = Command::new("pkg-config").arg(which).arg("gtk+-3.0").output().unwrap();
+/// GTK's flags, and GtkSourceView's for programs that `use editor` (0.8).
+fn gtk_flags_for(which: &str, sourceview: bool) -> Vec<String> {
+    let mut c = Command::new("pkg-config");
+    c.arg(which).arg("gtk+-3.0");
+    if sourceview {
+        c.arg("gtksourceview-4");
+    }
+    let o = c.output().unwrap();
     String::from_utf8(o.stdout).unwrap().split_whitespace().map(String::from).collect()
+}
+
+/// Whether generated C uses the editor (GtkSourceView).
+fn uses_sourceview(c: &[u8]) -> bool {
+    String::from_utf8_lossy(c).contains("#include <gtksourceview/gtksource.h>")
+}
+
+/// A data folder with NexaLang's GtkSourceView language (as NexaOS installs
+/// it: scripts/stage-text-editor.sh), for XDG_DATA_DIRS: editors (0.8)
+/// colour NexaLang with it.
+fn lang_data_dirs() -> String {
+    let dir = std::env::temp_dir().join(format!("nexalang-share-{}", std::process::id()));
+    let specs = dir.join("gtksourceview-4/language-specs");
+    std::fs::create_dir_all(&specs).unwrap();
+    std::fs::copy(root().join("editors/gtksourceview/nexalang.lang"), specs.join("nexalang.lang")).unwrap();
+    format!("{}:/usr/local/share:/usr/share", dir.display())
+}
+
+/// PATH with this nexac first: Code Studio (0.8) starts `nexac`.
+fn path_with_nexac() -> String {
+    let bin = Path::new(env!("CARGO_BIN_EXE_nexac")).parent().unwrap().display().to_string();
+    format!("{}:{}", bin, std::env::var("PATH").unwrap_or_default())
 }
 
 /// Window programs: the examples, the test programs, and NexaOS apps
@@ -476,6 +504,14 @@ fn drive_env(s: &Steps, dir: &Path, cmd: &[&std::ffi::OsStr], wait_s: u32, shots
     if let Some(d) = shots {
         c.env("NX_SHOTS", d);
     }
+    c.env("XDG_DATA_DIRS", lang_data_dirs());
+    c.env("PATH", path_with_nexac());
+    // `# env NAME=VALUE` in a steps file (0.8: Code Studio without nexac)
+    for line in std::fs::read_to_string(&s.file).unwrap_or_default().lines() {
+        if let Some((k, v)) = line.strip_prefix("# env ").and_then(|kv| kv.split_once('=')) {
+            c.env(k, v);
+        }
+    }
     for (k, v) in env {
         c.env(k, v);
     }
@@ -551,6 +587,14 @@ fn window_programs_build_with_the_hardened_flags() {
     assert!(nexac().arg("build").arg(root().join("examples/hello.nx")).arg("-o").arg(&exe).status().unwrap().success());
     let deps = Command::new("ldd").arg(&exe).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
     assert!(!deps.contains("gtk"), "hello is linked with GTK:\n{}", deps);
+    // only programs that `use editor` get GtkSourceView (0.8)
+    let ldd = |p: &str| -> String {
+        let exe = dir.join("ldd-prog");
+        assert!(nexac().arg("build").arg(root().join(p)).arg("-o").arg(&exe).status().unwrap().success());
+        Command::new("ldd").arg(&exe).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default()
+    };
+    assert!(!ldd("tests/ui/widgets.nx").contains("gtksourceview"), "a window without an editor is linked with GtkSourceView");
+    assert!(ldd("tests/ui/editing.nx").contains("gtksourceview-4"), "the editor test isn't linked with GtkSourceView");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -609,16 +653,17 @@ fn windows_are_clean_under_address_and_undefined_sanitizers() {
         assert!(c.status.success());
         let cfile = dir.join("prog.c");
         std::fs::write(&cfile, &c.stdout).unwrap();
+        let sv = uses_sourceview(&c.stdout);
         let exe = dir.join("prog-asan");
         let st = Command::new("gcc")
             .args(["-std=gnu11", "-O1", "-g", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"])
             .args(["-fno-omit-frame-pointer", "-DNX_LEAK_CHECK", "-Wall", "-Wextra", "-Werror"])
-            .args(gtk_flags("--cflags"))
+            .args(gtk_flags_for("--cflags", sv))
             .arg(&cfile)
             .arg("-o")
             .arg(&exe)
             .arg("-lm")
-            .args(gtk_flags("--libs"))
+            .args(gtk_flags_for("--libs", sv))
             .status()
             .unwrap();
         assert!(st.success(), "{} didn't build with sanitizers", s.program.display());
@@ -730,6 +775,40 @@ fn windows_follow_the_theme_live() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// The editor's colours (0.8) are a GtkSourceView scheme made from the
+// theme's @nexa_* colours: the text area is the theme's nexa_field and
+// keywords its accent, at start and after a live change.
+#[test]
+fn editors_follow_the_theme_live() {
+    if !have_gtk() || !have_display_tools() || !have("python3") || !have("convert") {
+        eprintln!("GTK 3, Xvfb, xdotool, python3 or ImageMagick missing; skipped");
+        return;
+    }
+    let dir = tmpdir("ui-editor-theme");
+    let shots = dir.join("shots");
+    let s = Steps { file: root().join("tests/ui/editor_theme.steps"), program: root().join("tests/ui/editing.nx"), broker: false };
+    let cmd: Vec<&std::ffi::OsStr> = vec![env!("CARGO_BIN_EXE_nexac").as_ref(), "run".as_ref(), s.program.as_os_str()];
+    let out = drive(&s, &dir, &cmd, 30, Some(&shots));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pixel = |name: &str| -> String {
+        let o = Command::new("convert").arg(shots.join(format!("{name}.png"))).args(["-format", "%[pixel:p{300,400}]", "info:"]).output().unwrap();
+        String::from_utf8_lossy(&o.stdout).to_string()
+    };
+    assert_eq!(pixel("editor-theme-start"), "srgb(16,42,26)", "the editor's background at start (#102a1a)");
+    assert_eq!(pixel("editor-theme-changed"), "srgb(251,250,245)", "the editor's background after a live change (#fbfaf5)");
+    let has = |name: &str, colour: &str| -> bool {
+        let o = Command::new("convert")
+            .arg(shots.join(format!("{name}.png")))
+            .args(["-crop", "560x640+0+0", "-format", "%c", "histogram:info:"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&o.stdout).contains(colour)
+    };
+    assert!(has("editor-theme-start", "srgb(94,230,168)"), "`fn` isn't in the accent colour (#5ee6a8)");
+    assert!(has("editor-theme-changed", "srgb(194,24,91)"), "`fn` didn't follow the accent colour (#c2185b)");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // Window Designer (apps/window-designer, 0.7): every program it exported in
 // its tests (`--- Documents/NAME.nx` in a tests/*.out, which the window
 // tests above check byte for byte) must be accepted by `nexac check`, be
@@ -827,5 +906,37 @@ fn window_designer_programs_build_and_show_what_the_preview_showed() {
         }
     }
     assert!(checked >= 3, "only {} exported programs in the designer's tests", checked);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Programs started with ui.start_program (0.8) that are still running when
+// the window's program ends are stopped then: tests/ui/programs.nx leaves
+// `sleep 100` running and writes its process number to the file named by
+// its argument.
+#[test]
+fn programs_still_running_are_stopped_when_the_window_program_ends() {
+    if !have_gtk() || !have_display_tools() || !have("python3") {
+        eprintln!("GTK 3, Xvfb, xdotool or python3 missing; skipped");
+        return;
+    }
+    let dir = tmpdir("ui-progs-end");
+    let pid_file = dir.join("pid");
+    let s = Steps { file: root().join("tests/ui/programs.steps"), program: root().join("tests/ui/programs.nx"), broker: false };
+    let cmd: Vec<&std::ffi::OsStr> =
+        vec![env!("CARGO_BIN_EXE_nexac").as_ref(), "run".as_ref(), "--check-memory".as_ref(), s.program.as_os_str(), pid_file.as_os_str()];
+    let out = drive(&s, &dir, &cmd, 60, None);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pid: u32 = std::fs::read_to_string(&pid_file).unwrap().trim().parse().unwrap();
+    let mut alive = true;
+    for _ in 0..50 {
+        // gone, or a zombie waiting for its parent (init) to collect it
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+        alive = stat.contains("(sleep)") && !stat.contains(") Z ");
+        if !alive {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(!alive, "sleep ({pid}) is still running after the program ended");
     let _ = std::fs::remove_dir_all(&dir);
 }

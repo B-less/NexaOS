@@ -1,0 +1,4 @@
+# program: tests/ui/programs.nx
+window Programs
+key ctrl+g
+wait 3

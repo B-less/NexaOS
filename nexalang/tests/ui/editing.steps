@@ -1,0 +1,35 @@
+# program: tests/ui/editing.nx
+window Editor
+key ctrl+shift+F12
+key ctrl+p
+# into the editor, then type: one Changed for all the key presses
+key ctrl+g
+type  + 2
+key ctrl+p
+# Enter keeps the indentation; one BackSpace takes away a whole level
+# (4 spaces); Tab indents with 4 spaces
+key End Return
+type print(3)
+key Return BackSpace
+type // end
+key ctrl+Home Tab
+type a
+shot editor-typed
+key ctrl+p
+# undo everything typed, and no further than the text the program set
+key ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z ctrl+z
+key ctrl+p
+# marks, also for places outside the text
+key ctrl+m
+shot editor-marks
+key ctrl+shift+F12
+key ctrl+l
+key ctrl+shift+F12
+# a very long line, 2 MB, a zero byte
+key ctrl+b
+wait 2
+key ctrl+shift+F12
+# an editor for plain text, and one for a language this computer doesn't have
+key F6
+key ctrl+shift+F12
+key ctrl+q

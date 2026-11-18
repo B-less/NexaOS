@@ -83,6 +83,17 @@ fn std_primitive(name: &str) -> Option<(Vec<Type>, Type)> {
         "__ui_remove" => (vec![Int, Bool], Void),
         "__ui_to_clipboard" => (vec![s()], Void),
         "__ui_choose" => (vec![s(), s(), Bool], Maybe(Box::new(s()))),
+        "__ui_add_text" => (vec![Int, s()], Void),
+        "__ui_start_program" => (vec![list(s()), s()], res(s())),
+        "__ui_program_output" => (vec![Int], s()),
+        "__ui_program_result" => (vec![Int], Int),
+        "__ui_stop_program" => (vec![Int], Void),
+        // the editor (std/editor.nx over runtime_editor.h, 0.8)
+        "__editor_new" => (vec![Int, s()], Int),
+        "__editor_mark" => (vec![Int, Int, Int, Int], Void),
+        "__editor_go_to" => (vec![Int, Int, Int], Void),
+        "__editor_replace" => (vec![Int, s()], Void),
+        "__editor_cursor" => (vec![Int, Bool], Int),
         _ => return None,
     })
 }

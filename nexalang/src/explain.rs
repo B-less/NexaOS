@@ -220,7 +220,7 @@ Everything in a module is private unless marked `pub` (`pub fn`,
 `pub struct`, `pub enum`). Modules can't use each other in a circle:
 move what they share into a third module.
 
-The standard modules are files, time, json, broker and ui.",
+The standard modules are files, time, json, broker, ui and editor.",
         wrong: "fn main() {\n    print(time.now() > 0)\n}\n",
         right: "use time\n\nfn main() {\n    print(time.now() > 0)\n}\n",
     },

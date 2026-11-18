@@ -1,0 +1,9 @@
+# program: tests/ui/editing.nx
+# The editor's colours come from the theme: set at start, then changed live
+file .config/gtk-3.0/gtk.css @define-color nexa_field #102a1a; @define-color nexa_accent #5ee6a8;
+window Editor
+shot editor-theme-start
+write .config/gtk-3.0/gtk.css @define-color nexa_bg #f2f0e6; @define-color nexa_text #1c1c1c; @define-color nexa_text_strong #000000; @define-color nexa_accent #c2185b; @define-color nexa_on_accent #ffffff; @define-color nexa_surface #ffffff; @define-color nexa_field #fbfaf5; @define-color nexa_surface_hi #e8e4d8; @define-color nexa_border #b8b2a0; @define-color nexa_muted #5a5a5a; @define-color nexa_bg_deep #e6e2d6;
+wait 1
+shot editor-theme-changed
+key ctrl+q

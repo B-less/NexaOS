@@ -1,0 +1,41 @@
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "New program (not saved)"
+  column
+    editor "nexalang" (5 lines, cursor 3:11)
+      | // A new NexaLang program. Press F5 to run it.
+      | fn main() {
+      |     print("Hello from NexaLang")
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."
+column
+  row
+    button "New"
+    button "Open…"
+    button "Save"
+    button "Save as…"
+  note "a.nx"
+  column
+    editor "nexalang" (4 lines, cursor 1:1)
+      | fn main() {
+      |     print("a")
+      | }
+      | 
+    row
+      primary button "Run"
+      button "Stop" (off)
+      button "Format"
+      button "Explain"
+    row
+      note "No mistakes found."

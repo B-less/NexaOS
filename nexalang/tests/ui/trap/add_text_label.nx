@@ -1,0 +1,8 @@
+// trap: widget 2 is a text, which can't have text added (only code views can)
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let words = ui.label(page, "not a code view")
+    ui.add_text(words, "more")
+    return ok()
+}

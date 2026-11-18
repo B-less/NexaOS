@@ -14,6 +14,11 @@ STEPS is a file with one step per line:
     type TEXT         type the text
     key K [K...]      press keys (xdotool names: Return, Tab, ctrl+n, Escape)
     wait SECONDS      let the program catch up
+    until TEXT        press Ctrl+Shift+F12 until the window's widgets (as it
+                      prints them) contain TEXT, then drop those prints from
+                      the output (0.8: work a program does in the background,
+                      like a check that's running, finishes at its own pace;
+                      for programs that print only when asked)
     shot NAME         screenshot the screen into $NX_SHOTS/NAME.png (if set)
     fill PATH N TEXT  before the program starts: a file in $HOME of N bytes,
                       TEXT repeated (hostile-input tests: huge files)
@@ -118,10 +123,30 @@ def main():
     window_wait = float(env.get("NX_WINDOW_WAIT", "15"))
     last_window = ""
     prog = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE)
-    out = []
+    out = [bytearray()]
     import threading
-    reader = threading.Thread(target=lambda: out.append(prog.stdout.read()))
+    lock = threading.Lock()
+    def read_all():
+        while True:
+            chunk = os.read(prog.stdout.fileno(), 65536)
+            if not chunk:
+                break
+            with lock:
+                out[0] += chunk
+    reader = threading.Thread(target=read_all)
     reader.start()
+    def settled(limit):
+        """Wait until the program's output stops growing for a moment."""
+        deadline = time.time() + limit
+        with lock:
+            size = len(out[0])
+        while time.time() < deadline and prog.poll() is None:
+            time.sleep(0.3)
+            with lock:
+                now = len(out[0])
+            if now == size:
+                return
+            size = now
     code = None
     try:
         for raw in open(steps_file, encoding="utf-8"):
@@ -179,6 +204,33 @@ def main():
             elif word == "wait":
                 time.sleep(float(rest))
                 continue
+            elif word == "until":
+                deadline = time.time() + window_wait * 4
+                with lock:
+                    mark = len(out[0])
+                found = False
+                while not found and prog.poll() is None and time.time() < deadline:
+                    with lock:
+                        before = len(out[0])
+                    x("key", "ctrl+shift+F12")
+                    # the print starts when the program gets to the key: wait for it
+                    while prog.poll() is None and time.time() < deadline:
+                        with lock:
+                            if len(out[0]) > before:
+                                break
+                        time.sleep(0.1)
+                    settled(10)
+                    with lock:
+                        found = rest.encode() in bytes(out[0][before:])
+                    if not found:
+                        time.sleep(0.5)
+                settled(10)
+                with lock:
+                    del out[0][mark:]
+                if not found:
+                    print(f"drive: {rest!r} never showed", file=sys.stderr)
+                    break
+                continue
             elif word == "write":
                 put_file(home, rest)
                 time.sleep(0.5)
@@ -206,7 +258,7 @@ def main():
         xvfb.terminate()
         xvfb.wait()
         reader.join()
-        text = b"".join(out)
+        text = bytes(out[0])
         if home:
             import re
             for rel in shows:

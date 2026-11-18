@@ -136,6 +136,12 @@ pub fn code(parent: int, text: str) -> int {
     return __ui_code(parent, text)
 }
 
+// Add text at the end of a code view and scroll to it (0.8): a program's
+// output as it comes, without setting the whole text again.
+pub fn add_text(id: int, text: str) {
+    __ui_add_text(id, text)
+}
+
 // ---- removing widgets (0.7) ----
 
 // Remove a widget (and, for a column or row, everything in it). Its
@@ -253,6 +259,61 @@ fn event(kind: int) -> UiEvent {
         7 => { return UiEvent.Closed }
         _ => { return UiEvent.Tick }
     }
+}
+
+// ---- running other programs (0.8) ----
+//
+//   let p = ui.start_program(["nexac", "check", "--json", path], "")?
+//   while true {
+//       match ui.wait_ms(100) {
+//           Tick => {
+//               ui.add_text(output, ui.program_output(p))
+//               match ui.program_result(p) {
+//                   some(code) => { ... }   // it ended; p is forgotten
+//                   none => { }             // still running
+//               }
+//           }
+//           ...
+//       }
+//   }
+//
+// The program is started with an argument list, never through a shell
+// (the first one is found in PATH unless it has a "/"). `input` is given
+// to it as its standard input ("" for none). Its output (what it prints
+// and its error messages, in order) is gathered while the window waits;
+// take it with `program_output`. It runs in its own process group, so
+// `stop_program` also stops what it started, and when this program ends,
+// the ones it started that are still running are stopped.
+
+// Start a program; its number, or an error saying why it couldn't start.
+pub fn start_program(args: [str], input: str) -> !int {
+    let n = __ui_start_program(args, input)?
+    match parse_int(n) {
+        some(v) => { return ok(v) }
+        none => { return err("the program's number was unreadable") }
+    }
+}
+
+// What the program wrote since the last call ("" if nothing). Up to 256 KB
+// waits to be taken; after that the program waits until it is.
+pub fn program_output(p: int) -> str {
+    return __ui_program_output(p)
+}
+
+// none while the program runs, or while some of its output hasn't been
+// taken yet; then its exit code (0: it worked; 128 + a signal's number if
+// it was stopped), and the number is forgotten.
+pub fn program_result(p: int) -> ?int {
+    let code = __ui_program_result(p)
+    if code < 0 {
+        return none
+    }
+    return some(code)
+}
+
+// Stop the program now, and what it started.
+pub fn stop_program(p: int) {
+    __ui_stop_program(p)
 }
 
 // ---- questions ----
