@@ -1,4 +1,4 @@
-// error: this `match` doesn't handle `Changed`, `Submitted`, `Toggled`, `Selected`, `Activated`, `Closed`
+// error: this `match` doesn't handle `Changed`, `Submitted`, `Toggled`, `Selected`, `Activated`, `Closed`, `Edited`, `Output`, `Finished`
 use ui
 fn main() -> !void {
     let page = ui.start("app", "App")?

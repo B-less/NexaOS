@@ -1,0 +1,85 @@
+column
+  editor (4 lines, 0 marked, at 2:14, colours nexalang-horizon)
+    | "fn main() {"
+    | "    let x = 1"
+    | "}"
+  row
+    button "Show"
+    button "Lay out"
+    button "Marks"
+    button "New text"
+  button "After the editor"
+edited: true
+text: fn main() {
+    let x = 1
+    print(x)
+        // a tab before me
+}
+
+laid out
+column
+  editor (5 lines, 0 marked, at 4:2, colours nexalang-horizon)
+    | "fn main() {"
+    | "    let x = 1"
+    | "    print(x)"
+    | "}"
+  row
+    button "Show"
+    button "Lay out"
+    button "Marks"
+    button "New text"
+  button "After the editor"
+edited: true
+text: fn main() {
+    let x = 1
+    print(x)
+        // a tab before me
+}
+
+edited: true
+text: fn main() {
+    let x = 1
+    print(x)
+}
+
+marked
+column
+  editor (5 lines, 3 marked, at 5:1, colours nexalang-horizon)
+    | "fn main() {"
+    | "    let x = 1"
+    | "    print(x)"
+    | "}"
+  row
+    button "Show"
+    button "Lay out"
+    button "Marks"
+    button "New text"
+  button "After the editor"
+new text: // new text � with a zero byte, an emoji 🦊 and	a tab
+
+edited: false
+text: // new text � with a zero byte, an emoji 🦊 and	a tab
+
+edited: false
+text: // new text � with a zero byte, an emoji 🦊 and	a tab
+
+column
+  editor (2 lines, 0 marked, at 1:1, colours nexalang-horizon)
+    | "// new text � with a zero byte, an emoji 🦊 and	a tab"
+  row
+    button "Show"
+    button "Lay out"
+    button "Marks"
+    button "New text"
+  button "After the editor"
+column
+  editor (2 lines, 0 marked, at 1:1, colours nexa)
+    | "// new text � with a zero byte, an emoji 🦊 and	a tab"
+  row
+    button "Show"
+    button "Lay out"
+    button "Marks"
+    button "New text"
+  button "After the editor"
+closed: // new text � with a zero byte, an emoji 🦊 and	a tab
+

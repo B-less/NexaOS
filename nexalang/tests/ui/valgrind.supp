@@ -22,3 +22,15 @@
    fun:wcsxfrm_l
    fun:g_utf8_collate_key
 }
+
+# 0.8: GtkSourceView's highlighting runs regular expressions that GLib
+# compiles to machine code at run time (PCRE2's JIT). Valgrind can't see
+# that code's object or how it keeps its registers defined, and reports
+# "conditional jump depends on uninitialised value" inside it. Matched
+# only where every frame has no object at all (`???`: code made at run
+# time), never in a library or the program.
+{
+   pcre2-jit-code
+   Memcheck:Cond
+   obj:???
+}

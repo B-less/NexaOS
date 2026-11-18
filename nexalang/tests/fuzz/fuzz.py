@@ -31,11 +31,13 @@ SEED = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 TOOLS_ONLY = "--tools-only" in sys.argv[4:]
 FINDINGS = os.path.join(ROOT, "tests", "fuzz", "findings")
 
-def gtk(which):
-    r = subprocess.run(["pkg-config", which, "gtk+-3.0"], capture_output=True, text=True)
+def gtk(which, source=False):
+    r = subprocess.run(["pkg-config", which, "gtk+-3.0"] + (["gtksourceview-4"] if source else []), capture_output=True, text=True)
     return r.stdout.split() if r.returncode == 0 else None
 
 GTK_CFLAGS, GTK_LIBS = gtk("--cflags"), gtk("--libs")
+# programs that `use editor` (0.8) also need GtkSourceView 4
+SRC_CFLAGS, SRC_LIBS = gtk("--cflags", True), gtk("--libs", True)
 
 def seeds():
     out = []
@@ -63,7 +65,12 @@ TOKENS = ["0", "1", "-1", "9223372036854775807", "-9223372036854775808", "0.5", 
           "files.size(\"x\")", "files.size(\"\")", "ui.display(1, \"9:00\")",
           # 0.7: removing widgets, code, the clipboard (file choosers wait for a person: stopped like a window)
           "ui.clear(1)", "ui.remove(2)", "ui.remove(1)", "ui.code(1, \"x\\n\")", "ui.to_clipboard(\"c\")",
-          "ui.focus(2)", "ui.save_file(\"t\", \"a.nx\")", "ui.open_file(\"t\", \"*.nx\")"]
+          "ui.focus(2)", "ui.save_file(\"t\", \"a.nx\")", "ui.open_file(\"t\", \"*.nx\")",
+          # 0.8: the code editor, adding to code views, starting programs
+          "editor.add(1)", "editor.mark(2, 1, 1, 1)", "editor.mark(2, -5, 99, 0)", "editor.go_to(2, 999, 999)",
+          "editor.replace_text(2, \"x\\n\")", "editor.clear_marks(2)", "ui.append(2, \"o\")",
+          "ui.start_program(\"\", [\"true\"], \"in\")", "ui.start_program(\"\", [\"printf\", \"a\"], \"\")",
+          "ui.start_program(\"\", [], \"\")", "ui.stop_program(1)", "Edited(id)", "Output(id, text)", "Finished(id, code)"]
 
 def mutate(rng, src):
     lines = src.split("\n")
@@ -260,7 +267,8 @@ def one(job):
         if c.returncode != 0:
             return ("rejected", n, path, text, "")
         uses_ui = "#include <gtk/gtk.h>" in c.stdout.decode(errors="replace")
-        if uses_ui and not GTK_CFLAGS:
+        uses_src = "\n#define NX_UI_SOURCE 1\n" in c.stdout.decode(errors="replace")
+        if (uses_ui and not GTK_CFLAGS) or (uses_src and not SRC_CFLAGS):
             return ("skipped", n, path, text, "")
         exe = os.path.join(work, "prog")
         b = run([NEXAC, "build", prog, "-o", exe], timeout=180)
@@ -272,8 +280,8 @@ def one(job):
         flags = ["gcc", "-std=gnu11", "-O1", "-g", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                  "-fno-omit-frame-pointer", "-DNX_LEAK_CHECK", "-Wall", "-Wextra", "-Werror"]
         if uses_ui:
-            flags += GTK_CFLAGS
-        flags += [cfile, "-o", asan, "-lm"] + (GTK_LIBS if uses_ui else [])
+            flags += SRC_CFLAGS if uses_src else GTK_CFLAGS
+        flags += [cfile, "-o", asan, "-lm"] + ((SRC_LIBS if uses_src else GTK_LIBS) if uses_ui else [])
         s = run(flags, timeout=180)
         if s is None or s.returncode != 0:
             return ("c-build-failure", n, path, text, (s.stderr.decode(errors="replace") if s else "timeout") + " (sanitizer build)")
@@ -282,6 +290,7 @@ def one(job):
         args = open(base + ".args").read().split() if os.path.exists(base + ".args") else []
         args = [a.replace("{tmp}", os.path.join(work, "t")) for a in args]
         env = dict(os.environ, HOME=work, NEXA_BROKER_SOCKET=os.path.join(work, "no-broker.sock"),
+                   PATH=os.path.dirname(NEXAC) + os.pathsep + os.environ.get("PATH", ""),  # Code Studio starts nexac (0.8)
                    ASAN_OPTIONS="detect_leaks=1:abort_on_error=0", LSAN_OPTIONS="exitcode=0")
         cmd = [asan] + args
         if uses_ui:

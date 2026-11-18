@@ -10,6 +10,7 @@ compiler (0.6).
 | What a mistake means | `nexac explain` (topics), `nexac explain results`, `nexac explain "the message"`, `--json` for programs |
 | Language server | `nexac lsp` (stdin/stdout): mistakes as you type, formatting, an explanation on hover |
 | Colours, GtkSourceView 4 | `gtksourceview/nexalang.lang` (NexaOS's text editor has it: `scripts/stage-text-editor.sh` installs it to `/usr/share/gtksourceview-4/language-specs/`) |
+| NexaOS's NexaLang editor | `apps/code-studio` (0.8): GtkSourceView with these colours (built in through the `editor` module, with `gtksourceview/nexa-horizon.xml` as the fallback for the theme's `nexa.xml`), mistakes from `check --json` as you type, `fmt --stdin`, `explain --json`, `run` |
 | Colours, VS Code and TextMate editors | `vscode/syntaxes/nexalang.tmLanguage.json`, `vscode/language-configuration.json` (the VS Code extension itself is NexaLang 0.9) |
 
 ## `nexac check --json`

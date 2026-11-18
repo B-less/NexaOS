@@ -1,0 +1,10 @@
+// trap: widget 2 was removed (ui.remove or ui.clear), so it can't be used any more
+use ui
+use editor
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let e = editor.add(page)
+    ui.remove(e)
+    editor.go_to(e, 1, 1)
+    return ok()
+}

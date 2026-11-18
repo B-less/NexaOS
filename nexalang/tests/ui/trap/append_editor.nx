@@ -1,0 +1,9 @@
+// trap: widget 2 is a code editor, which can't be added to (only code views can: use set_text)
+use ui
+use editor
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let e = editor.add(page)
+    ui.append(e, "x")
+    return ok()
+}

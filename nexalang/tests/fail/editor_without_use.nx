@@ -1,0 +1,7 @@
+// error: module `editor` isn't used here
+use ui
+fn main() -> !void {
+    let page = ui.start("app", "App")?
+    let code = editor.add(page)
+    return ok()
+}

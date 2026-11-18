@@ -67,6 +67,7 @@ const STD: &[(&str, &str)] = &[
     ("json", include_str!("std/json.nx")),
     ("broker", include_str!("std/broker.nx")),
     ("ui", include_str!("std/ui.nx")),
+    ("editor", include_str!("std/editor.nx")),
 ];
 
 const MAX_LINES: usize = 999_999;
@@ -96,6 +97,8 @@ fn parse_module(name: &str, file: String, src: String, is_std: bool) -> Result<a
 pub struct Compiled {
     pub c: String,
     pub gtk: bool,
+    /// it uses `editor`: GtkSourceView 4 too (0.8)
+    pub source: bool,
 }
 
 /// Load the main file and everything it uses, then check and generate C.
@@ -166,7 +169,7 @@ pub fn compile_source(main_path: &Path, main_src: Option<String>, lines: bool) -
     }
     check_cycles(&mods)?;
     let checked = checker::check(&mut mods).map_err(|ds| render_all(&ds, &mods))?;
-    Ok(Compiled { c: codegen::generate(&mods, &checked, lines), gtk: codegen::uses_ui(&mods) })
+    Ok(Compiled { c: codegen::generate(&mods, &checked, lines), gtk: codegen::uses_ui(&mods), source: codegen::uses_editor(&mods) })
 }
 
 /// Modules can't use each other in a circle.
@@ -230,23 +233,35 @@ fn to_c_or_exit(path: &str) -> Compiled {
     }
 }
 
-/// GTK 3's compiler and linker flags, from pkg-config (run with an
-/// argument list, never a shell). Each flag is one argument.
-fn gtk_flags(which: &str) -> Vec<String> {
-    let out = Command::new("pkg-config").arg(which).arg("gtk+-3.0").output();
-    match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).split_whitespace().map(String::from).collect(),
+/// GTK 3's compiler and linker flags (and GtkSourceView 4's, for programs
+/// that `use editor`), from pkg-config (run with an argument list, never
+/// a shell). Each flag is one argument. None (with a message) when they
+/// aren't installed.
+fn gtk_flags(which: &str, source: bool) -> Option<Vec<String>> {
+    let mut cmd = Command::new("pkg-config");
+    cmd.arg(which).arg("gtk+-3.0");
+    if source {
+        cmd.arg("gtksourceview-4");
+    }
+    match cmd.output() {
+        Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).split_whitespace().map(String::from).collect()),
+        _ if source => {
+            eprintln!("error: this program uses `editor`, which needs GTK 3, GtkSourceView 4 and pkg-config (on NexaOS: apk add gtk+3.0-dev gtksourceview4-dev pkgconf)");
+            None
+        }
         _ => {
             eprintln!("error: this program uses `ui`, which needs GTK 3 and pkg-config (on NexaOS: apk add gtk+3.0-dev pkgconf)");
-            exit(1);
+            None
         }
     }
 }
 
 /// Compile C to `out` with the hardened flags. Uses $CC or `cc`; starts
 /// the compiler with an argument list, never through a shell. Programs
-/// that use `ui` also get GTK's flags; every hardened flag stays.
-fn build_c(prog: &Compiled, out: &Path, check_memory: bool) {
+/// that use `ui` also get GTK's flags; every hardened flag stays. False
+/// (with a message, and nothing left behind but `out`'s folder) when it
+/// can't.
+fn build_c(prog: &Compiled, out: &Path, check_memory: bool) -> bool {
     let c = &prog.c;
     let c_path = out.with_extension("nexa.c");
     // `nexac build app.nx -o build/app` makes `build/` when it's missing
@@ -254,12 +269,19 @@ fn build_c(prog: &Compiled, out: &Path, check_memory: bool) {
     if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {
         if let Err(e) = std::fs::create_dir_all(dir) {
             eprintln!("error: can't make the folder {}: {}", dir.display(), e);
-            exit(1);
+            return false;
         }
     }
+    let (cflags, libs) = if prog.gtk {
+        let Some(c) = gtk_flags("--cflags", prog.source) else { return false };
+        let Some(l) = gtk_flags("--libs", prog.source) else { return false };
+        (c, l)
+    } else {
+        (Vec::new(), Vec::new())
+    };
     if let Err(e) = std::fs::write(&c_path, c) {
         eprintln!("error: can't write {}: {}", c_path.display(), e);
-        exit(1);
+        return false;
     }
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".into());
     let mut cmd = Command::new(&cc);
@@ -267,24 +289,20 @@ fn build_c(prog: &Compiled, out: &Path, check_memory: bool) {
     if check_memory {
         cmd.arg("-DNX_LEAK_CHECK");
     }
-    if prog.gtk {
-        cmd.args(gtk_flags("--cflags"));
-    }
+    cmd.args(&cflags);
     cmd.arg(&c_path).arg("-o").arg(out).arg("-lm");
-    if prog.gtk {
-        cmd.args(gtk_flags("--libs"));
-    }
+    cmd.args(&libs);
     let status = cmd.status();
     let _ = std::fs::remove_file(&c_path);
     match status {
-        Ok(s) if s.success() => {}
+        Ok(s) if s.success() => true,
         Ok(_) => {
             eprintln!("error: the C compiler failed on generated code. This is a bug in nexac; please report it with your .nx file.");
-            exit(1);
+            false
         }
         Err(e) => {
             eprintln!("error: can't start the C compiler `{}`: {} (install gcc, or set CC)", cc, e);
-            exit(1);
+            false
         }
     }
 }
@@ -321,7 +339,9 @@ fn main() {
             } else {
                 PathBuf::from(Path::new(&args[1]).file_stem().unwrap())
             };
-            build_c(&c, &out, false);
+            if !build_c(&c, &out, false) {
+                exit(1);
+            }
         }
         "run" if args.len() >= 2 => {
             let check_memory = args[1] == "--check-memory";
@@ -334,9 +354,29 @@ fn main() {
                 exit(1);
             }
             let exe = dir.join("program");
-            build_c(&c, &exe, check_memory);
-            let status = Command::new(&exe).args(&raw[first + 1..]).status();
+            if !build_c(&c, &exe, check_memory) {
+                let _ = std::fs::remove_dir_all(&dir);  // nothing left in /tmp (0.8)
+                exit(1);
+            }
+            // The program is deleted as soon as it has started (a running
+            // program doesn't need its file), so nothing is left behind
+            // even when nexac is stopped while it runs (0.8: a code
+            // editor's Stop button stops both).
+            // its output line by line, as it happens, even through a pipe
+            let child = Command::new(&exe).args(&raw[first + 1..]).env("NEXALANG_LINE_OUTPUT", "1").spawn();
             let _ = std::fs::remove_dir_all(&dir);
+            if let Err(e) = &child {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    eprintln!(
+                        "error: can't start the program: this system doesn't allow running programs from {} \
+                         (an installed NexaOS app can't run programs it builds; run `nexac run {}` in a terminal)",
+                        std::env::temp_dir().display(),
+                        file
+                    );
+                    exit(1);
+                }
+            }
+            let status = child.and_then(|mut c| c.wait());
             match status {
                 Ok(s) => match s.code() {
                     Some(c) => exit(c),

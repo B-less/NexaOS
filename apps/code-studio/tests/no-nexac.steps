@@ -1,0 +1,24 @@
+# program: ../apps/code-studio/src/main.nx
+# tree: full
+# env: PATH=/usr/bin:/bin
+# NexaLang's compiler isn't installed: the window says so (once), and
+# programs can still be written and saved.
+file Documents/readme.txt my documents
+window Code Studio
+key ctrl+n
+wait 2
+key ctrl+shift+F12
+type // still works
+wait 2
+key ctrl+shift+f
+wait 1
+key ctrl+shift+F12
+key ctrl+s
+window Save the program
+wait 1
+key Return
+gone Save the program
+window Code Studio
+key ctrl+shift+F12
+key Escape
+show Documents/main.nx

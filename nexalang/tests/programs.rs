@@ -377,8 +377,9 @@ fn broker_client_talks_to_a_broker() {
 // leak only counts when the program's own code is on the stack (every
 // NexaLang byte is still counted exactly by the leak counter).
 
+/// GTK 3, and GtkSourceView 4 for the code editor's tests (0.8).
 fn have_gtk() -> bool {
-    Command::new("pkg-config").args(["--exists", "gtk+-3.0"]).status().is_ok_and(|s| s.success())
+    Command::new("pkg-config").args(["--exists", "gtk+-3.0", "gtksourceview-4"]).status().is_ok_and(|s| s.success())
 }
 
 fn have_display_tools() -> bool {
@@ -386,7 +387,18 @@ fn have_display_tools() -> bool {
 }
 
 fn gtk_flags(which: &str) -> Vec<String> {
-    let o = Command::new("pkg-config").arg(which).arg("gtk+-3.0").output().unwrap();
+    gtk_flags_for(which, false)
+}
+
+/// With GtkSourceView 4 too, for programs that `use editor` (0.8: their C
+/// starts with `#define NX_UI_SOURCE`).
+fn gtk_flags_for(which: &str, source: bool) -> Vec<String> {
+    let mut c = Command::new("pkg-config");
+    c.arg(which).arg("gtk+-3.0");
+    if source {
+        c.arg("gtksourceview-4");
+    }
+    let o = c.output().unwrap();
     String::from_utf8(o.stdout).unwrap().split_whitespace().map(String::from).collect()
 }
 
@@ -476,6 +488,10 @@ fn drive_env(s: &Steps, dir: &Path, cmd: &[&std::ffi::OsStr], wait_s: u32, shots
     if let Some(d) = shots {
         c.env("NX_SHOTS", d);
     }
+    // programs a window starts (0.8: Code Studio starts nexac) find this nexac
+    let bin = Path::new(env!("CARGO_BIN_EXE_nexac")).parent().unwrap().to_path_buf();
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    c.env("PATH", std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&path))).unwrap());
     for (k, v) in env {
         c.env(k, v);
     }
@@ -609,16 +625,17 @@ fn windows_are_clean_under_address_and_undefined_sanitizers() {
         assert!(c.status.success());
         let cfile = dir.join("prog.c");
         std::fs::write(&cfile, &c.stdout).unwrap();
+        let source = String::from_utf8_lossy(&c.stdout).contains("\n#define NX_UI_SOURCE 1\n");
         let exe = dir.join("prog-asan");
         let st = Command::new("gcc")
             .args(["-std=gnu11", "-O1", "-g", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"])
             .args(["-fno-omit-frame-pointer", "-DNX_LEAK_CHECK", "-Wall", "-Wextra", "-Werror"])
-            .args(gtk_flags("--cflags"))
+            .args(gtk_flags_for("--cflags", source))
             .arg(&cfile)
             .arg("-o")
             .arg(&exe)
             .arg("-lm")
-            .args(gtk_flags("--libs"))
+            .args(gtk_flags_for("--libs", source))
             .status()
             .unwrap();
         assert!(st.success(), "{} didn't build with sanitizers", s.program.display());
@@ -827,5 +844,38 @@ fn window_designer_programs_build_and_show_what_the_preview_showed() {
         }
     }
     assert!(checked >= 3, "only {} exported programs in the designer's tests", checked);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// `nexac run` (0.8): the program's output comes line by line even through
+// a pipe (a code editor shows it as it happens), and nothing is left in
+// the temporary folder when the build fails or when nexac and the program
+// are stopped together (a code editor's Stop button).
+#[test]
+fn run_shows_output_as_it_happens_and_leaves_nothing_behind() {
+    use std::io::BufRead;
+    use std::os::unix::process::CommandExt;
+    let dir = tmpdir("run-tmp");
+    let tmp = dir.join("tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let prog = dir.join("slow.nx");
+    std::fs::write(&prog, "use time\n\nfn main() {\n    print(\"started\")\n    time.sleep_ms(30000)\n    print(\"never\")\n}\n").unwrap();
+    let mut child = nexac().arg("run").arg(&prog).env("TMPDIR", &tmp).stdout(Stdio::piped()).process_group(0).spawn().unwrap();
+    let mut line = String::new();
+    let start = std::time::Instant::now();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    assert_eq!(line, "started\n");
+    assert!(start.elapsed().as_secs() < 20, "the first line came only after {:?}", start.elapsed());
+    // the program is running and its file is already gone
+    assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "left in the temporary folder while running");
+    let pgid = format!("-{}", child.id());
+    assert!(Command::new("kill").args(["-TERM", "--", &pgid]).status().unwrap().success());
+    let _ = child.wait();
+    assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "left behind after being stopped");
+    // a build that fails leaves nothing either
+    let out = nexac().arg("run").arg(&prog).env("TMPDIR", &tmp).env("CC", dir.join("no-such-cc")).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("can't start the C compiler"));
+    assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "left behind after a failed build");
     let _ = std::fs::remove_dir_all(&dir);
 }

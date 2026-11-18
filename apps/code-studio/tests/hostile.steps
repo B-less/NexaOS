@@ -1,0 +1,93 @@
+# program: ../apps/code-studio/src/main.nx
+# tree: full
+# Files it can't edit are refused with a message, and the program keeps
+# working: too big, not UTF-8, a zero byte, a line too long. An empty
+# file and a file with Windows line ends open; a name with spaces and
+# quotes too.
+fill Documents/huge.nx 2000000 // big file\n
+file Documents/latin1.nx // caf\xe9\n
+file Documents/zero.nx fn main() {\x00}\n
+fill Documents/long.nx 20000 x
+file Documents/empty.nx 
+file Documents/windows.nx fn main() {\r\n    print("crlf")\r\n}\r\n
+file Documents/my\x20"odd"\x20file.nx fn main() {\n    print("odd")\n}\n
+window Code Studio
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type huge.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+shift+F12
+shot too-big
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type latin1.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type zero.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type long.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type empty.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+wait 2
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type windows.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+wait 2
+key F5
+wait 4
+key ctrl+shift+F12
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type my "odd" file.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+wait 2
+key F5
+wait 4
+key ctrl+shift+F12
+key Escape

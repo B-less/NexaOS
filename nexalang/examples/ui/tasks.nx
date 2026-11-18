@@ -74,6 +74,9 @@ fn main() -> !void {
             Toggled(_, on) => { print("ask before removing: {on}") }
             Activated(_, row) => { print("activated {tasks[row]}") }
             Tick => { }
+            Edited(_) => { }     // (0.8) a code editor: this window has none
+            Output(_, _) => { }  // (0.8) programs it started: none
+            Finished(_, _) => { }
             Closed => {
                 print("closed with {len(tasks)} task(s)")
                 return ok()

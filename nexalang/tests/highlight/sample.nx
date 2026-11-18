@@ -20,6 +20,7 @@ fn main() -> !void {
     if not files.exists("x") and true or none == none {
         print("a \"q\" \{ {join(names, ", ")} {area(Shape.Circle(1.5))} end\n")
     }
+    editor.go_to(1, 2, 3)  // the code editor module (0.8)
     print("bad \q escape")
     for i in 0..10 { }
     return ok()

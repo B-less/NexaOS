@@ -13,6 +13,9 @@ fn show(e: UiEvent) {
         Activated(id, row) => { print("activated {id}: row {row}") }
         Closed => { print("closed") }
         Tick => { print("tick") }
+        Edited(id) => { print("edited {id}") }
+        Output(id, text) => { print("output {id}: {text}") }
+        Finished(id, code) => { print("finished {id}: {code}") }
     }
 }
 

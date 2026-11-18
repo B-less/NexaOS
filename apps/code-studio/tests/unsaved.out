@@ -1,0 +1,118 @@
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/first.nx · changed"
+    editor (4 lines, 0 marked, at 1:23, colours nexalang-horizon)
+      | "fn main() { // changed"
+      | "    print(\"first\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+status "No mistakes."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/first.nx · changed"
+    editor (4 lines, 0 marked, at 1:23, colours nexalang-horizon)
+      | "fn main() { // changed"
+      | "    print(\"first\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+status "No mistakes."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "A new program, not saved yet"
+    editor (4 lines, 0 marked, at 2:5, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(\"Hello\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+status "No mistakes."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "A new program, not saved yet"
+    editor (4 lines, 0 marked, at 2:5, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(\"Hello\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+status error "Give the file a name ending in .nx (like main.nx), so nexac can build it."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/second.nx"
+    editor (4 lines, 0 marked, at 2:5, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(\"Hello\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+status "second.nx is saved."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/second.nx · changed"
+    editor (4 lines, 0 marked, at 2:16, colours nexalang-horizon)
+      | "fn main() {"
+      | "    // not keptprint(\"Hello\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+status "second.nx is saved."
+--- Documents/first.nx
+fn main() { // changed
+    print("first")
+}
+--- Documents/second.nx
+fn main() {
+    print("Hello")
+}
+--- Documents/notes.txt
+(no file)

@@ -1,0 +1,34 @@
+printf: exit 0, 4 bytes: a
+b
+
+input: exit 0, 11 bytes: hello
+world
+errors too: exit 3, 8 bytes: out
+err
+
+zero byte: exit 0, 5 bytes: a�b
+no newline at the end: exit 0, 3 bytes: end
+long line: exit 0, 200000 bytes, 100000 letters, in pieces: true, broken letters: 0
+a lot: exit 0, at most 8 MB: true, note: true
+a lot of input: exit 0, 8 bytes: 1000000
+
+input not read: exit 0, 0 bytes: 
+not installed: err: can't start `no-such-program-nexalang`: no program with that name is installed
+nothing: err: start_program needs the program's name and its arguments: ["nexac", "check", ...]
+empty name: err: the program's name is empty
+zero byte in an argument: err: argument 2 has a zero byte in it, which a program can't be given
+bad folder: err: can't start `true`: the folder /no/such/folder can't be used
+in a folder: /
+
+stopped: exit 143
+stubborn: exit 137
+left something running: exit 0, 8 bytes: started
+
+a ninth: err: 8 programs are already running; wait for one to finish
+eight stopped: 143 143 143 143 143 143 143 143
+then one more: exit 0, 2 bytes: ok
+two at once: a A, b B
+output view: replaced
+and added
+left running: true
+done

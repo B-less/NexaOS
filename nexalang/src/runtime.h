@@ -104,6 +104,11 @@ static void nx_on_segv(int sig, siginfo_t *si, void *ctx) {
     signal(sig, SIG_DFL); /* fault again, the normal way */
 }
 static void nx_init(void) {
+    /* `nexac run` asks for output line by line (0.8): someone is watching
+       it, maybe through a pipe (a code editor's output view), not only
+       when 4 KB have piled up or the program ends */
+    const char *lines = getenv("NEXALANG_LINE_OUTPUT");
+    if (lines && strcmp(lines, "1") == 0) setvbuf(stdout, NULL, _IOLBF, 0);
     static char alt[65536];
     stack_t ss;
     memset(&ss, 0, sizeof ss);

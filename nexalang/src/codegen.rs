@@ -30,6 +30,18 @@ pub fn uses_ui(mods: &[Module]) -> bool {
     mods.iter().any(|m| m.is_std && m.name == "ui")
 }
 
+/// Programs that `use editor` (0.8) also get GtkSourceView 4; others don't
+/// need it installed.
+pub fn uses_editor(mods: &[Module]) -> bool {
+    mods.iter().any(|m| m.is_std && m.name == "editor")
+}
+
+/// NexaLang's colours for GtkSourceView and the Horizon fallback scheme,
+/// built into programs that use `editor` (written to the app's cache
+/// folder when it starts), so the editor always matches its compiler.
+pub const EDITOR_LANG: &str = include_str!("../editors/gtksourceview/nexalang.lang");
+pub const EDITOR_SCHEME: &str = include_str!("../editors/gtksourceview/nexa-horizon.xml");
+
 /// A C expression with no side effects, and whether it's an owned temporary.
 #[derive(Clone)]
 struct CVal {
@@ -161,6 +173,11 @@ pub fn generate(mods: &[Module], checked: &Checked, lines: bool) -> String {
     out += &format!("#define NX_STD_FILES {}\n", std_flags.join(", "));
     out += RUNTIME;
     if uses_ui(mods) {
+        if uses_editor(mods) {
+            out += "#define NX_UI_SOURCE 1\n";
+            out += &format!("static const char NX_UI_LANG[] = {};\n", c_string_literal(EDITOR_LANG.as_bytes()));
+            out += &format!("static const char NX_UI_SCHEME[] = {};\n", c_string_literal(EDITOR_SCHEME.as_bytes()));
+        }
         out += RUNTIME_UI;
     }
     out += "\n/* ---- types ---- */\n";

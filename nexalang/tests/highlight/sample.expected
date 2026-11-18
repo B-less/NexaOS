@@ -42,6 +42,8 @@ kk.FFFF.......tttt..
 ........bbbbb.ssseeseeseesebbbbssssssssssssseseFFFFstttttsttttttsfffssessssees.
     }
 .....
+    editor.go_to(1, 2, 3)  // the code editor module (0.8)
+....mmmmmm.FFFFF.d..d..d...ccccccccccccccccccccccccccccccc
     print("bad \q escape")
 ....bbbbb.sssssxxssssssss.
     for i in 0..10 { }

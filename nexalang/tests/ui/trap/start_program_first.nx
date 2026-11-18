@@ -1,0 +1,7 @@
+// trap: call ui.start first, to open the window
+use ui
+fn main() -> !void {
+    let n = ui.start_program("", ["true"], "")?
+    print(n)
+    return ok()
+}

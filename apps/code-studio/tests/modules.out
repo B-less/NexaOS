@@ -1,0 +1,68 @@
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/app/main.nx"
+    editor (6 lines, 0 marked, at 1:1, colours nexalang-horizon)
+      | "use helpers"
+      | ""
+      | "fn main() {"
+      | "    print(helpers.double(21))"
+      | "}"
+    list "No mistakes found." (1 rows)
+      - "helpers.nx, line 2: can't use `*` on an `int` and a `float`"
+status "1 mistake. Pick one to see it; Enter goes there."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/app/main.nx"
+    editor (6 lines, 0 marked, at 1:1, colours nexalang-horizon)
+      | "use helpers"
+      | ""
+      | "fn main() {"
+      | "    print(helpers.double(21))"
+      | "}"
+    list "No mistakes found." (1 rows)
+      * "helpers.nx, line 2: can't use `*` on an `int` and a `float`"
+status "helpers.nx, line 2, column 14: can't use `*` on an `int` and a `float`. Try this: convert one: `to_float(n)` or `to_int(x)`."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/app/main.nx"
+    editor (6 lines, 0 marked, at 1:13, colours nexalang-horizon)
+      | "use helpers "
+      | ""
+      | "fn main() {"
+      | "    print(helpers.double(21))"
+      | "}"
+    list "No mistakes found." (0 rows)
+    code (6 lines)
+      | "Running main.nx…"
+      | ""
+      | "42"
+      | ""
+      | "[The program ended.]"
+status "The program ended."

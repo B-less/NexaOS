@@ -6,7 +6,8 @@ server (Xvfb). Test-only; not part of NexaOS.
 
 STEPS is a file with one step per line:
     file PATH TEXT    before the program starts: a file in the new $HOME
-                      (TEXT may use \\xNN escapes for bytes)
+                      (TEXT may use \\xNN escapes for bytes; PATH \\x20
+                      for a space)
     write PATH TEXT   while it runs: write a file in $HOME (same escapes)
     window TITLE      wait until a window with this title is shown, focus it
     gone TITLE        wait until no window has this title (a dialog closed)
@@ -22,6 +23,10 @@ STEPS is a file with one step per line:
                       shown as T and bytes that aren't UTF-8 as \\xNN, so
                       saved data can be compared exactly
     # ...             a comment
+    # tree: full      (anywhere) print the text of code views and editors
+                      too (NEXALANG_UI_TREE=full, 0.8)
+    # env: NAME=VALUE (anywhere) set an environment variable for the
+                      program (0.8: PATH without nexac)
 
 The program's output is passed through (with the new $HOME shown as
 /HOME); the exit code is the program's (124 if it hasn't finished
@@ -36,6 +41,7 @@ import os, shutil, subprocess, sys, tempfile, time
 
 def put_file(home, spec):
     rel, _, text = spec.partition(" ")
+    rel = rel.encode("utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")  # \x20 for a space (0.8)
     path = os.path.join(home, rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
@@ -102,6 +108,12 @@ def main():
     env["GSETTINGS_BACKEND"] = "memory"
     # Ctrl+Shift+F12 prints the window's widgets (0.7): steps compare them
     env["NEXALANG_UI_TREE"] = "1"
+    if any(l.rstrip("\n") == "# tree: full" for l in open(steps_file, encoding="utf-8")):
+        env["NEXALANG_UI_TREE"] = "full"
+    for l in open(steps_file, encoding="utf-8"):
+        if l.startswith("# env: "):
+            k, _, v = l.rstrip("\n")[7:].partition("=")
+            env[k] = v
     shows = []
     for raw in open(steps_file, encoding="utf-8"):
         if raw.startswith("file ") and home:

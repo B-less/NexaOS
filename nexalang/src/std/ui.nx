@@ -44,6 +44,9 @@ pub enum UiEvent {
     Activated(int, int)  // a list: a row double-clicked or Enter pressed on it
     Closed               // the window's close button, Esc or Ctrl+Q
     Tick                 // `wait_ms`: the time passed with nothing happening
+    Edited(int)          // the person changed the text in a code editor (0.8; `use editor`)
+    Output(int, str)     // a program started with `start_program` printed this (0.8)
+    Finished(int, int)   // that program ended: its exit code (128 + signal when stopped)
 }
 
 // Open the window; returns its main column, where the other widgets go.
@@ -134,6 +137,12 @@ pub fn list(parent: int, empty: str) -> int {
 // result (0.7). The person can select and copy it. `set_text` replaces it.
 pub fn code(parent: int, text: str) -> int {
     return __ui_code(parent, text)
+}
+
+// Add text at the end of a code view and show the end: a log, a running
+// program's output (0.8). `set_text` replaces it all instead.
+pub fn append(id: int, text: str) {
+    __ui_append(id, text)
 }
 
 // ---- removing widgets (0.7) ----
@@ -251,8 +260,36 @@ fn event(kind: int) -> UiEvent {
         5 => { return UiEvent.Selected(id, __ui_event_num()) }
         6 => { return UiEvent.Activated(id, __ui_event_num()) }
         7 => { return UiEvent.Closed }
+        9 => { return UiEvent.Edited(id) }
+        10 => { return UiEvent.Output(id, __ui_event_text()) }
+        11 => { return UiEvent.Finished(id, __ui_event_num()) }
         _ => { return UiEvent.Tick }
     }
+}
+
+// ---- programs (0.8) ----
+
+// Start another program, with an argument list (never through a shell):
+// `["nexac", "check", "--json", "--stdin", path]`. The first one is the
+// program, found where the system keeps programs. `folder` is where it
+// runs ("" for here); `input` is what it reads, then end of input.
+// What it prints (output and errors, in order) comes back as
+// `Output(number, text)` events, in whole lines, then `Finished(number,
+// exit code)`. err when it can't be started. At most 8 at once; when this
+// program ends, the ones still running are stopped.
+pub fn start_program(folder: str, args: [str], input: str) -> !int {
+    let n = __ui_start_program(folder, args, input)
+    if n == 0 {
+        return err(__ui_program_error())
+    }
+    return ok(n)
+}
+
+// Stop a program started with `start_program`, and anything it started.
+// It still sends `Finished` (with 128 + the signal's number). Stopping one
+// that has already finished does nothing.
+pub fn stop_program(n: int) {
+    __ui_stop_program(n)
 }
 
 // ---- questions ----

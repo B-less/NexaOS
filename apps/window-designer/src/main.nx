@@ -1045,6 +1045,9 @@ fn main() -> !void {
                 }
             }
             Tick => { }
+            Edited(_) => { }     // (0.8) a code editor: this window has none
+            Output(_, _) => { }  // (0.8) programs it started: none
+            Finished(_, _) => { }
             Closed => { return ok() }
         }
         if add_wanted {

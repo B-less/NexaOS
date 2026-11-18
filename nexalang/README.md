@@ -1,6 +1,6 @@
 # NexaLang: the programming language of NexaOS
 
-Started 2026-11-16. Current version **0.7** (compiler `nexac`, in `nexalang/`).
+Started 2026-11-16. Current version **0.8** (compiler `nexac`, in `nexalang/`).
 
 NexaLang is a small, safe, readable language for writing NexaOS programs.
 The compiler `nexac` (Rust, no dependencies) turns a `.nx` file into C11
@@ -107,6 +107,27 @@ ui.to_clipboard("copied")
 `apps/window-designer` builds a window from parts, shows it, and writes
 the NexaLang program for it (a NexaOS app written in NexaLang).
 
+A code editor, and other programs started from a window (0.8):
+
+```nx
+use ui
+use editor
+
+let code = editor.add(page)                       // GtkSourceView, NexaLang's colours
+let out = ui.code(page, "")
+let n = ui.start_program("", ["nexac", "check", "--json", "--stdin", "app.nx"], ui.get_text(code))?
+match ui.wait() {
+    Edited(id) => { }                             // the person typed in the editor
+    Output(id, text) => { ui.append(out, text) }  // what the program printed
+    Finished(id, code) => { }                     // its exit code
+    _ => { }
+}
+editor.mark(code, 3, 7, 1)                        // underline a mistake
+```
+
+`apps/code-studio` is a NexaLang code editor written in NexaLang: mistakes
+as you type, Lay out, Explain, and Run with Stop.
+
 ---
 
 ## 1. Design decisions (and why)
@@ -175,9 +196,22 @@ and for the compiler itself.
 | **Designs are an outline: parts in order, each with a depth** (0.7) | NexaLang has no types that contain themselves (that's what keeps reference counting free of cycles), so a tree of parts can't be a NexaLang type. A list with depths can, it's easy to check (each part at most one level deeper than the one before, and only after a row or column), and moving a part is moving a run of the list. A file that breaks a rule is refused as a whole and left alone, never half-read | A tree in JSON (needs recursive types); a list of parts with parent numbers (numbers that can point anywhere, or in a circle) |
 | **The written program names each part after its words and its kind** (`save_button`, `your_name_field`, `row1`) (0.7) | Readable for a beginner, and the ending (`_button`, `_field`, a number) means a name can never be a NexaLang word, a name the program already uses (`page`, `id`, `text`, `on`, `index`) or another part's name. Texts are escaped (`\` `"` `{` `}`), so words like `{Save}` stay words | Numbered names (`button3`: unreadable); names from the words alone (could be `if` or `page`) |
 | **Window Designer needs only `files.documents`** (0.7) | Exporting saves where the person picks, and installed it can only be Documents; Copy (Ctrl+Shift+C) needs no permission at all. It explains this when a save elsewhere fails | No permissions (Export could only save in its own hidden folder); `files.home` |
+| **The code editor is its own standard module, `editor`; only programs that `use editor` need GtkSourceView 4** (0.8) | The same rule as GTK for `ui` (0.4): a program says what it needs at the top, `nexac` adds `pkg-config gtksourceview-4`'s flags only then (argument lists, after every hardened flag), and every other window program, and its package, stays as it was (no new `depends`). The editor is still a widget in `ui`'s table: `get_text`, `set_text`, `focus`, `remove` work on it | Functions in `ui` (every window program would link GtkSourceView, and every package would need it); an editing widget over plain GtkTextView (no colours, undo or indentation: hundreds of lines to write and get right that GtkSourceView already has) |
+| **NexaLang's colours and the Horizon fallback scheme are built into the program** (0.8) | `nexalang.lang` and a fallback copy of the theme's editor colours are compiled in and written to the app's own cache folder (`$XDG_CACHE_HOME/<id>/nexalang/`, only when they differ, all-or-nothing), searched before the system's. So an editor always colours with the language file of the compiler that built it, installed or not. The theme's own scheme (`nexa.xml`, which `nexa-theme` writes) wins when it's there, and is followed live; nexa-run now lets apps read it (read-only, like `gtk.css`) | Depending on `/usr/share/.../nexalang.lang` (an older or missing file colours wrongly); a GtkSourceView scheme with hard-coded colours only (WRITING_NEXA_APPS.md §4: follow the person's theme) |
+| **`Edited(id)` carries no text, and only one waits at a time** (0.8) | Copying a whole file into every key press's event would be megabytes per second for a big file; the program asks with `ui.get_text` when it needs the text (Code Studio: 0.4 s after the last key). However fast the person types or pastes, the queue holds at most one `Edited` per editor. Like every event, only the person's changes count (`set_text`, `replace_text` never send one) | `Changed(id, text)` as text fields do (text copied on every key press) |
+| **Other programs are started from the window's own loop: `ui.start_program(folder, args, input) -> !int`, then `Output(n, text)` and `Finished(n, code)` events** (0.8) | Code Studio must run `nexac` without freezing the window and must be able to stop a program that never ends; the event loop programs already have is where that fits (no threads, no callbacks). An argument list, never a shell (WRITING_NEXA_APPS.md §1); the first word is looked up where the system keeps programs. Output and errors come together, in the order printed, in whole lines (a line longer than 64 KiB in pieces, never cutting a letter in half; zero bytes as U+FFFD), so text is always valid NexaLang text. After 8 MB the rest is read and dropped, with a note, so a program printing forever can't fill memory. Each program gets its own process group: `stop_program` sends SIGTERM to it and all it started, then SIGKILL 2 s later; stopping one that has just finished does nothing (a race the person can't avoid). At most 8 at once. When the window's program ends (or is stopped by a signal), the ones still running are stopped | `popen`/`system` (a shell); a blocking `run` (no Stop, frozen window); stdout and stderr as two event kinds (order lost); killing only the program started (`nexac run`'s child would keep running) |
+| **Input goes through a socket written with `MSG_NOSIGNAL`** (0.8) | A program that stops reading its input early must not kill the window with SIGPIPE, and ignoring SIGPIPE for the whole process would change it for every program started too | `signal(SIGPIPE, SIG_IGN)` (inherited by every program it starts); blocking writes (a deadlock when the program writes before it reads) |
+| **`start_program` comes back as an `int`, with the reason in a second call, turned into `!int` in `ui.nx`** (0.8) | The same choice as `files.size` (0.5): no new C result type for the code generator to keep right | An `nx_R_i` in the runtime |
+| **New kinds of event are added to `UiEvent`, so `match`es that list every kind must list them too** (0.8) | 0.4 chose exhaustive `match` so that a new kind of event shows every place to update: the compiler names `Edited`, `Output` and `Finished` in each such `match` (Focus Timer, Window Designer and `examples/ui/tasks.nx` got three lines each; programs with `_ => { }` didn't change) | A second event type and a second `wait` (two loops to keep in step) |
+| **`nexac run` deletes the program it built as soon as it has started, and asks it for its output line by line** (0.8) | A Stop button stops `nexac` and the program together; with the file already gone nothing is left in `/tmp`. Output through a pipe is normally sent 4 KB at a time, so a program would look silent in an editor until it ends; `NEXALANG_LINE_OUTPUT=1` (set by `nexac run` only) makes it line by line. `nexac build` programs are unchanged | Cleaning up after a signal (Rust's std has no signal handlers); a pseudo-terminal (much more code) |
+| **Code Studio uses `nexac check --json`, `fmt --stdin`, `explain --json` and `run`, not the language server** (0.8) | Each is one short program run (a few ms) with the same answers as the command line, already tested by 0.6's fuzzing; there's no session to keep in step. The language server needs a long-running process and JSON-RPC framing written in NexaLang: more to go wrong for no new information. VS Code (0.9) uses the language server | A language server client in NexaLang |
+| **Code Studio needs only `files.documents`, and installed it can't Run** (0.8) | Programs are opened and saved through the chooser, which runs inside the app, so it can only reach what the app may: Documents. `nexa-run` (Landlock) gives an app no folder it can both write and run programs from, so a program it builds can't be started; checking, laying out and explaining work, and Run shows `nexac`'s message saying so. That's NexaOS's protection against apps running what they download or write; loosening it for one app is a decision for NexaOS's author (a "developer tools" permission), not a side effect of an editor | `files.home`; adding an executable folder to nexa-run for this app; running the built program through the dynamic loader (a way around Landlock's check: never) |
+| **Files Code Studio won't open: over 1 MB, not UTF-8, with a zero byte, or a line over 10,000 bytes** (0.8) | Measured: GtkSourceView takes ~1.2 s to show 2 MB and a 1 MB line makes every key press slow; a zero byte can't be shown and would be saved as U+FFFD (a silent change); bytes that aren't UTF-8 can't be NexaLang text. Each is refused with a message that says why | Opening anything (slow, or a different file saved) |
+| **Code views wrap long lines; an editor takes the free height and the lists and code views beside it keep theirs; both sit in a card** (0.8) | WRITING_NEXA_APPS.md §4: text wraps, never goes off the side (an explanation was cut off at 560 px). In a code editor's column the editor is what needs the room (the list and output are 80 and 112 px at least, so everything fits in 640 px). GTK 3 doesn't clip a scrolled view to rounded corners; a padded card around it does | Horizontal scrolling for read-only text; sharing the height equally (a half-size editor) |
+| **A button can have more than one shortcut** (0.8) | Run is Ctrl+Return and F5; the tooltip lists both | One key per action |
 | **Passwords are asked for by `ui`, checked by the broker** (0.4) | `ui.broker_call` shows a password dialog when the broker asks, three tries, the way `nexa_common/broker.py` does; the password goes only into the request to the broker. Apps never check or keep it | Apps asking with their own dialogs |
 
-## 2. The language (v0.7: no changes since 0.5; `ui` grew in 0.7)
+## 2. The language (v0.8: no changes since 0.5; `ui` grew in 0.7 and 0.8; `editor` is new)
 
 **Types:** `int` (64-bit, checked), `float` (64-bit), `bool`, `str`
 (immutable UTF-8 text), `[T]` (growable list), `?T` (a `T` or `none`),
@@ -288,6 +322,7 @@ Integer `/` rounds toward zero; `%` takes the sign of the left side.
 | `json` | `parse(text) -> !Json` (errors give line and column; 200 levels max), `to_text(j)`, `pretty(j)`, `get(j, key) -> ?Json`, `at(j, i)`, `as_text`, `as_num`, `as_int`, `as_bool`, `items`, `keys`, `obj(fields)`, `field(key, value)`, `set(j, key, value)`. Values: `Json.Null`, `Json.Bool(b)`, `Json.Num(n)`, `Json.Text(s)`, `Json.List(items)`, `Json.Obj(fields)` |
 | `broker` (0.4) | `call(action, args: Json) -> !Json` (the action's result; refusals, a needed password and unverified packages are `err`), `ask(action, args, password: ?str) -> !BrokerReply` (`Done(result)`, `NeedsPassword(what, why)`, `Unverified(why)`; a plain refusal or "too many wrong passwords" is `err`), `call_timeout`, `ask_timeout`, `no_args()`. One request to `/run/nexa-broker.sock`; 30-minute limit |
 | `ui` (0.4) | see below |
+| `editor` (0.8) | a code editor for NexaLang in a window; see below |
 
 **Windows: `ui` (0.4).** GTK 3 with Hexa built in. Every function that
 makes a widget takes its parent (a column or a row) and returns the new
@@ -303,6 +338,8 @@ widget's number.
 | Changing | `set_text(id, text)`, `get_text(id)`, `set_checked`, `is_checked`, `set_items(list, [str])` (clears the selection), `selected(list) -> ?int`, `select(list, i)`, `select_none`, `set_enabled`, `set_visible`, `focus` (a list: its selected row, or the first), `tooltip(id, text)`, `shortcut(button, "Ctrl+N")` (shown in the tooltip), `status(text)`, `show_error(text)` (the line at the bottom) |
 | Removing (0.7) | `remove(id)` (the widget and what's in it), `clear(column or row)` (what's in it). Removed numbers are never used again; using one stops the program with a message |
 | Files and clipboard (0.7) | `save_file(title, name) -> ?str` (the chooser, starting in Documents, `name` suggested; asks before replacing), `open_file(title, "*.nx") -> ?str` (`""` for every file); none when cancelled. `to_clipboard(text)` |
+| Adding (0.8) | `append(code, text)`: text at the end of a code view, which then shows its end (a log, a program's output) |
+| Programs (0.8) | `start_program(folder, args: [str], input) -> !int`: another program, started with an argument list (never a shell; the first word found where the system keeps programs; `folder` `""` for here). `input` is what it reads. Its output (and errors, in order) comes as `Output(n, text)` in whole lines, then `Finished(n, exit code)` (128 + the signal when stopped). `stop_program(n)`: SIGTERM to it and what it started, SIGKILL 2 s later; nothing when it has finished. At most 8 at once; 8 MB of output each (the rest is dropped, with a note); the ones still running are stopped when the window's program ends |
 | Events | `wait() -> UiEvent`, `wait_ms(ms) -> UiEvent` (`Tick` when nothing happened) |
 | Questions | `confirm(heading, message, yes, danger) -> bool`, `ask_password(what, why) -> ?str`, `broker_call(action, args) -> !Json` (the broker, asking for the password in the window when needed: three tries) |
 
@@ -316,8 +353,23 @@ pub enum UiEvent {
     Activated(int, int)   // a list row double-clicked, or Enter on it
     Closed                // the close button, Esc or Ctrl+Q
     Tick                  // wait_ms: nothing happened in time
+    Edited(int)           // the person changed a code editor's text (0.8)
+    Output(int, str)      // a program from start_program printed this (0.8)
+    Finished(int, int)    // that program ended: its exit code (0.8)
 }
 ```
+
+**The code editor: `editor` (0.8).** `use editor` (with `use ui`). Only
+programs that use it need GtkSourceView 4 (NexaOS has it: `depends =
+["gtk+3.0", "gtksourceview4"]`).
+
+| Function | What it does |
+|---|---|
+| `editor.add(parent) -> int` | A NexaLang editor: colours (the language file built into `nexac`), the theme's editor colours (`nexa.xml`, followed live; the Horizon fallback otherwise), line numbers, 4-space indents, undo (Ctrl+Z, Ctrl+Shift+Z), JetBrains Mono without ligatures. Tab indents; Ctrl+Tab moves on. It takes the free height. `ui.get_text`, `ui.set_text` (new text, which can't be undone), `ui.focus`, `ui.set_enabled`, `ui.remove` work on it. The person's changes send `Edited(id)` (one waits at a time) |
+| `editor.replace_text(id, text)` | All the text replaced as one change the person can undo; the cursor stays on its line (for `nexac fmt`'s result). Nothing happens when the text is the same |
+| `editor.mark(id, line, column, length)` | Underline a mistake in the theme's `@nexa_crit` (lines and columns from 1, columns in letters, as `check --json` gives them). A place that isn't in the text any more is left alone; a column past the end of the line marks its last letter |
+| `editor.clear_marks(id)` | Take every underline away |
+| `editor.go_to(id, line, column)` | Put the cursor there (past the end: the nearest real place), show it, and put the keyboard there |
 
 Keyboard: Tab moves between widgets (and out of a list; arrow keys move
 inside it), Space and Enter press, Esc and Ctrl+Q close. `Closed` doesn't
@@ -328,7 +380,12 @@ are in (0.7).
 
 For tests (0.7): with `NEXALANG_UI_TREE=1` in the environment,
 Ctrl+Shift+F12 prints the window's visible widgets and the status line
-(`tests/ui/drive.py` sets it; without it the key does nothing).
+(`tests/ui/drive.py` sets it; without it the key does nothing). With
+`NEXALANG_UI_TREE=full` (0.8) it also prints the text of code views and
+editors, line by line, and an editor's underlines, cursor and colours.
+
+Code views (0.8) wrap long lines. A button can have more than one
+shortcut (0.8); its tooltip lists them all.
 
 JSON numbers are `float`, as in JavaScript: whole numbers beyond 2^53
 are rounded, and numbers too big for a `float` are refused (JSON has no
@@ -398,7 +455,11 @@ comes back (`get_text`, event text, a password) is a new NexaLang string
 with one owner, freed like any other. GTK's own memory is GTK's;
 `--check-memory` counts every NexaLang byte exactly, with or without a
 window. A chosen file's path (0.7) is new text with one owner, like
-`get_text`. Removing a widget (0.7) frees the runtime's record of it
+`get_text`. 0.8: a program's output (`Output`) is new text with one owner,
+copied out of the runtime's own buffers; the argument list and input given
+to `start_program` are borrowed and copied (the input into a buffer the
+runtime frees once it's written); a running program's record is freed
+when it has finished and its `Finished` has been queued. Removing a widget (0.7) frees the runtime's record of it
 (its tooltip, its shortcut, the text of its events still waiting) at
 once; GTK frees the widget.
 
@@ -426,7 +487,7 @@ nexalang/
   src/explain.rs   `nexac explain` (0.6): topics, their phrases, examples
   src/json.rs      a small strict JSON reader/writer (0.6)
   src/lsp.rs       `nexac lsp` (0.6): the language server
-  src/std/*.nx     the standard modules, built into nexac
+  src/std/*.nx     the standard modules, built into nexac (editor.nx: 0.8)
   examples/*.nx    + .out expected output (+ .in input, .args arguments)
   tests/fail/*.nx  programs that must be rejected (64)
   tests/trap/*.nx  programs that must stop with a runtime error (11)
@@ -441,9 +502,11 @@ nexalang/
   examples/ui/     window examples
   tests/tooling.rs fmt / check --json / explain / lsp tests (0.6)
   tests/highlight/ both colour grammars against one expected colouring
-  editors/         gtksourceview/nexalang.lang, vscode/ (grammar), README
+  editors/         gtksourceview/nexalang.lang (built into programs that use
+                   `editor`, 0.8) and nexa-horizon.xml (their fallback
+                   colours), vscode/ (grammar), README
 ../apps/*/src/main.nx   NexaOS apps written in NexaLang (0.5): Focus Timer,
-                 Window Designer (0.7); their tests/*.steps run with the
+                 Window Designer (0.7), Code Studio (0.8); their tests/*.steps run with the
                  window tests, three ways; the programs Window Designer
                  exports in them are built and run too
 ../tools/nexa-pack      `nexa-pack new --lang nexa` (src/templates.rs)
@@ -459,6 +522,67 @@ only. A runtime error knows its file: the location passed to the runtime
 is file number × 1,000,000 + line.
 
 ## 5. Testing done
+
+**0.8 (2026-11-18)** — Ubuntu 24.04 here: gcc 13.3, clang, GTK 3.24.41,
+GtkSourceView 4.8.4, Xvfb, xdotool, Inter, JetBrains Mono, Valgrind.
+`cd nexalang && cargo test`: **63 tests, all pass** (27 unit, 24 end
+to end: one new, 12 in `tests/tooling.rs`). No earlier test was removed or
+weakened; one expectation changed with the language: `ui_event_missing.nx`
+now also lists `Edited`, `Output` and `Finished` among the events it
+doesn't handle. The window tests now also run `tests/ui/programs.steps`,
+`tests/ui/code_editor.steps` and Code Studio's 7 scenarios, three ways each.
+`cd tools && cargo test -p nexa-run`: 7 pass (1 new: the theme's editor
+colours are readable, read-only).
+
+| Check | Result |
+|---|---|
+| Every earlier check (examples with gcc and clang, ASan + UBSan, Valgrind, window scenarios, theme, misuse, broker, modules, rejected programs, runtime errors, Focus Timer's 8 and Window Designer's 11 scenarios, every program Window Designer exported, the 0.6 tools, reproducible builds) | all still pass |
+| **Colours**: `editor` is a standard module in both grammars; the sample has a line using it | GtkSourceView 4 itself and VS Code's `vscode-textmate` both give exactly `sample.expected` (the VS Code check now really ran here: `npm ci` in `tests/highlight`) |
+| **`tests/ui/programs.steps`**: `start_program` and `stop_program` with real programs: output in order and stdout with stderr, input given and input not read, exit codes, a zero byte, no newline at the end, a 200,000-byte line of two-byte letters (in pieces, **0 letters cut**), 9 MB of output (8 MB, then the note), 1 MB of input; refused: not installed, no arguments, an empty name, a zero byte in an argument, a folder that isn't there; a folder; stopped (143), one that ignores SIGTERM (killed after 2 s: 137), stopped twice and after finishing (nothing happens), something left running that keeps the output open (finished after 1 s), 8 at once and a ninth refused, two at once with separate output; `ui.append` | exact output, 3 ways (leak counter; ASan + UBSan; Valgrind): 0 memory errors, 0 leaks from the program's own code |
+| **`tests/ui/code_editor.steps`** (`use editor`): typing (Return keeps the indent, Tab is 4 spaces), `Edited` events, `replace_text` as one undo step (Ctrl+Z and Ctrl+Shift+Z), the same text again (nothing to undo), 5 marks (2 out of range ignored, past the end of a line, before its start), `go_to` past the end, new text that can't be undone, a zero byte, an emoji and a tab, Ctrl+Tab out of the editor, and the theme's `nexa.xml` written while it runs (the editor switches from the Horizon fallback to it) | exact output, 3 ways; 0 memory errors, 0 leaks from the program's own code |
+| Misuse (5 new, 25 in all): `editor.mark` on a text, `ui.append` on an editor, a removed editor used, stopping a program that was never started, `start_program` before `ui.start` | each stops with its message in the program's own file and line |
+| Rejected programs (5 new, 69 in all): `start_program`'s `!int` used as `int`, its arguments given as one text, `editor.mark` given text, `Edited` with two values, `editor` without `use editor` | refused with the expected message |
+| **Code Studio, 7 scenarios driven by real key presses** (`apps/code-studio/tests`): normal use (a new program, a mistake typed, picked, explained, gone to, fixed, laid out, saved through the chooser, run: "The answer is 42"); Run and Stop (a program that never ends, stopped; F5 ignored while it runs; a program with a mistake: Lay out refuses, Run shows nexac's message); hostile files (2 MB, Latin-1, a zero byte, a 20,000-byte line: each refused with its message; an empty file, Windows line ends and a name with spaces and quotes open and run); unsaved changes (asked before closing, opening and starting again: Cancel keeps them, a name without `.nx` refused and nothing written, closing without saving keeps the file as it was); 360 px wide; a module with a mistake (listed with its file name; fixed on the disk, then run); without `nexac` on the PATH (said once, the list hidden, writing and saving still work) | 7 × 3 ways = **21/21**, exact output (the window's widgets, the text of the editor and the output view, and the files saved); 0 memory errors, 0 leaks from the program's own code |
+| `nexac run`: output line by line through a pipe; nothing left in the temporary folder while it runs, after it's stopped (SIGTERM to its process group) or when the build fails | new test, passes |
+| **Its package**: `nexa-pack build` twice in different folders | byte-identical (sha256 `e1682bc0…`), `nexa-pack verify`: `"ok":true`, `"depends":["gtk+3.0","gtksourceview4"]`, `"permissions":["files.documents"]`, unsigned; PIE, `BIND_NOW`, RELRO, fortify (`__*_chk`); linked with `libgtksourceview-4` (Focus Timer and Window Designer aren't) |
+| **The extracted program** (`nexa-pack extract`), normal scenario | exactly the expected output |
+| **Installed, confined by the real `nexa-run`** (Landlock; only `files.documents`; home folder outside `/tmp`; `nexac` in `/usr/local/bin` as on NexaOS) | `nexa-run --explain`: its own folders, `files.documents`, no internet. Opening from Documents, mistakes as you type, Explain, Lay out and saving work; its colour files are written to `~/.cache/code-studio/nexalang/`; saving in the home folder is refused with the window's message; **Run builds the program and then can't start it**: the output view shows nexac's message (as designed: see the decisions) |
+| **Fuzzing the compiler** (`tests/fuzz/fuzz.py`, seeded also with the new tests and Code Studio, with `editor.*`, `ui.append`, `start_program`, `stop_program` and the new events among the inserted pieces; programs that use `editor` built with GtkSourceView's flags): every accepted mutant built with the **exact hardened `-O2 -Werror` flags** and run under ASan + UBSan + the leak counter, and through every 0.6 tool check | **9,000 mutants** (seeds 2039-2041), **1,970 accepted** and run (398 of them window programs): **0 compiler crashes, 0 C build failures, 0 memory errors, 0 leaks**, 0 tool findings |
+| **Fuzzing the tools** (`--tools-only`) | **30,000 mutants** (seeds 117-126): 6,378 accepted, 8,582 formattable (5,932 re-laid out), 25,733 mistakes explained: **0 crashes, 0 non-idempotent formats, 0 changes of meaning, 0 disagreements** |
+
+**Screenshots** (`shots/0.8/`, all looked at): Code Studio empty, a new
+program, a mistake underlined and listed, the explanation, after running,
+running, stopped, a program with a mistake that can't be laid out and its
+run, a file too big, the question before closing without saving, 360 px
+wide (empty and in use), and installed (Run refused; saving outside
+Documents refused). No clipped text, no default grey GTK, no dark-on-dark.
+
+Found and fixed while building 0.8:
+- **under Valgrind, a program that failed to start printed the window
+  program's earlier output a second time** (the child got a copy of the
+  unwritten stdout buffer). Output is now flushed before every start, and
+  a folder that isn't there is refused before starting anything;
+- `nexac run` left an empty `/tmp/nexac-PID` folder when the build failed
+  (and its `.nexa.c` when GTK was missing), and the built program when it
+  was stopped; now nothing is left in any of those cases (tested);
+- a running program's output came through a pipe 4 KB at a time, so
+  Code Studio showed nothing until it ended (`NEXALANG_LINE_OUTPUT`);
+- the rounded corners of code views (0.7) were covered by the text inside;
+  explanations were cut off at the right edge of a code view; a window
+  with an editor, a list and a code view grew past 640 px;
+- after a check, "No mistakes." replaced what Run had just said (seen
+  under Valgrind, where the check finished later): the status line now
+  only changes when the number of mistakes does;
+- "can't be laid out until this mistake is fixed: error: ..." said
+  "error" twice;
+- GTK refused the first `font-feature-settings` (it wants HarfBuzz's
+  syntax, `"-liga, -calt"`);
+- Valgrind reports conditional jumps in the code PCRE2 compiles at run
+  time for GtkSourceView's patterns (no object to read its definedness
+  from); suppressed only for frames with no object at all
+  (`tests/ui/valgrind.supp`);
+- the test driver: file names with spaces (`\x20`), `# env:` and
+  `# tree: full`.
 
 **0.7 (2026-11-18)** — Ubuntu 24.04 here: gcc 13.3, clang, GTK 3.24.41,
 Xvfb, xdotool, Inter, JetBrains Mono, Valgrind, Sway 1.9 + grim.
@@ -699,7 +823,36 @@ Found and fixed while building 0.2: strings inside `{...}` were refused,
 which made the new text functions awkward (now allowed, 8 levels max);
 floats printed as `1e+03` (now `1000.0`).
 
-## 6. Known limits of 0.7
+## 6. Known limits of 0.8
+
+Code Studio, `editor` and programs (0.8):
+- **Installed, Code Studio can't Run**: NexaOS's app confinement
+  (`nexa-run`, Landlock) never lets an app run a file it has written, so
+  the program `nexac run` builds can't start; the output view shows
+  `nexac`'s message ("an installed NexaOS app can't run programs it
+  builds; run `nexac run FILE.nx` in a terminal"). Checking, laying out and
+  explaining work installed. Allowing it would need a new, deliberate
+  NexaOS permission (see the decisions).
+- **Building needs a C compiler and GTK's headers**: `nexac run` needs
+  `gcc`, and window programs `gtk+3.0-dev` (and `gtksourceview4-dev` for
+  `use editor`); a NexaOS image doesn't have them unless they're added
+  (`build-base`). Code Studio shows `nexac`'s message when they're missing.
+- Code Studio edits one file at a time; a module it uses is checked from
+  the disk (a mistake there is listed with its file name). No search and
+  replace, no completion, no "go to definition"; the window's title
+  doesn't show the file name (the line above the editor does).
+- Programs started by `start_program` read only the input given (then end
+  of input): Run can't type into a program that asks with `read_line`.
+  Something a program leaves running after it ends (`sleep 5 &`) isn't
+  stopped (only what's still running when Stop is pressed or the window
+  closes).
+- `Edited` coalescing (one waiting at a time) is there to bound the queue;
+  with GTK handling one key per turn of the loop it hasn't been seen to
+  merge two key presses in the tests.
+- Picking a file whose name isn't UTF-8 is refused by the chooser (as in
+  0.7); not driven by a test.
+
+## Known limits of 0.7 (still true)
 
 Window Designer and `ui` (0.7):
 - **Window Designer makes the window, not what it does**: the program it
@@ -717,7 +870,7 @@ Window Designer and `ui` (0.7):
   decisions). The chooser keeps its own settings (size, sort order) with
   GTK's settings system (dconf on NexaOS); that's GTK's behaviour, not the
   app's.
-- `ui.code` is read-only; an editable code widget is 0.8.
+- `ui.code` is read-only; the editable code widget is `editor` (0.8).
 - Not tested here: picking a file whose name isn't UTF-8 (the chooser
   refuses it with a message and stays open; such a name can't be typed by
   the test driver), and the clipboard after the program has ended (GTK
@@ -745,8 +898,7 @@ Tools (0.6):
   (`nexac explain --json`).
 - The NexaOS text editor (Python, GtkSourceView 4) colours `.nx` files
   once `nexalang.lang` is installed (`scripts/stage-text-editor.sh`); it
-  doesn't show mistakes as you type. That's the NexaLang code editor
-  (0.8).
+  doesn't show mistakes as you type. Code Studio (0.8) does.
 - The VS Code grammar is tested with VS Code's own engine, not inside VS
   Code; the extension around it is 0.9.
 
@@ -803,6 +955,6 @@ The language and `ui` (the language unchanged since 0.5):
 | **0.5** ✅ | `nexa-pack new my-app --lang nexa`; `.nexa` packages built from `.nx`, reproducibly; `apps/focus-timer`, a NexaOS app in NexaLang; `files.size`, `ui.display` | §5. In the Store once `make nexa-apps` builds and signs it on the release machine |
 | **0.6** ✅ | `nexac fmt` (meaning-preserving, idempotent, keeps comments); `nexac check --json`; `nexac explain` (20 topics; 19 with a refused and a fixed program, both tested); `nexac lsp` (diagnostics, formatting, hover); colours for GtkSourceView 4 (NexaOS's text editor) and VS Code | §5. Nexa Mind integration waits for a tool that may run programs |
 | **0.7** ✅ | **Window Designer** (`apps/window-designer`), a NexaOS app written in NexaLang: build a window from headings, text, notes, buttons, a main button, text fields, check boxes, lists, rows and columns; move them; see the preview; get the `ui` program (export or copy). First, in `ui`: `remove`, `clear`, `code`, `save_file`, `open_file`, `to_clipboard`; lists grow with their rows and columns; tests can print a window's widgets | §5: every exported program is accepted by `nexac check` and `fmt --check`, builds with the hardened flags and shows exactly the preview's widgets |
-| **0.8** | **A NexaLang code editor** (NexaOS app, written in NexaLang): GtkSourceView with 0.6's colours, mistakes as you type, `fmt`, `explain`, Run (with Stop) | driven by key presses, packaged, run confined |
+| **0.8** ✅ | **Code Studio** (`apps/code-studio`), a NexaLang code editor written in NexaLang: GtkSourceView with 0.6's colours, mistakes as you type (underlined and listed), Lay out, Explain, Run with Stop. First, in nexac: the `editor` module, `ui.start_program`/`stop_program` with `Output`/`Finished`, `ui.append`; `nexac run` leaves nothing behind when stopped | §5: driven by key presses three ways, packaged, run confined (where Run can't start what it builds: see the decisions) |
 | **0.9** | **Editing NexaLang on Windows**: a VS Code extension (0.6's grammar and language server, format on save, explanations); `nexac` for Windows | tested as far as possible without a Windows PC (Wine) |
 | later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (images, menus); a hexagon widget; in-place string append; completion in the language server; self-hosting | |

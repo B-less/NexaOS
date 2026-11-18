@@ -1,0 +1,173 @@
+// ui.start_program and ui.stop_program (0.8): output in order and in
+// whole letters, input, exit codes, stopping, limits and refusals.
+// The programs it starts are ordinary system tools, with fixed arguments.
+use ui
+
+struct Ran {
+    output: str
+    code: int
+    pieces: int
+}
+
+// Start a program and wait for it to finish.
+fn run(args: [str], input: str) -> !Ran {
+    let n = ui.start_program("", args, input)?
+    return ok(collect(n))
+}
+
+fn collect(n: int) -> Ran {
+    var parts: [str] = []
+    while true {
+        match ui.wait() {
+            Output(id, text) => {
+                if id == n {
+                    push(parts, text)
+                }
+            }
+            Finished(id, code) => {
+                if id == n {
+                    return Ran { output: join(parts, ""), code: code, pieces: len(parts) }
+                }
+            }
+            _ => { }
+        }
+    }
+    return Ran { output: "", code: -1, pieces: 0 }
+}
+
+fn count(s: str, part: str) -> int {
+    return len(split(s, part)) - 1
+}
+
+fn show(what: str, r: !Ran) {
+    match r {
+        ok(x) => { print("{what}: exit {x.code}, {len(x.output)} bytes: {x.output}") }
+        err(why) => { print("{what}: err: {why}") }
+    }
+}
+
+fn main() -> !void {
+    let page = ui.start("programs-test", "Programs")?
+    let out = ui.code(page, "")
+    ui.label(page, "Starting programs")
+
+    show("printf", run(["printf", "a\nb\n"], ""))
+    show("input", run(["cat"], "hello\nworld"))
+    show("errors too", run(["sh", "-c", "echo out; echo err >&2; exit 3"], ""))
+    show("zero byte", run(["printf", "a\\000b"], ""))
+    show("no newline at the end", run(["printf", "end"], ""))
+
+    // one long line of two-byte letters: in pieces, none cut in half
+    match run(["sh", "-c", "i=0; while [ $i -lt 2000 ]; do printf 'éééééééééééééééééééééééééééééééééééééééééééééééééé'; i=$((i+1)); done"], "") {
+        ok(r) => {
+            print("long line: exit {r.code}, {len(r.output)} bytes, {count(r.output, "é")} letters, in pieces: {r.pieces > 1}, broken letters: {count(r.output, "�")}")
+        }
+        err(why) => { print("long line: {why}") }
+    }
+
+    // a lot of output: 8 MB, then a note, and the rest is read and dropped
+    match run(["sh", "-c", "yes 0123456789abcdef | head -c 9000000"], "") {
+        ok(r) => {
+            print("a lot: exit {r.code}, at most 8 MB: {len(r.output) <= 8388608 + 100}, note: {contains(r.output, "The rest of the output was left out")}")
+        }
+        err(why) => { print("a lot: {why}") }
+    }
+
+    // a lot of input, read; and input that isn't read at all
+    let big = repeat("0123456789", 100_000)
+    show("a lot of input", run(["wc", "-c"], big))
+    show("input not read", run(["true"], big))
+
+    // refused
+    show("not installed", run(["no-such-program-nexalang"], ""))
+    show("nothing", run([], ""))
+    show("empty name", run([""], ""))
+    show("zero byte in an argument", run(["printf", "a\0b"], ""))
+    match ui.start_program("/no/such/folder", ["true"], "") {
+        ok(_) => { print("bad folder: started") }
+        err(why) => { print("bad folder: err: {why}") }
+    }
+    match ui.start_program("/", ["pwd"], "") {
+        ok(n) => { print("in a folder: {collect(n).output}") }
+        err(why) => { print("in a folder: err: {why}") }
+    }
+
+    // stopping: SIGTERM (128 + 15); one that ignores it is killed after 2 s (128 + 9)
+    let sleeper = ui.start_program("", ["sleep", "30"], "")?
+    ui.stop_program(sleeper)
+    ui.stop_program(sleeper)  // twice: nothing more happens
+    let r1 = collect(sleeper)
+    print("stopped: exit {r1.code}")
+    ui.stop_program(sleeper)  // after it finished: nothing happens
+    let stubborn = ui.start_program("", ["sh", "-c", "trap '' TERM; echo ready; while true; do sleep 0.2; done"], "")?
+    var ready = false
+    while not ready {
+        match ui.wait() {
+            Output(id, text) => {
+                if id == stubborn {
+                    ready = contains(text, "ready")
+                }
+            }
+            _ => { }
+        }
+    }
+    ui.stop_program(stubborn)
+    print("stubborn: exit {collect(stubborn).code}")
+
+    // something it started keeps the output open: it still finishes
+    show("left something running", run(["sh", "-c", "sleep 3 & echo started"], ""))
+
+    // at most 8 at once
+    var running: [int] = []
+    for i in 0..8 {
+        push(running, ui.start_program("", ["sleep", "30"], "")?)
+    }
+    show("a ninth", run(["true"], ""))
+    for n in running {
+        ui.stop_program(n)
+    }
+    var codes: [str] = []
+    while len(codes) < 8 {
+        match ui.wait() {
+            Finished(_, code) => { push(codes, "{code}") }
+            _ => { }
+        }
+    }
+    print("eight stopped: {join(codes, " ")}")
+    show("then one more", run(["printf", "ok"], ""))
+
+    // two at once, each with its own output
+    let a = ui.start_program("", ["sh", "-c", "sleep 0.3; echo A"], "")?
+    let b = ui.start_program("", ["sh", "-c", "echo B"], "")?
+    var a_out = ""
+    var b_out = ""
+    var left = 2
+    while left > 0 {
+        match ui.wait() {
+            Output(id, text) => {
+                if id == a {
+                    a_out = a_out + text
+                } else if id == b {
+                    b_out = b_out + text
+                }
+            }
+            Finished(_, _) => { left -= 1 }
+            _ => { }
+        }
+    }
+    print("two at once: a {trim(a_out)}, b {trim(b_out)}")
+
+    // the output view
+    ui.append(out, "first\n")
+    ui.append(out, "second, with a zero byte: \0\n")
+    ui.append(out, "")
+    ui.set_text(out, "replaced\n")
+    ui.append(out, "and added")
+    print("output view: {ui.get_text(out)}")
+
+    // a program still running when this one ends is stopped
+    let last = ui.start_program("", ["sleep", "60"], "")?
+    print("left running: {last > 0}")
+    print("done")
+    return ok()
+}

@@ -340,6 +340,9 @@ fn main() -> !void {
             Selected(_, _) => { }
             Toggled(_, _) => { }
             Tick => { }
+            Edited(_) => { }     // (0.8) a code editor: this window has none
+            Output(_, _) => { }  // (0.8) programs it started: none
+            Finished(_, _) => { }
             Closed => {
                 if state == State.Idle {
                     return ok()
