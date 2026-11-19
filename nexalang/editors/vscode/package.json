@@ -89,7 +89,7 @@
     ]
   },
   "scripts": {
-    "test": "node --test test/lib.test.js test/extension.test.js test/nexac.test.js",
+    "test": "node --test test/lib.test.js test/extension.test.js test/client.test.js test/nexac.test.js",
     "package": "vsce package"
   },
   "dependencies": {

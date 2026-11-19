@@ -632,7 +632,7 @@ fn the_vscode_extension_passes_its_tests() {
     let exe = std::env::var_os("NEXAC_TEST_EXE").unwrap_or_else(|| env!("CARGO_BIN_EXE_nexac").into());
     let mut cmd = Command::new("node");
     cmd.arg("--test").current_dir(&dir).env("NEXAC", exe);
-    for t in ["lib", "extension", "nexac"] {
+    for t in ["lib", "extension", "client", "nexac"] {
         cmd.arg(format!("test/{}.test.js", t));
     }
     if std::env::var_os("NEXAC_TEST_WINDOWS").is_some() {
@@ -641,5 +641,5 @@ fn the_vscode_extension_passes_its_tests() {
     let out = cmd.output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "{}\n{}", stdout, String::from_utf8_lossy(&out.stderr));
-    assert!(stdout.contains("# fail 0") && stdout.contains("# pass 12"), "{}", stdout);
+    assert!(stdout.contains("# fail 0") && stdout.contains("# pass 13"), "{}", stdout);
 }

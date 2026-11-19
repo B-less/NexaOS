@@ -566,7 +566,7 @@ tests run from `cargo test` (`the_vscode_extension_passes_its_tests`).
 | Every earlier check (examples with gcc and clang, ASan + UBSan, Valgrind, window scenarios, Focus Timer's, Window Designer's and Code Studio's scenarios three ways, misuse, broker, modules, rejected programs, runtime errors, the 0.6 tools, reproducible builds) | all still pass |
 | **Every 0.6 tool test against `nexac.exe` under Wine** (`NEXAC_TEST_WINDOWS=1 NEXAC_TEST_EXE=<a script running wine nexac.exe> cargo test --test tooling`): fmt never changes meaning on every program in the repository, fmt in place (all-or-nothing replace on Windows), `check --json`, explain's examples, whole language server sessions, modules | **all pass** (only the Unix file mode check is skipped: Windows has no modes) |
 | **The Windows `nexac` against the Linux one** (`tests/windows/differential.py`): `check --json`, `emit-c`, `fmt --stdin` (also with `\r\n`) and `explain --json` on all 167 `.nx` files in the repository and apps, and `check --json --stdin`, `fmt --stdin`, `explain` on 1,500 fuzzed programs | **4,953 outputs identical**, 3 differing only in `\` in a printed path (a missing module's message), **0 different** |
-| **The VS Code extension's tests** (`editors/vscode/test`, node's test runner), with the Linux `nexac` and with `nexac.exe` under Wine (URIs as VS Code writes them on Windows, `file:///z%3A/...`): finding `nexac` (setting, PATH, skipped relative folders, `.exe` only), the exact command (`nexac lsp`, no shell), explanations checked and turned into Markdown, quick fix topics; `activate()` with stand-ins for VS Code's API and the language client (registrations, how the server is started, the warning without `nexac`, a relative setting refused, the Explain command with the real `nexac`, a restart when the setting changes, `package.json`'s contributions); and two whole sessions through `vscode-languageserver-protocol` (the library VS Code's client uses) with `nexac lsp` and `nexac lsp --stdio`: a `\r\n` file with an emoji, a module beside it, a mistake (UTF-16 range, topic), hover, a fix, formatting that keeps `\r\n`, a module spelled with other capitals, save, close, an untitled file, shutdown | **12/12 pass** with each `nexac`; with `nexac.exe` also as part of the whole `tests/tooling.rs` run under Wine (**13/13**) |
+| **The VS Code extension's tests** (`editors/vscode/test`, node's test runner), with the Linux `nexac` and with `nexac.exe` under Wine (URIs as VS Code writes them on Windows, `file:///z%3A/...`): finding `nexac` (setting, PATH, skipped relative folders, `.exe` only), the exact command (`nexac lsp`, no shell), explanations checked and turned into Markdown, quick fix topics; `activate()` with stand-ins for VS Code's API and the language client (registrations, how the server is started, the warning without `nexac`, a relative setting refused, the Explain command with the real `nexac`, a restart when the setting changes, `package.json`'s contributions); and two whole sessions through `vscode-languageserver-protocol` (the library VS Code's client uses) with `nexac lsp` and `nexac lsp --stdio`: a `\r\n` file with an emoji, a module beside it, a mistake (UTF-16 range, topic), hover, a fix, formatting that keeps `\r\n`, a module spelled with other capitals, save, close, an untitled file, shutdown | **12/12 pass** with each `nexac` (13/13 since 0.9.2's real-client test); with `nexac.exe` also as part of the whole `tests/tooling.rs` run under Wine (**13/13**) |
 | An earlier full run, made while Wine and the fuzzer ran beside it, had one Valgrind window scenario (Code Studio's `stop.steps`) time out waiting for the file chooser; the final run, alone on the machine, passed everything | noted: slow under load, not a failure of the code |
 | `nexac build` / `run` on Windows (Wine) | the program is checked, then the message; exit 1 |
 | Unwinding (the language server catches a compiler panic) in a Windows build made the same way | a caught panic under Wine: works |
@@ -588,7 +588,15 @@ Found and fixed while building 0.9:
   they couldn't see it; now it writes like the real one, the stand-in
   channel has `.error()` only when made with `{ log: true }` (as in VS
   Code), and the test fails on 0.9.1's code. Extension 0.9.2.
-  (Whatever the client was logging at that moment is shown properly now.)
+  The other message seen there, "this.traceOutputChannel.onDidChangeLogLevel
+  is not a function", is the same mistake (the client's first use of the
+  channel). **New test `editors/vscode/test/client.test.js`**: the
+  extension with the *real* `vscode-languageclient`, VS Code's API
+  replaced by output channels shaped exactly like VS Code's and an
+  automatic stand-in for the rest. With 0.9.1's code it fails with exactly
+  the two messages seen in VS Code; with 0.9.2 the client starts `nexac lsp`
+  (Linux, and `nexac.exe` under Wine) and reaches "running". The
+  extension's tests are now 13.
 - `vscode-languageclient` adds `--stdio` to the server's arguments when
   the transport is stdio, and 0.6's `nexac lsp` refused any argument: the
   server would never have started in VS Code. Found by reading the
