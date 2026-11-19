@@ -1,6 +1,6 @@
 //! nexa-pack: build, sign and verify NexaOS .nexa packages.
 //!
-//!   nexa-pack new <id> [--lang c|rust] [--name "Name"] [--dir PATH]
+//!   nexa-pack new <id> [--lang c|rust|nexa] [--name "Name"] [--dir PATH]
 //!   nexa-pack build [DIR] [--key FILE] [-o FILE] [--no-build]
 //!   nexa-pack keygen <NAME>                 writes NAME.key (secret) and NAME.pub
 //!   nexa-pack verify <FILE> [--keys DIR] [--json]
@@ -25,7 +25,7 @@ use std::process::exit;
 
 const DEFAULT_KEYS: &str = "/etc/nexa/keys";
 const USAGE: &str = "usage:
-  nexa-pack new <id> [--lang c|rust] [--name NAME] [--dir PATH]
+  nexa-pack new <id> [--lang c|rust|nexa] [--name NAME] [--dir PATH]
   nexa-pack build [DIR] [--key FILE] [-o FILE] [--no-build]
   nexa-pack keygen <NAME>
   nexa-pack verify <FILE> [--keys DIR] [--json]

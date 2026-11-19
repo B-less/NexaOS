@@ -1,0 +1,124 @@
+column
+  row
+    button "Open…"
+    button "Save" (off)
+    button "New"
+  row
+    button "Lay out" (off)
+    button "Explain" (off)
+    button "Stop" (off)
+    primary button "Run" (off)
+  column
+    heading "Write NexaLang"
+    text "Open a .nx file or start a new one."
+    note "Mistakes show up as you type. Run builds and runs the program, and its output appears here."
+status error "huge.nx is too big to edit here (more than 1 MB). NexaLang programs are much smaller."
+column
+  row
+    button "Open…"
+    button "Save" (off)
+    button "New"
+  row
+    button "Lay out" (off)
+    button "Explain" (off)
+    button "Stop" (off)
+    primary button "Run" (off)
+  column
+    heading "Write NexaLang"
+    text "Open a .nx file or start a new one."
+    note "Mistakes show up as you type. Run builds and runs the program, and its output appears here."
+status error "latin1.nx can't be opened: it isn't text NexaOS can read (UTF-8)."
+column
+  row
+    button "Open…"
+    button "Save" (off)
+    button "New"
+  row
+    button "Lay out" (off)
+    button "Explain" (off)
+    button "Stop" (off)
+    primary button "Run" (off)
+  column
+    heading "Write NexaLang"
+    text "Open a .nx file or start a new one."
+    note "Mistakes show up as you type. Run builds and runs the program, and its output appears here."
+status error "zero.nx has a zero byte in it, so it isn't a text file. Pick a .nx file."
+column
+  row
+    button "Open…"
+    button "Save" (off)
+    button "New"
+  row
+    button "Lay out" (off)
+    button "Explain" (off)
+    button "Stop" (off)
+    primary button "Run" (off)
+  column
+    heading "Write NexaLang"
+    text "Open a .nx file or start a new one."
+    note "Mistakes show up as you type. Run builds and runs the program, and its output appears here."
+status error "long.nx has a line longer than 10000 letters, which is too long to edit here."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/empty.nx"
+    editor (1 lines, 0 marked, at 1:1, colours nexalang-horizon)
+    list "No mistakes found." (1 rows)
+      - "Line 1: the program has no `fn main()`"
+status "1 mistake. Pick one to see it; Enter goes there."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/windows.nx"
+    editor (4 lines, 0 marked, at 1:1, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(\"crlf\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+    code (6 lines)
+      | "Running windows.nx…"
+      | ""
+      | "crlf"
+      | ""
+      | "[The program ended.]"
+status "The program ended."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/my \"odd\" file.nx"
+    editor (4 lines, 0 marked, at 1:1, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(\"odd\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+    code (6 lines)
+      | "Running my \"odd\" file.nx…"
+      | ""
+      | "odd"
+      | ""
+      | "[The program ended.]"
+status "The program ended."

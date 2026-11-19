@@ -1,0 +1,43 @@
+column
+  row
+    button "Preview"
+    button "Code"
+    button "Export…"
+    button "Copy"
+  column
+    row
+      field "Window title" = "My window"
+      field "App id, like my-app" = "my-app"
+    row
+      column
+        note "Parts"
+        list "" (10 rows)
+          * "Heading"
+          - "Text"
+          - "Note"
+          - "Button"
+          - "Main button"
+          - "Text field"
+          - "Check box"
+          - "List"
+          - "Row"
+          - "Column"
+      column
+        note "Your window"
+        list "Nothing in the window yet. Pick a part on the left and press Add (Ctrl+Return)." (0 rows)
+    note "Pick a part on the left and press Add (Ctrl+Return). Select a part on the right to change its words."
+    row
+      field "Its words" (off)
+      check off "Starts checked" (off)
+    row
+      button "Add"
+      button "Up"
+      button "Down"
+      button "Into"
+      button "Out"
+    row
+      danger button "Remove"
+      button "New design"
+status error "Your saved design couldn't be read (can't read the design file as text: it isn't UTF-8). The file is left as it is, so changes won't be saved. Press New design to start a new one."
+--- .local/share/window-designer/design.json
+{"version": 1, "title": "\xff\xfe"}

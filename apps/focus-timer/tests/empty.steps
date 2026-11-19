@@ -1,0 +1,10 @@
+# program: ../apps/focus-timer/src/main.nx
+# An empty history file is an empty history: no error, and saving works.
+file .local/share/focus-timer/sessions.json 
+window Focus Timer
+key Tab ctrl+a
+type 0:01
+key Return
+wait 2.5
+key Escape
+show .local/share/focus-timer/sessions.json

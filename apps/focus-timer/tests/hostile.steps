@@ -1,0 +1,15 @@
+# program: ../apps/focus-timer/src/main.nx
+# A history with entries that make no sense (skipped), a very long name with
+# a line break (cut, on one line), numbers too big for an int; then closing
+# while the timer runs asks first, and nothing is written.
+file .local/share/focus-timer/sessions.json {"sessions": [{"what": "Reading", "seconds": 1500, "ended": 1763370000}, {"what": "", "seconds": 60, "ended": 1}, {"what": "negative", "seconds": -5, "ended": 1}, {"what": "huge", "seconds": 99999999999999999999, "ended": 1}, {"what": "too long", "seconds": 999999, "ended": 1}, {"what": 5}, "text", null, [], {"what": "Line one\\nline two ✓ ünïcode and a very long name that goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on", "seconds": 90, "ended": 1763380000}], "extra": true}
+window Focus Timer
+shot hostile
+key Tab ctrl+a
+type 1
+key Return
+wait 0.3
+key Escape
+shot close-running
+key Return
+show .local/share/focus-timer/sessions.json

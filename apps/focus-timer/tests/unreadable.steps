@@ -1,0 +1,12 @@
+# program: ../apps/focus-timer/src/main.nx
+# A history file that isn't text: the window says so and leaves it alone;
+# Clear history (Ctrl+Shift+Delete) offers a new one: cancel, then accept.
+file .local/share/focus-timer/sessions.json {"sessions": [\xff\xfe]}
+window Focus Timer
+shot unreadable
+key ctrl+shift+Delete
+shot unreadable-confirm
+key Escape
+wait 0.3
+key Escape
+show .local/share/focus-timer/sessions.json

@@ -36,14 +36,17 @@ use files
 use json
 
 pub enum UiEvent {
-    Clicked(int)          // a button (or its shortcut)
-    Changed(int, str)     // the person changed a text field: its new text
-    Submitted(int, str)   // Enter in a text field: its text
-    Toggled(int, bool)    // a check box: on or off
-    Selected(int, int)    // a list: the row now selected (from 0)
-    Activated(int, int)   // a list: a row double-clicked or Enter pressed on it
-    Closed                // the window's close button, Esc or Ctrl+Q
-    Tick                  // `wait_ms`: the time passed with nothing happening
+    Clicked(int)         // a button (or its shortcut)
+    Changed(int, str)    // the person changed a text field: its new text
+    Submitted(int, str)  // Enter in a text field: its text
+    Toggled(int, bool)   // a check box: on or off
+    Selected(int, int)   // a list: the row now selected (from 0)
+    Activated(int, int)  // a list: a row double-clicked or Enter pressed on it
+    Closed               // the window's close button, Esc or Ctrl+Q
+    Tick                 // `wait_ms`: the time passed with nothing happening
+    Edited(int)          // the person changed the text in a code editor (0.8; `use editor`)
+    Output(int, str)     // a program started with `start_program` printed this (0.8)
+    Finished(int, int)   // that program ended: its exit code (128 + signal when stopped)
 }
 
 // Open the window; returns its main column, where the other widgets go.
@@ -92,6 +95,12 @@ pub fn mono(parent: int, text: str) -> int {
     return __ui_label(parent, text, 3)
 }
 
+// One big number that matters, in JetBrains Mono at display size (22 pt):
+// a timer, a total (0.5). Use it once per window.
+pub fn display(parent: int, text: str) -> int {
+    return __ui_label(parent, text, 4)
+}
+
 // ---- controls ----
 
 pub fn button(parent: int, text: str) -> int {
@@ -122,6 +131,32 @@ pub fn check(parent: int, text: str, on: bool) -> int {
 // rows; say what to do next ("No notes yet. Write one above and press Add.").
 pub fn list(parent: int, empty: str) -> int {
     return __ui_list(parent, empty)
+}
+
+// Read-only text in JetBrains Mono that scrolls: code, a log, a long
+// result (0.7). The person can select and copy it. `set_text` replaces it.
+pub fn code(parent: int, text: str) -> int {
+    return __ui_code(parent, text)
+}
+
+// Add text at the end of a code view and show the end: a log, a running
+// program's output (0.8). `set_text` replaces it all instead.
+pub fn append(id: int, text: str) {
+    __ui_append(id, text)
+}
+
+// ---- removing widgets (0.7) ----
+
+// Remove a widget (and, for a column or row, everything in it). Its
+// number can't be used again: using it stops the program with a message.
+pub fn remove(id: int) {
+    __ui_remove(id, false)
+}
+
+// Remove everything inside a column or row, keeping the column or row:
+// the way to rebuild part of a window.
+pub fn clear(id: int) {
+    __ui_remove(id, true)
 }
 
 // ---- changing widgets ----
@@ -198,6 +233,11 @@ pub fn show_error(text: str) {
     __ui_status(text, 1)
 }
 
+// Put text on the clipboard, for the person to paste somewhere else (0.7).
+pub fn to_clipboard(text: str) {
+    __ui_to_clipboard(text)
+}
+
 // ---- events ----
 
 // Wait for the person to do something.
@@ -220,8 +260,36 @@ fn event(kind: int) -> UiEvent {
         5 => { return UiEvent.Selected(id, __ui_event_num()) }
         6 => { return UiEvent.Activated(id, __ui_event_num()) }
         7 => { return UiEvent.Closed }
+        9 => { return UiEvent.Edited(id) }
+        10 => { return UiEvent.Output(id, __ui_event_text()) }
+        11 => { return UiEvent.Finished(id, __ui_event_num()) }
         _ => { return UiEvent.Tick }
     }
+}
+
+// ---- programs (0.8) ----
+
+// Start another program, with an argument list (never through a shell):
+// `["nexac", "check", "--json", "--stdin", path]`. The first one is the
+// program, found where the system keeps programs. `folder` is where it
+// runs ("" for here); `input` is what it reads, then end of input.
+// What it prints (output and errors, in order) comes back as
+// `Output(number, text)` events, in whole lines, then `Finished(number,
+// exit code)`. err when it can't be started. At most 8 at once; when this
+// program ends, the ones still running are stopped.
+pub fn start_program(folder: str, args: [str], input: str) -> !int {
+    let n = __ui_start_program(folder, args, input)
+    if n == 0 {
+        return err(__ui_program_error())
+    }
+    return ok(n)
+}
+
+// Stop a program started with `start_program`, and anything it started.
+// It still sends `Finished` (with 128 + the signal's number). Stopping one
+// that has already finished does nothing.
+pub fn stop_program(n: int) {
+    __ui_stop_program(n)
 }
 
 // ---- questions ----
@@ -230,6 +298,20 @@ fn event(kind: int) -> UiEvent {
 // `yes` as an action that can't be undone.
 pub fn confirm(heading: str, message: str, yes: str, danger: bool) -> bool {
     return __ui_confirm(heading, message, yes, danger)
+}
+
+// Let the person pick where to save a file (0.7). `name` is the suggested
+// file name ("window.nx"). The full path, or none when they cancel. It
+// starts in Documents; an installed app can only write where its
+// permissions let it (nexa.toml: files.documents for Documents).
+pub fn save_file(title: str, name: str) -> ?str {
+    return __ui_choose(title, name, true)
+}
+
+// Let the person pick a file to open (0.7). `pattern` shows only matching
+// files ("*.nx"), or "" for all. The full path, or none when they cancel.
+pub fn open_file(title: str, pattern: str) -> ?str {
+    return __ui_choose(title, pattern, false)
 }
 
 // Ask for the person's password for `what` (the broker says what it's

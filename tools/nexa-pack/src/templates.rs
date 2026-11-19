@@ -152,14 +152,120 @@ fn main() {{
     ]
 }
 
+/// `text` as the inside of a TOML basic string ("...").
+fn toml_text(text: &str) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c.is_control() => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// `text` as the inside of a NexaLang string ("..."): `{` would start a
+/// value inside the text, so it's escaped like `"` and `\`.
+fn nexa_text(text: &str) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        match c {
+            '"' | '\\' | '{' | '}' => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if c.is_control() => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// A NexaLang app (nexalang/NEXALANG.md): one window with Hexa built in.
+/// `nexac` builds it with the hardened flags (and GTK's, as it uses `ui`).
+fn nexa_files(id: &str, name: &str) -> Vec<(String, String)> {
+    let toml_name = toml_text(name);
+    let toml = format!(r#"[package]
+id = "{id}"
+name = "{toml_name}"
+version = "0.1.0"
+description = "A NexaOS app written in NexaLang"
+categories = "Utility;"
+icon = "icon.svg"
+
+[build]
+# nexac (the NexaLang compiler) builds with the hardened flags.
+command = "nexac build src/main.nx -o build/{id}"
+binary = "build/{id}"
+
+[requires]
+depends = ["gtk+3.0"]
+permissions = []
+"#);
+    let title = nexa_text(name);
+    let comment = name.replace(|c: char| c.is_control(), " ");
+    let main_nx = format!(r#"// {comment}: a NexaOS app written in NexaLang. Build: nexa-pack build
+// The language: nexalang/NEXALANG.md. The rules for apps:
+// docs/WRITING_NEXA_APPS.md (ui follows the Hexa look for you).
+use ui
+
+fn greeting(name: str) -> str {{
+    let n = trim(name)
+    if n == "" {{
+        return "Type your name first, then press Enter."
+    }}
+    return "Hello, {{n}}. Welcome to NexaOS."
+}}
+
+fn main() -> !void {{
+    let page = ui.start("{id}", "{title}")?
+    ui.heading(page, "{title}")
+    let top = ui.row(page)
+    let name = ui.entry(top, "Your name")
+    let greet = ui.primary_button(top, "Greet")
+    ui.shortcut(greet, "Ctrl+G")
+    let answer = ui.label(page, "Type your name and press Enter.")
+    ui.focus(name)
+    while true {{
+        match ui.wait() {{
+            Clicked(id) => {{
+                if id == greet {{
+                    ui.set_text(answer, greeting(ui.get_text(name)))
+                }}
+            }}
+            Submitted(_, text) => {{ ui.set_text(answer, greeting(text)) }}
+            Closed => {{ return ok() }}
+            _ => {{ }}
+        }}
+    }}
+    return ok()
+}}
+"#);
+    vec![
+        ("nexa.toml".into(), toml),
+        ("src/main.nx".into(), main_nx),
+        ("icon.svg".into(), ICON.into()),
+        (".gitignore".into(), "build/\ndist/\n".into()),
+    ]
+}
+
 pub fn create(dir: &Path, id: &str, name: &str, lang: &str) -> Result<(), String> {
+    if !nexa_pack::manifest::is_id(id) {
+        return Err(format!("invalid id '{id}': lowercase letters, digits, - and _, starting with a letter (at most 40)"));
+    }
+    if id.starts_with("nexa-") {
+        return Err(format!("invalid id '{id}': ids starting with nexa- are kept for NexaOS"));
+    }
     if dir.exists() {
         return Err(format!("{} already exists", dir.display()));
     }
     let files = match lang {
         "c" => c_files(id, name),
         "rust" => rust_files(id, name),
-        other => return Err(format!("unknown language '{other}' (c or rust)")),
+        "nexa" => nexa_files(id, name),
+        other => return Err(format!("unknown language '{other}' (c, rust or nexa)")),
     };
     for (rel, body) in files {
         let path = dir.join(rel);
@@ -167,4 +273,36 @@ pub fn create(dir: &Path, id: &str, name: &str, lang: &str) -> Result<(), String
         fs::write(&path, body).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_are_escaped_for_toml_and_nexalang() {
+        assert_eq!(toml_text(r#"My "App" \ x"#), r#"My \"App\" \\ x"#);
+        assert_eq!(nexa_text(r#"A {b} "c" \"#), r#"A \{b\} \"c\" \\"#);
+        assert_eq!(nexa_text("tab\there"), "tab here");
+    }
+
+    #[test]
+    fn bad_ids_are_refused() {
+        let dir = std::env::temp_dir().join(format!("nexa-pack-template-{}", std::process::id()));
+        for id in ["../x", "My-App", "nexa-files", "", "1app"] {
+            assert!(create(&dir.join("p"), id, "X", "nexa").is_err(), "{id}");
+        }
+        assert!(create(&dir.join("p"), "ok-app", "X", "cobol").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nexa_template_has_the_files_it_needs() {
+        let files = nexa_files("my-app", r#"My "App" {x}"#);
+        let get = |n: &str| files.iter().find(|(k, _)| k == n).map(|(_, v)| v.clone()).unwrap();
+        let project: crate::project::Project = toml::from_str(&get("nexa.toml")).unwrap();
+        assert_eq!(project.package.name, r#"My "App" {x}"#);
+        assert_eq!(project.build.binary, "build/my-app");
+        assert!(get("src/main.nx").contains(r#"ui.start("my-app", "My \"App\" \{x\}")?"#));
+    }
 }

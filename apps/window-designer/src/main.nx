@@ -1,0 +1,1095 @@
+// Window Designer: build a NexaLang window by adding parts to it, see how
+// it looks, and get the program for it.
+// A NexaOS app written in NexaLang (nexalang/NEXALANG.md).
+//
+// Keys: Ctrl+Return adds the part picked on the left (Enter on it too),
+// Alt+Up and Alt+Down move the selected part, Alt+Right puts it into the
+// row or column above it, Alt+Left takes it out again, Alt+Delete removes
+// it. F5 shows the preview, F6 the code, Ctrl+E exports the program,
+// Ctrl+Shift+C copies it, Ctrl+N starts a new design, Esc or Ctrl+Q closes.
+// The design is kept in ~/.local/share/window-designer/design.json.
+use ui
+use files
+use json
+
+// One part of the window. `depth` says how deep it sits: 0 in the window
+// itself, 1 inside the row or column above it, and so on. The parts are
+// in the order they appear, each row or column followed by what's in it.
+struct Part {
+    kind: str  // one of kinds()
+    text: str  // what it says (a text field's hint, a list's empty text)
+    depth: int
+    on: bool  // check boxes: starts checked
+}
+
+struct Design {
+    title: str
+    app_id: str
+    parts: [Part]
+}
+
+// The parts after a change, and where the moved part is now.
+struct Moved {
+    parts: [Part]
+    at: int
+}
+
+enum View {
+    Editing
+    Preview
+    Code
+}
+
+// ---- limits: the design file and everything typed are untrusted ----
+
+fn max_parts() -> int {
+    return 200
+}
+
+fn max_depth() -> int {
+    return 6
+}
+
+fn max_text_bytes() -> int {
+    return 200
+}
+
+fn max_title_bytes() -> int {
+    return 80
+}
+
+fn max_file_bytes() -> int {
+    return 1_000_000
+}
+
+// ---- the kinds of parts ----
+
+fn kinds() -> [str] {
+    return ["heading", "text", "note", "button", "primary", "field", "check", "list", "row", "column"]
+}
+
+fn kind_names() -> [str] {
+    return ["Heading", "Text", "Note", "Button", "Main button", "Text field", "Check box", "List", "Row", "Column"]
+}
+
+fn kind_name(kind: str) -> str {
+    let all = kinds()
+    for i in 0..len(all) {
+        if all[i] == kind {
+            return kind_names()[i]
+        }
+    }
+    return kind
+}
+
+fn known_kind(kind: str) -> bool {
+    for k in kinds() {
+        if k == kind {
+            return true
+        }
+    }
+    return false
+}
+
+fn holds_parts(kind: str) -> bool {
+    return kind == "row" or kind == "column"
+}
+
+fn default_text(kind: str) -> str {
+    match kind {
+        "heading" => { return "A heading" }
+        "text" => { return "Some text" }
+        "note" => { return "A small note" }
+        "button" => { return "Button" }
+        "primary" => { return "Save" }
+        "field" => { return "Type here" }
+        "check" => { return "An option" }
+        "list" => { return "Nothing here yet." }
+        _ => { return "" }
+    }
+}
+
+// What the text box under the lists changes, for the selected part.
+fn text_meaning(kind: str) -> str {
+    match kind {
+        "button" => { return "The words on the button:" }
+        "primary" => { return "The words on the main button (a window has one):" }
+        "field" => { return "The hint shown in the empty text field:" }
+        "check" => { return "The words next to the check box:" }
+        "list" => { return "What the list says while it's empty (say what to do next):" }
+        "row" => { return "A row puts the parts inside it side by side. Alt+Right moves the part below it in." }
+        "column" => { return "A column puts the parts inside it one under the other." }
+        _ => { return "The words it shows:" }
+    }
+}
+
+// ---- text ----
+
+// `s` on one line, without control characters, at most `max` bytes
+// (never cutting a letter in half).
+fn clean(s: str, max: int) -> str {
+    var pieces: [str] = []
+    var start = 0
+    for i in 0..len(s) {
+        let b = byte_at(s, i)
+        if b < 32 or b == 127 {
+            push(pieces, slice(s, start, i))
+            push(pieces, " ")
+            start = i + 1
+        }
+    }
+    push(pieces, slice(s, start, len(s)))
+    let one_line = trim(join(pieces, ""))
+    if len(one_line) <= max {
+        return one_line
+    }
+    var end = max
+    // UTF-8: bytes 0x80-0xBF continue a letter; step back to its start
+    while end > 0 and byte_at(one_line, end) >= 128 and byte_at(one_line, end) < 192 {
+        end -= 1
+    }
+    return trim(slice(one_line, 0, end))
+}
+
+// Text inside a NexaLang string: \ " { } are escaped.
+fn escaped(s: str) -> str {
+    let a = replace(s, "\\", "\\\\")
+    let b = replace(a, "\"", "\\\"")
+    let c = replace(b, "\{", "\\\{")
+    return replace(c, "\}", "\\\}")
+}
+
+// A NexaLang string literal for the text.
+fn quoted(s: str) -> str {
+    return "\"{escaped(s)}\""
+}
+
+// ---- the outline ----
+
+// The rows of the "Your window" list: indented, so rows and columns show
+// what they hold.
+fn outline_rows(parts: [Part]) -> [str] {
+    var out: [str] = []
+    for p in parts {
+        let indent = repeat("      ", p.depth)
+        if holds_parts(p.kind) {
+            push(out, "{indent}{kind_name(p.kind)}")
+        } else if p.kind == "check" and p.on {
+            push(out, "{indent}{kind_name(p.kind)} (on): {p.text}")
+        } else {
+            push(out, "{indent}{kind_name(p.kind)}: {p.text}")
+        }
+    }
+    return out
+}
+
+// Parts make a window when the first is in the window itself and each
+// later one is at most one level deeper than the part before it, and
+// only right after a row or column.
+fn outline_ok(parts: [Part]) -> bool {
+    for i in 0..len(parts) {
+        let d = parts[i].depth
+        if d < 0 or d > max_depth() {
+            return false
+        }
+        if i == 0 {
+            if d != 0 {
+                return false
+            }
+        } else {
+            let before = parts[i - 1]
+            if d > before.depth + 1 {
+                return false
+            }
+            if d == before.depth + 1 and not holds_parts(before.kind) {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+// Where the part at `i` ends, with everything inside it (the index after it).
+fn part_end(parts: [Part], i: int) -> int {
+    var j = i + 1
+    while j < len(parts) and parts[j].depth > parts[i].depth {
+        j += 1
+    }
+    return j
+}
+
+// The part before `i` at the same level, in the same row or column.
+fn previous_sibling(parts: [Part], i: int) -> ?int {
+    var j = i - 1
+    while j >= 0 {
+        if parts[j].depth == parts[i].depth {
+            return some(j)
+        }
+        if parts[j].depth < parts[i].depth {
+            return none
+        }
+        j -= 1
+    }
+    return none
+}
+
+// The row or column the part at `i` is in.
+fn container_of(parts: [Part], i: int) -> ?int {
+    var j = i - 1
+    while j >= 0 {
+        if parts[j].depth < parts[i].depth {
+            return some(j)
+        }
+        j -= 1
+    }
+    return none
+}
+
+fn copy_range(parts: [Part], from: int, to: int, out: [Part]) -> [Part] {
+    var result = out
+    for k in from..to {
+        push(result, parts[k])
+    }
+    return result
+}
+
+// Swap the part at `i` (with what's inside it) with the one before it.
+fn move_up(parts: [Part], i: int) -> ?Moved {
+    let p = previous_sibling(parts, i)?
+    let end = part_end(parts, i)
+    var out: [Part] = []
+    out = copy_range(parts, 0, p, out)
+    out = copy_range(parts, i, end, out)
+    out = copy_range(parts, p, i, out)
+    out = copy_range(parts, end, len(parts), out)
+    return some(Moved { parts: out, at: p })
+}
+
+// Swap the part at `i` with the one after it.
+fn move_down(parts: [Part], i: int) -> ?Moved {
+    let end = part_end(parts, i)
+    if end >= len(parts) or parts[end].depth != parts[i].depth {
+        return none
+    }
+    let moved = move_up(parts, end)?
+    return some(Moved { parts: moved.parts, at: part_end(moved.parts, moved.at) })
+}
+
+// Put the part at `i` into the row or column just before it, at its end.
+fn move_into(parts: [Part], i: int) -> ?Moved {
+    let p = previous_sibling(parts, i)?
+    if not holds_parts(parts[p].kind) {
+        return none
+    }
+    let end = part_end(parts, i)
+    for k in i..end {
+        if parts[k].depth + 1 > max_depth() {
+            return none
+        }
+    }
+    var out = parts
+    for k in i..end {
+        out[k].depth += 1
+    }
+    return some(Moved { parts: out, at: i })
+}
+
+// Take the part at `i` out of its row or column: it comes right after it.
+fn move_out(parts: [Part], i: int) -> ?Moved {
+    let c = container_of(parts, i)?
+    let end = part_end(parts, i)
+    let c_end = part_end(parts, c)
+    var out: [Part] = []
+    out = copy_range(parts, 0, i, out)
+    out = copy_range(parts, end, c_end, out)
+    let at = len(out)
+    for k in i..end {
+        var q = parts[k]
+        q.depth -= 1
+        push(out, q)
+    }
+    out = copy_range(parts, c_end, len(parts), out)
+    return some(Moved { parts: out, at: at })
+}
+
+fn remove_part(parts: [Part], i: int) -> [Part] {
+    var out: [Part] = []
+    out = copy_range(parts, 0, i, out)
+    return copy_range(parts, part_end(parts, i), len(parts), out)
+}
+
+// A new part goes into the selected row or column (at its end), or after
+// the selected part, or at the end of the window.
+fn add_part(parts: [Part], selected: int, kind: str) -> Moved {
+    var depth = 0
+    var at = len(parts)
+    if selected >= 0 and selected < len(parts) {
+        let s = parts[selected]
+        at = part_end(parts, selected)
+        depth = s.depth
+        if holds_parts(s.kind) and s.depth < max_depth() {
+            depth = s.depth + 1
+        }
+    }
+    var out: [Part] = []
+    out = copy_range(parts, 0, at, out)
+    push(out, Part { kind: kind, text: default_text(kind), depth: depth, on: false })
+    out = copy_range(parts, at, len(parts), out)
+    return Moved { parts: out, at: at }
+}
+
+// Why the kind at `k` (in kinds()) can't be added; "" when it can.
+fn add_problem(parts: [Part], k: int) -> str {
+    if k < 0 or k >= len(kinds()) {
+        return "Pick a part on the left first."
+    }
+    if len(parts) >= max_parts() {
+        return "A window can have up to {max_parts()} parts here. Remove some first."
+    }
+    if kinds()[k] == "primary" and primary_count(parts) > 0 {
+        return "A window has one main button, and this one has it already. Add a Button instead, or remove the main one first."
+    }
+    return ""
+}
+
+fn primary_count(parts: [Part]) -> int {
+    var n = 0
+    for p in parts {
+        if p.kind == "primary" {
+            n += 1
+        }
+    }
+    return n
+}
+
+fn nothing(m: ?Moved) -> bool {
+    match m {
+        some(_) => { return false }
+        none => { return true }
+    }
+}
+
+// ---- the design file ----
+
+fn new_design() -> Design {
+    return Design { title: "My window", app_id: "my-app", parts: [] }
+}
+
+// The saved design. A file that isn't a design is an error (and is left
+// alone); there's no guessing at half of one.
+fn load(path: str) -> !Design {
+    if not files.exists(path) {
+        return ok(new_design())
+    }
+    if files.size(path)? > max_file_bytes() {
+        return err("the file is too big to be a design")
+    }
+    let text = files.read(path)?
+    if trim(text) == "" {
+        return ok(new_design())  // an empty file is a new design
+    }
+    var doc = Json.Null
+    match json.parse(text) {
+        ok(d) => { doc = d }
+        err(_) => { return err("the file is damaged") }
+    }
+    if unwrap_or(json.as_int(unwrap_or(json.get(doc, "version"), Json.Null)), 0) != 1 {
+        return err("it isn't a design this version knows")
+    }
+    let title = clean(unwrap_or(json.as_text(unwrap_or(json.get(doc, "title"), Json.Null)), ""), max_title_bytes())
+    let app_id = clean(unwrap_or(json.as_text(unwrap_or(json.get(doc, "app_id"), Json.Null)), ""), 64)
+    let list = unwrap_or(json.get(doc, "parts"), Json.Null)
+    match list {
+        List(_) => { }
+        _ => { return err("it has no list of parts") }
+    }
+    let items = json.items(list)
+    if len(items) > max_parts() {
+        return err("it has more than {max_parts()} parts")
+    }
+    var parts: [Part] = []
+    for item in items {
+        let kind = unwrap_or(json.as_text(unwrap_or(json.get(item, "kind"), Json.Null)), "")
+        if not known_kind(kind) {
+            return err("it has a part of a kind this version doesn't know")
+        }
+        var words = clean(unwrap_or(json.as_text(unwrap_or(json.get(item, "text"), Json.Null)), ""), max_text_bytes())
+        if holds_parts(kind) {
+            words = ""
+        }
+        let depth = unwrap_or(json.as_int(unwrap_or(json.get(item, "depth"), Json.Null)), -1)
+        let on = unwrap_or(json.as_bool(unwrap_or(json.get(item, "on"), Json.Null)), false)
+        push(parts, Part { kind: kind, text: words, depth: depth, on: on })
+    }
+    if not outline_ok(parts) {
+        return err("its parts aren't in an order that makes a window")
+    }
+    if primary_count(parts) > 1 {
+        return err("it has more than one main button")
+    }
+    return ok(Design { title: title, app_id: app_id, parts: parts })
+}
+
+fn save(dir: str, path: str, d: Design) -> !void {
+    files.make_dir(dir)?
+    var items: [Json] = []
+    for p in d.parts {
+        push(items, json.obj([
+            json.field("kind", Json.Text(p.kind)),
+            json.field("text", Json.Text(p.text)),
+            json.field("depth", Json.Num(to_float(p.depth))),
+            json.field("on", Json.Bool(p.on)),
+        ]))
+    }
+    let doc = json.obj([
+        json.field("version", Json.Num(1.0)),
+        json.field("title", Json.Text(d.title)),
+        json.field("app_id", Json.Text(d.app_id)),
+        json.field("parts", Json.List(items)),
+    ])
+    return files.write(path, "{json.pretty(doc)}\n")
+}
+
+// ---- the program ----
+
+// What stops the program from running as it is; "" when nothing does.
+fn problem(d: Design) -> str {
+    if d.title == "" {
+        return "Give the window a title first (the box at the top)."
+    }
+    match files.check_app_id(d.app_id) {
+        ok => { }
+        err(_) => {
+            return "The app id “{d.app_id}” can't be used: write it in lowercase letters, digits, - and _, starting with a letter, like my-app (not starting with nexa-)."
+        }
+    }
+    return ""
+}
+
+// A name for a part in the program: its words in lowercase joined by _,
+// then what it is ("save_button"). The ending keeps names away from
+// NexaLang's own words and from the names the program already uses.
+fn var_name(p: Part, taken: [str]) -> str {
+    var words: [str] = []
+    var word = ""
+    let t = to_lower(p.text)
+    for i in 0..len(t) {
+        let b = byte_at(t, i)
+        if (b >= 97 and b <= 122) or (b >= 48 and b <= 57 and word != "") {
+            word = word + char_from_code(b)
+        } else if word != "" {
+            push(words, word)
+            word = ""
+        }
+    }
+    if word != "" {
+        push(words, word)
+    }
+    var base = ""
+    var count = 0
+    for w in words {
+        if count < 3 and len(base) + len(w) < 24 {
+            if base == "" {
+                base = w
+            } else {
+                base = "{base}_{w}"
+            }
+            count += 1
+        }
+    }
+    var ending = p.kind
+    if p.kind == "primary" or p.kind == "button" {
+        ending = "button"
+    }
+    if holds_parts(p.kind) {
+        base = ""
+    }
+    var name = ending
+    if base != "" {
+        name = "{base}_{ending}"
+    }
+    var n = 1
+    var candidate = name
+    if holds_parts(p.kind) {
+        candidate = "{name}1"
+    }
+    while contains_name(taken, candidate) {
+        n += 1
+        candidate = "{name}{n}"
+    }
+    return candidate
+}
+
+fn contains_name(names: [str], name: str) -> bool {
+    for n in names {
+        if n == name {
+            return true
+        }
+    }
+    return false
+}
+
+// The variable for each part, or "" for parts the program never needs
+// again (headings, text, notes, and rows or columns with nothing inside).
+fn var_names(parts: [Part]) -> [str] {
+    var names: [str] = []
+    var taken: [str] = []
+    for i in 0..len(parts) {
+        let p = parts[i]
+        var needed = not (p.kind == "heading" or p.kind == "text" or p.kind == "note")
+        if holds_parts(p.kind) {
+            needed = part_end(parts, i) > i + 1
+        }
+        if needed {
+            let n = var_name(p, taken)
+            push(taken, n)
+            push(names, n)
+        } else {
+            push(names, "")
+        }
+    }
+    return names
+}
+
+fn maker(kind: str) -> str {
+    match kind {
+        "heading" => { return "ui.heading" }
+        "text" => { return "ui.label" }
+        "note" => { return "ui.note" }
+        "button" => { return "ui.button" }
+        "primary" => { return "ui.primary_button" }
+        "field" => { return "ui.entry" }
+        "check" => { return "ui.check" }
+        "list" => { return "ui.list" }
+        "row" => { return "ui.row" }
+        _ => { return "ui.column" }
+    }
+}
+
+// The whole program: a window with the parts, and the loop that waits for
+// the person, with a place for each button, text field, check box and list.
+fn program(d: Design) -> str {
+    let names = var_names(d.parts)
+    var title = d.title
+    if title == "" {
+        title = "My window"
+    }
+    var app_id = d.app_id
+    match files.check_app_id(d.app_id) {
+        ok => { }
+        err(_) => { app_id = "my-app" }  // problem() says so; export refuses
+    }
+    var lines: [str] = []
+    push(lines, "// {clean(title, max_title_bytes())}: made with Window Designer.")
+    push(lines, "// Fill in what each part does where it says \"your code here\".")
+    push(lines, "use ui")
+    push(lines, "")
+    push(lines, "fn main() -> !void \{")
+    push(lines, "    let page = ui.start({quoted(app_id)}, {quoted(title)})?")
+    var parents: [str] = ["page"]
+    var buttons: [int] = []
+    var fields: [int] = []
+    var checks: [int] = []
+    var lists: [int] = []
+    for i in 0..len(d.parts) {
+        let p = d.parts[i]
+        let parent = parents[p.depth]
+        var call = "{maker(p.kind)}({parent})"
+        if p.kind == "check" {
+            call = "{maker(p.kind)}({parent}, {quoted(p.text)}, {p.on})"
+        } else if not holds_parts(p.kind) {
+            call = "{maker(p.kind)}({parent}, {quoted(p.text)})"
+        }
+        if names[i] == "" {
+            push(lines, "    {call}")
+        } else {
+            push(lines, "    let {names[i]} = {call}")
+        }
+        if holds_parts(p.kind) {
+            if len(parents) == p.depth + 1 {
+                push(parents, names[i])
+            } else {
+                parents[p.depth + 1] = names[i]
+            }
+        }
+        if p.kind == "button" or p.kind == "primary" {
+            push(buttons, i)
+        } else if p.kind == "field" {
+            push(fields, i)
+        } else if p.kind == "check" {
+            push(checks, i)
+        } else if p.kind == "list" {
+            push(lists, i)
+        }
+    }
+    push(lines, "    while true \{")
+    push(lines, "        match ui.wait() \{")
+    if len(buttons) > 0 {
+        push(lines, "            Clicked(id) => \{")
+        for k in 0..len(buttons) {
+            let i = buttons[k]
+            var head = "if"
+            if k > 0 {
+                head = "\} else if"
+            }
+            push(lines, "                {head} id == {names[i]} \{")
+            push(lines, "                    // your code here")
+            push(lines, "                    ui.status({quoted("You pressed “{d.parts[i].text}”.")})")
+        }
+        push(lines, "                \}")
+        push(lines, "            \}")
+    }
+    if len(fields) > 0 {
+        push(lines, "            Submitted(id, text) => \{")
+        for k in 0..len(fields) {
+            let i = fields[k]
+            var head = "if"
+            if k > 0 {
+                head = "\} else if"
+            }
+            push(lines, "                {head} id == {names[i]} \{")
+            push(lines, "                    // your code here: Enter was pressed in the text field")
+            push(lines, "                    ui.status(\"You wrote: \{text\}\")")
+        }
+        push(lines, "                \}")
+        push(lines, "            \}")
+    }
+    if len(checks) > 0 {
+        push(lines, "            Toggled(id, on) => \{")
+        for k in 0..len(checks) {
+            let i = checks[k]
+            var head = "if"
+            if k > 0 {
+                head = "\} else if"
+            }
+            push(lines, "                {head} id == {names[i]} \{")
+            push(lines, "                    // your code here")
+            push(lines, "                    ui.status(\"“{escaped(d.parts[i].text)}” is now \{on\}.\")")
+        }
+        push(lines, "                \}")
+        push(lines, "            \}")
+    }
+    if len(lists) > 0 {
+        push(lines, "            Selected(id, index) => \{")
+        for k in 0..len(lists) {
+            let i = lists[k]
+            var head = "if"
+            if k > 0 {
+                head = "\} else if"
+            }
+            push(lines, "                {head} id == {names[i]} \{")
+            push(lines, "                    // your code here: fill the list with ui.set_items")
+            push(lines, "                    ui.status(\"Row \{index\} was picked.\")")
+        }
+        push(lines, "                \}")
+        push(lines, "            \}")
+    }
+    push(lines, "            Closed => \{ return ok() \}")
+    push(lines, "            _ => \{ \}")
+    push(lines, "        \}")
+    push(lines, "    \}")
+    push(lines, "    return ok()")
+    push(lines, "\}")
+    return "{join(lines, "\n")}\n"
+}
+
+// ---- the preview ----
+
+// The same parts, made for real in `frame` (what the program would show).
+fn build_preview(frame: int, parts: [Part]) {
+    ui.clear(frame)
+    var parents: [int] = [frame]
+    for p in parts {
+        let parent = parents[p.depth]
+        var id = 0
+        match p.kind {
+            "heading" => { id = ui.heading(parent, p.text) }
+            "text" => { id = ui.label(parent, p.text) }
+            "note" => { id = ui.note(parent, p.text) }
+            "button" => { id = ui.button(parent, p.text) }
+            "primary" => { id = ui.primary_button(parent, p.text) }
+            "field" => { id = ui.entry(parent, p.text) }
+            "check" => { id = ui.check(parent, p.text, p.on) }
+            "list" => { id = ui.list(parent, p.text) }
+            "row" => { id = ui.row(parent) }
+            _ => { id = ui.column(parent) }
+        }
+        if holds_parts(p.kind) {
+            if len(parents) == p.depth + 1 {
+                push(parents, id)
+            } else {
+                parents[p.depth + 1] = id
+            }
+        }
+    }
+}
+
+// ---- the window ----
+
+struct Look {
+    editing: int    // the editing view (a column)
+    preview: int    // the preview view
+    frame: int      // the preview's parts go here
+    code_view: int  // the code view
+    code: int       // the program's text
+    title_in: int
+    id_in: int
+    kinds: int
+    outline: int
+    meaning: int
+    text_in: int
+    on_in: int
+    note: int  // over the preview and the code: what they show
+    preview_btn: int
+    code_btn: int
+}
+
+// Show what's selected (or nothing) in the boxes under the lists.
+fn show_selected(w: Look, d: Design, sel: int) {
+    if sel < 0 or sel >= len(d.parts) {
+        ui.set_text(w.meaning, "Pick a part on the left and press Add (Ctrl+Return). Select a part on the right to change its words.")
+        ui.set_text(w.text_in, "")
+        ui.set_enabled(w.text_in, false)
+        ui.set_checked(w.on_in, false)
+        ui.set_enabled(w.on_in, false)
+        return
+    }
+    let p = d.parts[sel]
+    ui.set_text(w.meaning, text_meaning(p.kind))
+    ui.set_text(w.text_in, p.text)
+    ui.set_enabled(w.text_in, not holds_parts(p.kind))
+    ui.set_checked(w.on_in, p.on)
+    ui.set_enabled(w.on_in, p.kind == "check")
+}
+
+fn refresh(w: Look, d: Design, sel: int) {
+    ui.set_items(w.outline, outline_rows(d.parts))
+    if sel >= 0 and sel < len(d.parts) {
+        ui.select(w.outline, sel)
+    }
+    show_selected(w, d, sel)
+}
+
+fn show_view(w: Look, d: Design, view: View) {
+    ui.status("")
+    ui.set_visible(w.editing, view == View.Editing)
+    ui.set_visible(w.preview, view == View.Preview)
+    ui.set_visible(w.code_view, view == View.Code)
+    ui.set_visible(w.note, view != View.Editing)
+    if view == View.Preview {
+        build_preview(w.frame, d.parts)
+        if len(d.parts) == 0 {
+            ui.set_text(w.note, "Preview: “{d.title}” is empty so far. Go back (F5) and add some parts.")
+        } else {
+            ui.set_text(w.note, "Preview: this is how “{d.title}” will look. Try it: the parts work, but do nothing yet.")
+        }
+        ui.set_text(w.preview_btn, "Edit")
+        ui.set_text(w.code_btn, "Code")
+    } else if view == View.Code {
+        ui.set_text(w.code, program(d))
+        ui.set_text(w.note, "The program for this window. Export it (Ctrl+E) or copy it (Ctrl+Shift+C), then build it with nexac.")
+        ui.set_text(w.preview_btn, "Preview")
+        ui.set_text(w.code_btn, "Edit")
+        ui.focus(w.code)
+    } else {
+        ui.clear(w.frame)  // the preview's parts aren't needed until it's shown again
+        ui.set_text(w.preview_btn, "Preview")
+        ui.set_text(w.code_btn, "Code")
+        ui.focus(w.outline)
+    }
+}
+
+fn main() -> !void {
+    let dir = files.data_dir("window-designer")?
+    let path = files.join_path(dir, "design.json")
+    var d = new_design()
+    var problem_text = ""
+    match load(path) {
+        ok(loaded) => { d = loaded }
+        // the path is long and the same every time: name it in words
+        err(e) => { problem_text = replace(e, path, "the design file") }
+    }
+
+    let page = ui.start("window-designer", "Window Designer")?
+    let nav = ui.row(page)
+    let preview_btn = ui.button(nav, "Preview")
+    ui.shortcut(preview_btn, "F5")
+    ui.tooltip(preview_btn, "See the window as it will look")
+    let code_btn = ui.button(nav, "Code")
+    ui.shortcut(code_btn, "F6")
+    ui.tooltip(code_btn, "See the NexaLang program for it")
+    let export = ui.button(nav, "Export…")
+    ui.shortcut(export, "Ctrl+E")
+    ui.tooltip(export, "Save the program as a .nx file")
+    let copy = ui.button(nav, "Copy")
+    ui.shortcut(copy, "Ctrl+Shift+C")
+    ui.tooltip(copy, "Put the program on the clipboard")
+    let note = ui.note(page, "")
+    let editing = ui.column(page)
+    let meta = ui.row(editing)
+    let title_in = ui.entry(meta, "Window title")
+    ui.tooltip(title_in, "The title the window will have")
+    let id_in = ui.entry(meta, "App id, like my-app")
+    ui.tooltip(id_in, "The app's id from nexa.toml: lowercase letters, digits, - and _")
+    let lists = ui.row(editing)
+    let left = ui.column(lists)
+    ui.note(left, "Parts")
+    let kinds_list = ui.list(left, "")
+    ui.set_items(kinds_list, kind_names())
+    ui.select(kinds_list, 0)
+    ui.tooltip(kinds_list, "Pick a part, then press Enter or Add (Ctrl+Return)")
+    let right = ui.column(lists)
+    ui.note(right, "Your window")
+    let outline = ui.list(right, "Nothing in the window yet. Pick a part on the left and press Add (Ctrl+Return).")
+    ui.tooltip(outline, "Alt+Up and Alt+Down move the selected part; Alt+Right puts it into the row or column above it")
+    let meaning = ui.note(editing, "")
+    let edit = ui.row(editing)
+    let text_in = ui.entry(edit, "Its words")
+    let on_in = ui.check(edit, "Starts checked", false)
+    let first_buttons = ui.row(editing)
+    let add = ui.button(first_buttons, "Add")
+    ui.shortcut(add, "Ctrl+Return")
+    ui.tooltip(add, "Add the part picked on the left: into the selected row or column, or after the selected part")
+    let up = ui.button(first_buttons, "Up")
+    ui.shortcut(up, "Alt+Up")
+    let down = ui.button(first_buttons, "Down")
+    ui.shortcut(down, "Alt+Down")
+    let into = ui.button(first_buttons, "Into")
+    ui.shortcut(into, "Alt+Right")
+    ui.tooltip(into, "Put the selected part into the row or column just above it")
+    let out = ui.button(first_buttons, "Out")
+    ui.shortcut(out, "Alt+Left")
+    ui.tooltip(out, "Take the selected part out of its row or column")
+    let second_buttons = ui.row(editing)
+    let remove = ui.danger_button(second_buttons, "Remove")
+    ui.shortcut(remove, "Alt+Delete")
+    ui.tooltip(remove, "Remove the selected part (and what's inside it)")
+    let start_new = ui.button(second_buttons, "New design")
+    ui.shortcut(start_new, "Ctrl+N")
+    ui.tooltip(start_new, "Start again with an empty window")
+    let preview = ui.column(page)
+    let frame = ui.column(preview)
+    let code_view = ui.column(page)
+    let code = ui.code(code_view, "")
+    let w = Look {
+        editing: editing, preview: preview, frame: frame, code_view: code_view, code: code,
+        title_in: title_in, id_in: id_in, kinds: kinds_list, outline: outline, meaning: meaning,
+        text_in: text_in, on_in: on_in, note: note, preview_btn: preview_btn, code_btn: code_btn,
+    }
+
+    ui.set_text(title_in, d.title)
+    ui.set_text(id_in, d.app_id)
+    var sel = -1
+    var view = View.Editing
+    refresh(w, d, sel)
+    show_view(w, d, view)
+    ui.focus(kinds_list)
+
+    // Never write over a design that couldn't be read: the person may
+    // want it. "New design" offers to start a new one instead.
+    var can_save = problem_text == ""
+    if not can_save {
+        ui.show_error("Your saved design couldn't be read ({problem_text}). The file is left as it is, so changes won't be saved. Press New design to start a new one.")
+    }
+
+    while true {
+        var changed = false
+        var moved: ?Moved = none
+        var added = false
+        var add_wanted = false
+        match ui.wait() {
+            Clicked(id) => {
+                if id == add {
+                    if view == View.Editing {
+                        add_wanted = true
+                    }
+                } else if id == up {
+                    if sel >= 0 {
+                        moved = move_up(d.parts, sel)
+                        if nothing(moved) {
+                            ui.status("It's already the first part in its place.")
+                        }
+                    }
+                } else if id == down {
+                    if sel >= 0 {
+                        moved = move_down(d.parts, sel)
+                        if nothing(moved) {
+                            ui.status("It's already the last part in its place.")
+                        }
+                    }
+                } else if id == into {
+                    if sel >= 0 {
+                        moved = move_into(d.parts, sel)
+                        if nothing(moved) {
+                            ui.status("Only a part right after a row or column can go into it (up to {max_depth()} levels deep).")
+                        }
+                    }
+                } else if id == out {
+                    if sel >= 0 {
+                        moved = move_out(d.parts, sel)
+                        if nothing(moved) {
+                            ui.status("It's not inside a row or column.")
+                        }
+                    }
+                } else if id == remove {
+                    if sel >= 0 {
+                        let inside = part_end(d.parts, sel) - sel - 1
+                        var sure = true
+                        if inside > 0 {
+                            var what = "The {inside} parts inside it go too."
+                            if inside == 1 {
+                                what = "The part inside it goes too."
+                            }
+                            sure = ui.confirm("Remove this {to_lower(kind_name(d.parts[sel].kind))}?", what, "Remove", true)
+                        }
+                        if sure {
+                            d.parts = remove_part(d.parts, sel)
+                            if sel >= len(d.parts) {
+                                sel = len(d.parts) - 1
+                            }
+                            refresh(w, d, sel)
+                            ui.status("")
+                            changed = true
+                        }
+                    }
+                } else if id == start_new {
+                    var question = "This window and its parts are replaced by an empty one. It can't be undone."
+                    if not can_save {
+                        question = "The design file that couldn't be read will be replaced by a new design."
+                    }
+                    if ui.confirm("Start a new design?", question, "Start again", true) {
+                        d = new_design()
+                        can_save = true
+                        sel = -1
+                        ui.set_text(title_in, d.title)
+                        ui.set_text(id_in, d.app_id)
+                        view = View.Editing
+                        show_view(w, d, view)
+                        refresh(w, d, sel)
+                        changed = true
+                    }
+                } else if id == preview_btn {
+                    if view == View.Preview {
+                        view = View.Editing
+                    } else {
+                        view = View.Preview
+                    }
+                    show_view(w, d, view)
+                } else if id == code_btn {
+                    if view == View.Code {
+                        view = View.Editing
+                    } else {
+                        view = View.Code
+                    }
+                    show_view(w, d, view)
+                } else if id == export or id == copy {
+                    let why = problem(d)
+                    if why != "" {
+                        ui.show_error(why)
+                    } else if id == copy {
+                        ui.to_clipboard(program(d))
+                        ui.status("The program is on the clipboard.")
+                    } else {
+                        match ui.save_file("Export the program", "{d.app_id}.nx") {
+                            some(target) => {
+                                if not ends_with(target, ".nx") {
+                                    ui.show_error("Give the file a name ending in .nx (like {d.app_id}.nx), so nexac can build it.")
+                                } else {
+                                    match files.write(target, program(d)) {
+                                        ok => { ui.status("Saved {files.name(target)}. Build it with: nexac run {files.name(target)}") }
+                                        err(_) => { ui.show_error("It couldn't be saved there. Window Designer can save in your Documents folder; check that the disk isn't full.") }
+                                    }
+                                }
+                            }
+                            none => { }
+                        }
+                    }
+                }
+            }
+            Changed(id, text) => {
+                if id == title_in {
+                    d.title = clean(text, max_title_bytes())
+                    changed = true
+                } else if id == id_in {
+                    d.app_id = clean(text, 64)
+                    changed = true
+                } else if id == text_in and sel >= 0 and not holds_parts(d.parts[sel].kind) {
+                    d.parts[sel].text = clean(text, max_text_bytes())
+                    ui.set_items(outline, outline_rows(d.parts))
+                    ui.select(outline, sel)
+                    changed = true
+                }
+            }
+            Toggled(id, on) => {
+                if id == on_in and sel >= 0 and d.parts[sel].kind == "check" {
+                    d.parts[sel].on = on
+                    ui.set_items(outline, outline_rows(d.parts))
+                    ui.select(outline, sel)
+                    changed = true
+                }
+            }
+            Selected(id, row) => {
+                if id == outline {
+                    sel = row
+                    show_selected(w, d, sel)
+                }
+            }
+            Activated(id, _) => {
+                if id == kinds_list {
+                    add_wanted = true  // Enter on a part: the same as Add
+                }
+            }
+            Submitted(id, _) => {
+                if id == text_in {
+                    ui.focus(kinds_list)
+                }
+            }
+            Tick => { }
+            Edited(_) => { }     // (0.8) a code editor: this window has none
+            Output(_, _) => { }  // (0.8) programs it started: none
+            Finished(_, _) => { }
+            Closed => { return ok() }
+        }
+        if add_wanted {
+            let k = unwrap_or(ui.selected(kinds_list), -1)
+            let why = add_problem(d.parts, k)
+            if why != "" {
+                ui.show_error(why)
+            } else {
+                moved = some(add_part(d.parts, sel, kinds()[k]))
+                added = true
+                ui.status("")
+            }
+        }
+        match moved {
+            some(m) => {
+                d.parts = m.parts
+                sel = m.at
+                refresh(w, d, sel)
+                ui.status("")
+                changed = true
+            }
+            none => { }
+        }
+        if added {
+            // type its words straight away; Enter goes back to the parts
+            if holds_parts(d.parts[sel].kind) {
+                ui.focus(kinds_list)
+            } else {
+                ui.focus(text_in)
+            }
+        }
+        if changed {
+            if can_save {
+                match save(dir, path, d) {
+                    ok => { }
+                    err(_) => { ui.show_error("The design couldn't be saved. Check that the disk isn't full.") }
+                }
+            }
+            if view == View.Code {
+                ui.set_text(code, program(d))
+            }
+        }
+    }
+    return ok()
+}

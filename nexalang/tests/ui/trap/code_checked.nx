@@ -1,0 +1,8 @@
+// trap: widget 2 is a code view, which can't be checked
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let c = ui.code(page, "x")
+    ui.set_checked(c, true)
+    return ok()
+}

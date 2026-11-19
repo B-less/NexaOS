@@ -1,0 +1,10 @@
+# program: ../apps/focus-timer/src/main.nx
+# The same unreadable file, and this time the new history is accepted.
+file .local/share/focus-timer/sessions.json {"sessions": [\xff\xfe]}
+window Focus Timer
+key ctrl+shift+Delete
+key Return
+wait 0.3
+shot cleared
+key Escape
+show .local/share/focus-timer/sessions.json

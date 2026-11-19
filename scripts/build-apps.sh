@@ -8,16 +8,19 @@ set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
 version=$(sed -n 's/^ALPINE_VERSION=//p' "$repo/build.conf")
 keys="$HOME/.config/nexaos-keys"
-[ -x "$repo/build/native/nexa-pack" ] || sh "$repo/scripts/build-native.sh" >/dev/null
+# nexa-pack, and nexac for apps written in NexaLang (apps/*/src/main.nx)
+{ [ -x "$repo/build/native/nexa-pack" ] && [ -x "$repo/build/native/nexac" ]; } || sh "$repo/scripts/build-native.sh" >/dev/null
 # The Rust builder plus the headers apps commonly need beyond GTK, saved
 # once (nexa-rust-apps) instead of downloaded on every build.
 apps_image=nexa-rust-apps:${version%.*}
-# (scripts/build-c-tools.sh makes the full one: with curl-dev and openssl-dev for Mail)
-if ! docker run --rm "$apps_image" sh -c 'apk info -e curl-dev && apk info -e openssl-dev' >/dev/null 2>&1; then
+# (scripts/build-c-tools.sh makes the full one: with curl-dev and openssl-dev
+# for Mail, gtksourceview4-dev for Code Studio)
+if ! docker run --rm "$apps_image" sh -c 'apk info -e curl-dev && apk info -e openssl-dev && apk info -e gtksourceview4-dev' >/dev/null 2>&1; then
     sh "$repo/scripts/build-c-tools.sh" >/dev/null
 fi
 docker run --rm -v "$repo:/src" -v "$keys:/keys:ro" -e OWNER="$(id -u):$(id -g)" "$apps_image" sh -c '
 set -e
+export PATH=/src/build/native:$PATH  # nexac, for apps written in NexaLang
 key=""; [ -f /keys/nexaos-release.key ] && key="--key /keys/nexaos-release.key"
 for app in /src/apps/*/nexa.toml; do
     dir=${app%/nexa.toml}

@@ -1,0 +1,24 @@
+# program: ../apps/code-studio/src/main.nx
+# tree: full
+# 360 px wide: nothing is cut off; the empty state, a program with a
+# mistake and its output.
+file Documents/wide.nx fn main() {\n    let message = "A long line of text that is much wider than a narrow window can show at once"\n    print(message)\n    message = "x"\n}\n
+window Code Studio
+size 360 640
+wait 1
+shot narrow-empty
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type wide.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+wait 2
+key F5
+wait 4
+shot narrow
+key ctrl+shift+F12
+key Escape

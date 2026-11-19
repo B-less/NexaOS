@@ -104,6 +104,11 @@ static void nx_on_segv(int sig, siginfo_t *si, void *ctx) {
     signal(sig, SIG_DFL); /* fault again, the normal way */
 }
 static void nx_init(void) {
+    /* `nexac run` asks for output line by line (0.8): someone is watching
+       it, maybe through a pipe (a code editor's output view), not only
+       when 4 KB have piled up or the program ends */
+    const char *lines = getenv("NEXALANG_LINE_OUTPUT");
+    if (lines && strcmp(lines, "1") == 0) setvbuf(stdout, NULL, _IOLBF, 0);
     static char alt[65536];
     stack_t ss;
     memset(&ss, 0, sizeof ss);
@@ -733,6 +738,24 @@ NX_RT nx_R_v nx_b___files_append(nx_str path, nx_str text, int line) {
     if (fd < 0) { r.e = nx_os_err("add to", path, errno); return r; }
     if (!nx_write_all(fd, text)) { int e = errno; close(fd); r.e = nx_os_err("add to", path, e); return r; }
     if (close(fd) != 0) { r.e = nx_os_err("add to", path, errno); return r; }
+    r.ok = true;
+    return r;
+}
+
+/* The size of a file in bytes, as decimal text (so it can use the runtime's
+   existing `!str`; std/files.nx turns it into an int). Folders are refused. */
+NX_RT nx_R_s nx_b___files_size(nx_str path, int line) {
+    (void)line;
+    nx_R_s r = {false, {"", 0, NULL}, {"", 0, NULL}};
+    char *c = nx_cstr(path);
+    if (!c) { r.e = NX_BAD_PATH("find the size of", path); return r; }
+    struct stat st;
+    int rc = stat(c, &st);
+    int e = errno;
+    free(c);
+    if (rc != 0) { r.e = nx_os_err("find the size of", path, e); return r; }
+    if (S_ISDIR(st.st_mode)) { r.e = nx_os_err("find the size of", path, EISDIR); return r; }
+    r.v = nx_fmt("%lld", (long long)st.st_size);
     r.ok = true;
     return r;
 }

@@ -259,6 +259,42 @@ fn build_writes_a_program() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// 0.5: nexa-pack projects build into `build/`, which starts out missing.
+#[test]
+fn build_makes_the_output_folder() {
+    let dir = tmpdir("build-dir");
+    let exe = dir.join("build/deeper/hello");
+    let st = nexac().arg("build").arg(root().join("examples/hello.nx")).arg("-o").arg(&exe).status().unwrap();
+    assert!(st.success());
+    assert_eq!(String::from_utf8_lossy(&Command::new(&exe).output().unwrap().stdout), "Hello from NexaLang on NexaOS!\n");
+    // a folder that can't be made is an error with a message, not a crash
+    std::fs::write(dir.join("file"), "x").unwrap();
+    let out = nexac().arg("build").arg(root().join("examples/hello.nx")).arg("-o").arg(dir.join("file/hello")).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("error: can't make the folder"), "{}", String::from_utf8_lossy(&out.stderr));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// 0.5: .nexa packages must be reproducible, so the programs in them are:
+/// the same source built twice (in different folders) gives the same bytes.
+#[test]
+fn built_programs_are_byte_identical() {
+    let dir = tmpdir("repro");
+    let mut progs = vec![root().join("examples/notes.nx")];
+    if have_gtk() {
+        progs.extend(nexa_apps().into_iter().map(|a| a.join("src/main.nx")));
+    }
+    for p in progs {
+        let a = dir.join("one/build/app");
+        let b = dir.join("two/build/app");
+        for out in [&a, &b] {
+            assert!(nexac().arg("build").arg(&p).arg("-o").arg(out).status().unwrap().success(), "{}", p.display());
+        }
+        assert!(std::fs::read(&a).unwrap() == std::fs::read(&b).unwrap(), "{} built twice differs", p.display());
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn module_mistakes_are_reported_in_the_right_file() {
     let bad = root().join("tests/modules/bad");
@@ -341,8 +377,9 @@ fn broker_client_talks_to_a_broker() {
 // leak only counts when the program's own code is on the stack (every
 // NexaLang byte is still counted exactly by the leak counter).
 
+/// GTK 3, and GtkSourceView 4 for the code editor's tests (0.8).
 fn have_gtk() -> bool {
-    Command::new("pkg-config").args(["--exists", "gtk+-3.0"]).status().is_ok_and(|s| s.success())
+    Command::new("pkg-config").args(["--exists", "gtk+-3.0", "gtksourceview-4"]).status().is_ok_and(|s| s.success())
 }
 
 fn have_display_tools() -> bool {
@@ -350,14 +387,36 @@ fn have_display_tools() -> bool {
 }
 
 fn gtk_flags(which: &str) -> Vec<String> {
-    let o = Command::new("pkg-config").arg(which).arg("gtk+-3.0").output().unwrap();
+    gtk_flags_for(which, false)
+}
+
+/// With GtkSourceView 4 too, for programs that `use editor` (0.8: their C
+/// starts with `#define NX_UI_SOURCE`).
+fn gtk_flags_for(which: &str, source: bool) -> Vec<String> {
+    let mut c = Command::new("pkg-config");
+    c.arg(which).arg("gtk+-3.0");
+    if source {
+        c.arg("gtksourceview-4");
+    }
+    let o = c.output().unwrap();
     String::from_utf8(o.stdout).unwrap().split_whitespace().map(String::from).collect()
 }
 
-/// Window programs: the examples, and the test programs.
+/// Window programs: the examples, the test programs, and NexaOS apps
+/// written in NexaLang (`apps/*/src/main.nx`, 0.5).
 fn ui_programs() -> Vec<PathBuf> {
     let mut v = files("examples/ui");
     v.extend(files("tests/ui"));
+    v.extend(nexa_apps().into_iter().map(|a| a.join("src/main.nx")));
+    v
+}
+
+/// NexaOS apps written in NexaLang: folders in `apps/` with `src/main.nx`.
+fn nexa_apps() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(root().join("../apps"))
+        .map(|d| d.map(|e| e.unwrap().path()).filter(|p| p.join("src/main.nx").is_file()).collect())
+        .unwrap_or_default();
+    v.sort();
     v
 }
 
@@ -367,13 +426,19 @@ struct Steps {
     broker: bool,
 }
 
+/// tests/ui/*.steps, then each NexaLang app's tests/*.steps (0.5).
 fn ui_steps() -> Vec<Steps> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(root().join("tests/ui"))
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "steps"))
-        .collect();
-    v.sort();
+    let steps_in = |dir: PathBuf| -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
+            .map(|d| d.map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "steps")).collect())
+            .unwrap_or_default();
+        v.sort();
+        v
+    };
+    let mut v = steps_in(root().join("tests/ui"));
+    for app in nexa_apps() {
+        v.extend(steps_in(app.join("tests")));
+    }
     v.into_iter()
         .map(|file| {
             let src = std::fs::read_to_string(&file).unwrap();
@@ -423,6 +488,10 @@ fn drive_env(s: &Steps, dir: &Path, cmd: &[&std::ffi::OsStr], wait_s: u32, shots
     if let Some(d) = shots {
         c.env("NX_SHOTS", d);
     }
+    // programs a window starts (0.8: Code Studio starts nexac) find this nexac
+    let bin = Path::new(env!("CARGO_BIN_EXE_nexac")).parent().unwrap().to_path_buf();
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    c.env("PATH", std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&path))).unwrap());
     for (k, v) in env {
         c.env(k, v);
     }
@@ -556,16 +625,17 @@ fn windows_are_clean_under_address_and_undefined_sanitizers() {
         assert!(c.status.success());
         let cfile = dir.join("prog.c");
         std::fs::write(&cfile, &c.stdout).unwrap();
+        let source = String::from_utf8_lossy(&c.stdout).contains("\n#define NX_UI_SOURCE 1\n");
         let exe = dir.join("prog-asan");
         let st = Command::new("gcc")
             .args(["-std=gnu11", "-O1", "-g", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"])
             .args(["-fno-omit-frame-pointer", "-DNX_LEAK_CHECK", "-Wall", "-Wextra", "-Werror"])
-            .args(gtk_flags("--cflags"))
+            .args(gtk_flags_for("--cflags", source))
             .arg(&cfile)
             .arg("-o")
             .arg(&exe)
             .arg("-lm")
-            .args(gtk_flags("--libs"))
+            .args(gtk_flags_for("--libs", source))
             .status()
             .unwrap();
         assert!(st.success(), "{} didn't build with sanitizers", s.program.display());
@@ -674,5 +744,138 @@ fn windows_follow_the_theme_live() {
         String::from_utf8_lossy(&o.stdout).contains(want)
     };
     assert!(accent("theme-start") && accent("theme-changed"), "the accent colour didn't follow the theme");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Window Designer (apps/window-designer, 0.7): every program it exported in
+// its tests (`--- Documents/NAME.nx` in a tests/*.out, which the window
+// tests above check byte for byte) must be accepted by `nexac check`, be
+// laid out the way `nexac fmt` would, build with the hardened flags, and
+// run showing exactly the widgets the designer's preview showed (both
+// printed by Ctrl+Shift+F12 with NEXALANG_UI_TREE set).
+
+/// The parts of the designer's preview in a tree print: what's inside its
+/// frame (`  note "Preview: ..."`, `  column`, `    column`, then the parts),
+/// moved left to where they'd be in a window of their own.
+fn preview_parts(out: &str) -> Option<String> {
+    let lines: Vec<&str> = out.lines().collect();
+    let at = lines.iter().position(|l| l.starts_with("  note \"Preview:"))?;
+    assert_eq!(lines[at + 1], "  column", "the preview's column");
+    assert_eq!(lines[at + 2], "    column", "the preview's frame");
+    let mut tree = String::from("column\n");
+    for l in &lines[at + 3..] {
+        if !l.starts_with("      ") {
+            break;
+        }
+        tree.push_str(&l[4..]);
+        tree.push('\n');
+    }
+    Some(tree)
+}
+
+fn exported_programs(out: &str) -> Vec<(String, String)> {
+    let mut v = Vec::new();
+    let mut cur: Option<(String, String)> = None;
+    for l in out.split_inclusive('\n') {
+        if let Some(h) = l.strip_prefix("--- ") {
+            v.extend(cur.take());
+            let name = h.trim_end();
+            if name.starts_with("Documents/") && name.ends_with(".nx") {
+                cur = Some((name["Documents/".len()..].to_string(), String::new()));
+            }
+        } else if let Some((_, text)) = cur.as_mut() {
+            text.push_str(l);
+        }
+    }
+    v.extend(cur);
+    v
+}
+
+/// The window title in `ui.start("id", "TITLE")`, as a regular expression
+/// for drive.py's `window` step.
+fn title_pattern(program: &str) -> String {
+    let line = program.lines().find(|l| l.contains("ui.start(")).unwrap();
+    let start = line.find(", \"").unwrap() + 3;
+    let end = line.rfind("\")?").unwrap();
+    let mut title = String::new();
+    let mut chars = line[start..end].chars();
+    while let Some(c) = chars.next() {
+        let c = if c == '\\' { chars.next().unwrap() } else { c };
+        if "\\^$.|?*+()[]{}".contains(c) {
+            title.push('\\');
+        }
+        title.push(c);
+    }
+    title
+}
+
+#[test]
+fn window_designer_programs_build_and_show_what_the_preview_showed() {
+    if !have_gtk() || !have_display_tools() || !have("python3") {
+        eprintln!("GTK 3, Xvfb, xdotool or python3 missing; skipped");
+        return;
+    }
+    let dir = tmpdir("designer-programs");
+    let tests = root().join("../apps/window-designer/tests");
+    let mut outs: Vec<PathBuf> = std::fs::read_dir(&tests).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "out")).collect();
+    outs.sort();
+    let mut checked = 0;
+    for out_file in outs {
+        let out = std::fs::read_to_string(&out_file).unwrap();
+        for (name, program) in exported_programs(&out) {
+            let want = preview_parts(&out).unwrap_or_else(|| panic!("{}: exports {} but never shows the preview", out_file.display(), name));
+            let prog = dir.join(name.replace(' ', "_"));
+            std::fs::write(&prog, &program).unwrap();
+            let c = nexac().arg("check").arg(&prog).output().unwrap();
+            assert!(c.status.success(), "{} ({}): nexac check refused it:\n{}", name, out_file.display(), String::from_utf8_lossy(&c.stderr));
+            let f = nexac().arg("fmt").arg("--check").arg(&prog).output().unwrap();
+            assert!(f.status.success(), "{}: not laid out as nexac fmt would", name);
+            let exe = dir.join("designed");
+            let b = nexac().arg("build").arg(&prog).arg("-o").arg(&exe).output().unwrap();
+            assert!(b.status.success(), "{}: didn't build:\n{}", name, String::from_utf8_lossy(&b.stderr));
+            let steps = dir.join("designed.steps");
+            std::fs::write(&steps, format!("# program: none\nwindow {}\nkey ctrl+shift+F12\nkey Escape\n", title_pattern(&program))).unwrap();
+            let s = Steps { file: steps, program: prog.clone(), broker: false };
+            let cmd: Vec<&std::ffi::OsStr> = vec![env!("CARGO_BIN_EXE_nexac").as_ref(), "run".as_ref(), "--check-memory".as_ref(), prog.as_os_str()];
+            let run = drive(&s, &dir, &cmd, 30, None);
+            assert!(run.status.success(), "{}: failed ({:?}):\n{}", name, run.status.code(), String::from_utf8_lossy(&run.stderr));
+            assert_eq!(String::from_utf8_lossy(&run.stdout), want, "{}: the program's window isn't what the preview showed", name);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 3, "only {} exported programs in the designer's tests", checked);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// `nexac run` (0.8): the program's output comes line by line even through
+// a pipe (a code editor shows it as it happens), and nothing is left in
+// the temporary folder when the build fails or when nexac and the program
+// are stopped together (a code editor's Stop button).
+#[test]
+fn run_shows_output_as_it_happens_and_leaves_nothing_behind() {
+    use std::io::BufRead;
+    use std::os::unix::process::CommandExt;
+    let dir = tmpdir("run-tmp");
+    let tmp = dir.join("tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let prog = dir.join("slow.nx");
+    std::fs::write(&prog, "use time\n\nfn main() {\n    print(\"started\")\n    time.sleep_ms(30000)\n    print(\"never\")\n}\n").unwrap();
+    let mut child = nexac().arg("run").arg(&prog).env("TMPDIR", &tmp).stdout(Stdio::piped()).process_group(0).spawn().unwrap();
+    let mut line = String::new();
+    let start = std::time::Instant::now();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    assert_eq!(line, "started\n");
+    assert!(start.elapsed().as_secs() < 20, "the first line came only after {:?}", start.elapsed());
+    // the program is running and its file is already gone
+    assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "left in the temporary folder while running");
+    let pgid = format!("-{}", child.id());
+    assert!(Command::new("kill").args(["-TERM", "--", &pgid]).status().unwrap().success());
+    let _ = child.wait();
+    assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "left behind after being stopped");
+    // a build that fails leaves nothing either
+    let out = nexac().arg("run").arg(&prog).env("TMPDIR", &tmp).env("CC", dir.join("no-such-cc")).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("can't start the C compiler"));
+    assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "left behind after a failed build");
     let _ = std::fs::remove_dir_all(&dir);
 }

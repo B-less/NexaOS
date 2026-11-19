@@ -2,15 +2,18 @@
 
 For people and for AI assistants. Follow every **must**; follow every
 **should** unless you can say why not. The reference app that follows all
-of this is `apps/video-player` (C, GTK 3, GStreamer). Read it before you
+of this is `apps/video-player` (C, GTK 3, GStreamer); `apps/focus-timer`
+is the reference for an app written in NexaLang. Read it before you
 start. Also read `docs/PACKAGES.md` (the package format) and
 `docs/SYSTEM_BROKER.md` (how apps change the system).
 
 ## 1. Language
 
-- **Must** be written in **C** (C11/gnu11, GTK 3) or **Rust** (2021, static
-  musl). Python, shell scripts, JavaScript and Electron are not accepted
-  for app logic.
+- **Must** be written in **C** (C11/gnu11, GTK 3), **Rust** (2021, static
+  musl) or **NexaLang** (NexaOS's own language, `nexalang/NEXALANG.md`;
+  `nexac` compiles it to C and builds it with exactly the hardened flags
+  below, and its `ui` module follows section 4 for you). Python, shell
+  scripts, JavaScript and Electron are not accepted for app logic.
 - C **must** build with the hardened flags in the template (do not remove
   any):
   `-Wall -Wextra -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2
@@ -27,7 +30,7 @@ start. Also read `docs/PACKAGES.md` (the package format) and
 Start from the template, which builds, packages and runs as is:
 
 ```sh
-nexa-pack new my-app --lang c        # or --lang rust
+nexa-pack new my-app --lang c        # or --lang rust, or --lang nexa (NexaLang)
 cd my-app && nexa-pack build         # dist/my-app-0.1.0.nexa
 ```
 

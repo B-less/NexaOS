@@ -1,0 +1,32 @@
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/wide.nx"
+    editor (6 lines, 1 marked, at 1:1, colours nexalang-horizon)
+      | "fn main() {"
+      | "    let message = \"A long line of text that is much wider than a narrow window can show at once\""
+      | "    print(message)"
+      | "    message = \"x\""
+      | "}"
+    list "No mistakes found." (1 rows)
+      - "Line 4: can't change `message`: it was made with `let` (or is a parameter)"
+    code (11 lines)
+      | "Running wide.nx…"
+      | ""
+      | "error: can't change `message`: it was made with `let` (or is a parameter)"
+      | "  --> wide.nx:4:13"
+      | "   |"
+      | " 4 |     message = \"x\""
+      | "   |             ^"
+      | "  = hint: make it changeable with `var message = ...`"
+      | ""
+      | "[The program ended with exit code 1.]"
+status "The program ended with exit code 1."

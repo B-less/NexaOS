@@ -1,0 +1,19 @@
+# program: ../apps/window-designer/src/main.nx
+# An empty design file is a new design. The empty window's preview says
+# what to do; its program still builds (exported, then checked by cargo test).
+file .local/share/window-designer/design.json 
+file Documents/.keep 
+window Window Designer
+key F5
+shot empty-preview
+key ctrl+shift+F12
+key F6
+key ctrl+e
+window Export the program
+key Return
+gone Export the program
+window Window Designer
+key ctrl+shift+F12
+key Escape
+show Documents/my-app.nx
+show .local/share/window-designer/design.json

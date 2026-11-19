@@ -1,0 +1,9 @@
+// error: can't compare `!int` with `int`
+use files
+
+fn main() {
+    let n = files.size("notes.txt")
+    if n > 100 {
+        print("big")
+    }
+}

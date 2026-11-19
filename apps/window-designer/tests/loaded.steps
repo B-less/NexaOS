@@ -1,0 +1,23 @@
+# program: ../apps/window-designer/src/main.nx
+# A saved design with every kind of part, rows and columns inside each
+# other, and words that need escaping in a program (quotes, braces, a
+# backslash, an emoji, a tab, text far too long): the preview, the code,
+# and the program exported under a name with a space.
+file Documents/.keep 
+file .local/share/window-designer/design.json {"version": 1, "title": "Every \\"part\\" {here}", "app_id": "every-part", "parts": [{"kind": "heading", "text": "Settings ✓", "depth": 0, "on": false}, {"kind": "note", "text": "Back\\\\slash and\\ttab", "depth": 0, "on": false}, {"kind": "row", "text": "ignored", "depth": 0, "on": false}, {"kind": "column", "text": "", "depth": 1, "on": false}, {"kind": "text", "text": "Name", "depth": 2, "on": false}, {"kind": "field", "text": "Your name", "depth": 2, "on": false}, {"kind": "row", "text": "", "depth": 2, "on": false}, {"kind": "check", "text": "Remember me", "depth": 3, "on": true}, {"kind": "check", "text": "Remember me", "depth": 3, "on": false}, {"kind": "column", "text": "", "depth": 1, "on": false}, {"kind": "button", "text": "Cancel", "depth": 2, "on": false}, {"kind": "primary", "text": "{Save}", "depth": 2, "on": false}, {"kind": "list", "text": "Nothing yet. This text is long on purpose so that it has to be cut short somewhere, because a part's words can't be longer than two hundred bytes; the rest is dropped when the design is read back in again.", "depth": 0, "on": false}, {"kind": "column", "text": "", "depth": 0, "on": false}]}
+window Window Designer
+shot loaded
+key F5
+shot loaded-preview
+key ctrl+shift+F12
+key F5 F6
+shot loaded-code
+key ctrl+e
+window Export the program
+key ctrl+a
+type every part.nx
+key Return
+gone Export the program
+window Window Designer
+key Escape
+show Documents/every part.nx

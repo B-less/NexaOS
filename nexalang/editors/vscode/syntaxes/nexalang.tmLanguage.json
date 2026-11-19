@@ -1,0 +1,100 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "NexaLang",
+  "scopeName": "source.nexalang",
+  "fileTypes": ["nx"],
+  "comment": "NexaLang syntax colours (TextMate grammar, for VS Code and other editors). Kept in step with editors/gtksourceview/nexalang.lang; nexalang/tests/highlight checks that both colour the same sample the same way.",
+  "patterns": [{ "include": "#code" }],
+  "repository": {
+    "code": {
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#keywords" },
+        { "include": "#word-operators" },
+        { "include": "#booleans" },
+        { "include": "#none" },
+        { "include": "#primitive-types" },
+        { "include": "#builtins" },
+        { "include": "#modules" },
+        { "include": "#type-names" },
+        { "include": "#numbers" },
+        { "include": "#function-names" },
+        { "include": "#braces" }
+      ]
+    },
+    "comment": {
+      "name": "comment.line.double-slash.nexalang",
+      "begin": "//",
+      "end": "$"
+    },
+    "string": {
+      "name": "string.quoted.double.nexalang",
+      "begin": "\"",
+      "end": "\"|$",
+      "patterns": [
+        { "name": "constant.character.escape.nexalang", "match": "\\\\[ntr0\\\\\"{}]" },
+        { "name": "invalid.illegal.escape.nexalang", "match": "\\\\.?" },
+        { "include": "#interpolation" }
+      ]
+    },
+    "interpolation": {
+      "name": "meta.interpolation.nexalang",
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.nexalang" } },
+      "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.nexalang" } },
+      "patterns": [{ "include": "#code" }]
+    },
+    "braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [{ "include": "#code" }]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.nexalang", "match": "\\b(if|else|while|for|in|return|break|continue|match)\\b" },
+        { "name": "keyword.other.declaration.nexalang", "match": "\\b(fn|let|var|struct|enum|use|pub)\\b" }
+      ]
+    },
+    "word-operators": {
+      "name": "keyword.operator.word.nexalang",
+      "match": "\\b(and|or|not)\\b"
+    },
+    "booleans": {
+      "name": "constant.language.boolean.nexalang",
+      "match": "\\b(true|false)\\b"
+    },
+    "none": {
+      "name": "constant.language.none.nexalang",
+      "match": "\\bnone\\b"
+    },
+    "primitive-types": {
+      "name": "storage.type.primitive.nexalang",
+      "match": "\\b(int|float|bool|str|void)\\b"
+    },
+    "builtins": {
+      "name": "support.function.builtin.nexalang",
+      "match": "\\b(print|len|to_str|to_float|to_int|assert|push|pop|some|ok|err|unwrap_or|slice|find|contains|starts_with|ends_with|split|join|trim|to_upper|to_lower|replace|repeat|parse_int|parse_float|read_line|args|byte_at|char_from_code|exit)(?=\\s*\\()"
+    },
+    "modules": {
+      "name": "entity.name.namespace.nexalang",
+      "match": "\\b(files|time|json|broker|ui|editor)(?=\\.)"
+    },
+    "type-names": {
+      "name": "entity.name.type.nexalang",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.hex.nexalang", "match": "\\b0[xX][0-9A-Fa-f_]+\\b" },
+        { "name": "constant.numeric.float.nexalang", "match": "\\b[0-9][0-9_]*(\\.[0-9][0-9_]*([eE][+-]?[0-9]+)?|[eE][+-]?[0-9]+)\\b" },
+        { "name": "constant.numeric.decimal.nexalang", "match": "\\b[0-9][0-9_]*\\b" }
+      ]
+    },
+    "function-names": {
+      "name": "entity.name.function.nexalang",
+      "match": "\\b[a-z_][A-Za-z0-9_]*(?=\\s*\\()"
+    }
+  }
+}

@@ -1,0 +1,163 @@
+column
+  row
+    button "Edit"
+    button "Code"
+    button "Export…"
+    button "Copy"
+  note "Preview: this is how “Notes” will look. Try it: the parts work, but do nothing yet."
+  column
+    column
+      heading "My notes"
+      field "Write a note"
+      row
+        primary button "Add note"
+        button "Clear"
+      list "No notes yet. Write one above and press Add note." (0 rows)
+      check on "Keep them \"sorted\" {by date}"
+column
+  row
+    button "Preview"
+    button "Code"
+    button "Export…"
+    button "Copy"
+  column
+    row
+      field "Window title" = "Notes"
+      field "App id, like my-app" = "notes-app"
+    row
+      column
+        note "Parts"
+        list "" (10 rows)
+          - "Heading"
+          - "Text"
+          - "Note"
+          - "Button"
+          * "Main button"
+          - "Text field"
+          - "Check box"
+          - "List"
+          - "Row"
+          - "Column"
+      column
+        note "Your window"
+        list "Nothing in the window yet. Pick a part on the left and press Add (Ctrl+Return)." (7 rows)
+          - "Heading: My notes"
+          - "Text field: Write a note"
+          - "Row"
+          - "      Main button: Add note"
+          - "      Button: Clear"
+          - "List: No notes yet. Write one above and press Add note."
+          * "Check box (on): Keep them \"sorted\" {by date}"
+    note "The words next to the check box:"
+    row
+      field "Its words" = "Keep them \"sorted\" {by date}"
+      check on "Starts checked"
+    row
+      button "Add"
+      button "Up"
+      button "Down"
+      button "Into"
+      button "Out"
+    row
+      danger button "Remove"
+      button "New design"
+status "Saved notes-app.nx. Build it with: nexac run notes-app.nx"
+--- Documents/notes-app.nx
+// Notes: made with Window Designer.
+// Fill in what each part does where it says "your code here".
+use ui
+
+fn main() -> !void {
+    let page = ui.start("notes-app", "Notes")?
+    ui.heading(page, "My notes")
+    let write_a_note_field = ui.entry(page, "Write a note")
+    let row1 = ui.row(page)
+    let add_note_button = ui.primary_button(row1, "Add note")
+    let clear_button = ui.button(row1, "Clear")
+    let no_notes_yet_list = ui.list(page, "No notes yet. Write one above and press Add note.")
+    let keep_them_sorted_check = ui.check(page, "Keep them \"sorted\" \{by date\}", true)
+    while true {
+        match ui.wait() {
+            Clicked(id) => {
+                if id == add_note_button {
+                    // your code here
+                    ui.status("You pressed “Add note”.")
+                } else if id == clear_button {
+                    // your code here
+                    ui.status("You pressed “Clear”.")
+                }
+            }
+            Submitted(id, text) => {
+                if id == write_a_note_field {
+                    // your code here: Enter was pressed in the text field
+                    ui.status("You wrote: {text}")
+                }
+            }
+            Toggled(id, on) => {
+                if id == keep_them_sorted_check {
+                    // your code here
+                    ui.status("“Keep them \"sorted\" \{by date\}” is now {on}.")
+                }
+            }
+            Selected(id, index) => {
+                if id == no_notes_yet_list {
+                    // your code here: fill the list with ui.set_items
+                    ui.status("Row {index} was picked.")
+                }
+            }
+            Closed => { return ok() }
+            _ => { }
+        }
+    }
+    return ok()
+}
+--- .local/share/window-designer/design.json
+{
+  "version": 1,
+  "title": "Notes",
+  "app_id": "notes-app",
+  "parts": [
+    {
+      "kind": "heading",
+      "text": "My notes",
+      "depth": 0,
+      "on": false
+    },
+    {
+      "kind": "field",
+      "text": "Write a note",
+      "depth": 0,
+      "on": false
+    },
+    {
+      "kind": "row",
+      "text": "",
+      "depth": 0,
+      "on": false
+    },
+    {
+      "kind": "primary",
+      "text": "Add note",
+      "depth": 1,
+      "on": false
+    },
+    {
+      "kind": "button",
+      "text": "Clear",
+      "depth": 1,
+      "on": false
+    },
+    {
+      "kind": "list",
+      "text": "No notes yet. Write one above and press Add note.",
+      "depth": 0,
+      "on": false
+    },
+    {
+      "kind": "check",
+      "text": "Keep them \"sorted\" {by date}",
+      "depth": 0,
+      "on": true
+    }
+  ]
+}

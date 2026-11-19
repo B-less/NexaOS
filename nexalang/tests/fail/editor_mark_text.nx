@@ -1,0 +1,9 @@
+// error: expected `int`, but this is `str`
+use ui
+use editor
+fn main() -> !void {
+    let page = ui.start("app", "App")?
+    let code = editor.add(page)
+    editor.mark(code, "2", 1, 1)
+    return ok()
+}

@@ -1,0 +1,10 @@
+// trap: widget 2 was removed (ui.remove or ui.clear), so it can't be used any more
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let old = ui.label(page, "old")
+    ui.remove(old)
+    ui.label(page, "new")  // a new number: 3, never 2 again
+    ui.set_text(old, "x")
+    return ok()
+}

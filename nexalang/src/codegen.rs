@@ -30,6 +30,18 @@ pub fn uses_ui(mods: &[Module]) -> bool {
     mods.iter().any(|m| m.is_std && m.name == "ui")
 }
 
+/// Programs that `use editor` (0.8) also get GtkSourceView 4; others don't
+/// need it installed.
+pub fn uses_editor(mods: &[Module]) -> bool {
+    mods.iter().any(|m| m.is_std && m.name == "editor")
+}
+
+/// NexaLang's colours for GtkSourceView and the Horizon fallback scheme,
+/// built into programs that use `editor` (written to the app's cache
+/// folder when it starts), so the editor always matches its compiler.
+pub const EDITOR_LANG: &str = include_str!("../editors/gtksourceview/nexalang.lang");
+pub const EDITOR_SCHEME: &str = include_str!("../editors/gtksourceview/nexa-horizon.xml");
+
 /// A C expression with no side effects, and whether it's an owned temporary.
 #[derive(Clone)]
 struct CVal {
@@ -66,6 +78,8 @@ pub struct Gen<'a> {
     /// standard modules, and whether the function being generated is in one
     std_mods: HashSet<String>,
     cur_std: bool,
+    /// false: every source line is written as 0
+    lines: bool,
 }
 
 /// Unambiguous short name of a type, used to build C identifiers.
@@ -107,7 +121,9 @@ fn fn_cname(key: &str) -> String {
     }
 }
 
-pub fn generate(mods: &[Module], checked: &Checked) -> String {
+/// `lines` false writes every source line as 0 (`nexac emit-c --no-lines`,
+/// used to prove `nexac fmt` changes nothing but the layout).
+pub fn generate(mods: &[Module], checked: &Checked, lines: bool) -> String {
     let file_name = mods[0].file.as_str();
     let mut g = Gen {
         c: checked,
@@ -122,6 +138,7 @@ pub fn generate(mods: &[Module], checked: &Checked) -> String {
         file_idx: 0,
         std_mods: mods.iter().filter(|m| m.is_std).map(|m| m.name.clone()).collect(),
         cur_std: false,
+        lines,
     };
     // 1. function bodies (this discovers which ?T and rc helpers are used)
     let mut protos = String::new();
@@ -156,6 +173,11 @@ pub fn generate(mods: &[Module], checked: &Checked) -> String {
     out += &format!("#define NX_STD_FILES {}\n", std_flags.join(", "));
     out += RUNTIME;
     if uses_ui(mods) {
+        if uses_editor(mods) {
+            out += "#define NX_UI_SOURCE 1\n";
+            out += &format!("static const char NX_UI_LANG[] = {};\n", c_string_literal(EDITOR_LANG.as_bytes()));
+            out += &format!("static const char NX_UI_SCHEME[] = {};\n", c_string_literal(EDITOR_SCHEME.as_bytes()));
+        }
         out += RUNTIME_UI;
     }
     out += "\n/* ---- types ---- */\n";
@@ -437,7 +459,7 @@ impl<'a> Gen<'a> {
     /// Where in the source, as one number for the runtime: the file's
     /// index times 1,000,000 plus the line (files are limited to 999,999 lines).
     fn loc(&self, span: crate::diag::Span) -> u32 {
-        self.file_idx * 1_000_000 + span.line
+        self.file_idx * 1_000_000 + if self.lines { span.line } else { 0 }
     }
 
     fn line(&mut self, s: impl AsRef<str>) {

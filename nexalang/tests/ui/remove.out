@@ -1,0 +1,39 @@
+code: line 1
+line 2
+code now: first
+second {in braces}
+�third
+after rebuilds: 1511 1512 1513
+column
+  row
+    primary button "Main of 3"
+    button "Other 1"
+    button "Other 2"
+  field "Type here"
+  code (3 lines)
+  row
+    button "Save as"
+    button "Open"
+    button "Copy"
+clicked 13
+changed 5: copied ✓ {text}
+clicked 11
+saved /HOME/Documents/notes.txt
+clicked 11
+not saved
+clicked 12
+opened /HOME/Documents/old.txt: old notes
+clicked 1511
+rebuilt: 1514
+column
+  row
+    primary button "Main of 1"
+  field "Type here" = "copied ✓ {text}"
+  code (3 lines)
+  row
+    button "Save as"
+    button "Open"
+    button "Copy"
+closed
+--- Documents/notes.txt
+saved by the remove test

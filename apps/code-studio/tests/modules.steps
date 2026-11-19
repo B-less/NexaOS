@@ -1,0 +1,34 @@
+# program: ../apps/code-studio/src/main.nx
+# tree: full
+# A program that uses a module next to it: a mistake in the module is
+# listed with its file (Enter doesn't move the cursor, it's another
+# file); once the module is fixed on the disk, the next check shows none.
+# Without nexac on the PATH it says so once, and keeps working.
+file Documents/app/main.nx use helpers\n\nfn main() {\n    print(helpers.double(21))\n}\n
+file Documents/app/helpers.nx pub fn double(n: int) -> int {\n    return n * 2.0\n}\n
+window Code Studio
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type app/main.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+wait 2
+key ctrl+shift+F12
+key ctrl+Tab Down Return
+key ctrl+shift+F12
+write Documents/app/helpers.nx pub fn double(n: int) -> int {\n    return n * 2\n}\n
+# back into the editor; a change there checks again
+key shift+Tab
+key End
+type  
+wait 3
+key F5
+wait 4
+key ctrl+shift+F12
+key Escape
+window Close without saving\?
+key Return

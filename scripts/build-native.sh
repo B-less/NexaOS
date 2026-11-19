@@ -35,6 +35,12 @@ else
         install -m 0755 "target/$target/release/$name" /src/build/native/$name
         echo "built $name: $(stat -c %s /src/build/native/$name) bytes"
     done
+    # nexac, the NexaLang compiler (its own Cargo project, no dependencies):
+    # nexa-pack builds apps written in NexaLang with it (scripts/build-apps.sh)
+    RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -q --manifest-path /src/nexalang/Cargo.toml \
+        --target "$target" --target-dir /src/tools/target/nexalang
+    install -m 0755 "target/nexalang/$target/release/nexac" /src/build/native/nexac
+    echo "built nexac: $(stat -c %s /src/build/native/nexac) bytes"
 fi
 chown -R "$OWNER" /src/tools/target /src/tools/Cargo.lock /src/build/native 2>/dev/null || true
 '

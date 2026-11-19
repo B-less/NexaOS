@@ -1,0 +1,7 @@
+// error: expected `[str]`, but this is `str`
+use ui
+fn main() -> !void {
+    let page = ui.start("app", "App")?
+    let n = ui.start_program("", "nexac check app.nx", "")?
+    return ok()
+}

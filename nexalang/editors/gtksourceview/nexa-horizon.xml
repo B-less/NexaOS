@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NexaLang's editors (the `editor` module, 0.8) use the theme's own scheme,
+  ~/.local/share/gtksourceview-4/styles/nexa.xml, written by nexa-theme.
+  This is the fallback where that isn't there: exactly what nexa-theme
+  writes for Horizon (common/nexa_common/themes.py), like the @nexa_*
+  fallback block in every app's CSS. Built into nexac.
+-->
+<style-scheme id="nexalang-horizon" name="NexaOS Horizon (fallback)" version="1.0">
+  <style name="text" foreground="#e6ecff" background="#080c1e"/>
+  <style name="current-line" background="#101732"/>
+  <style name="current-line-number" foreground="#4da3ff" background="#101732" bold="true"/>
+  <style name="line-numbers" foreground="#8f9bc4" background="#0c1228"/>
+  <style name="selection" foreground="#e6ecff" background="#264779"/>
+  <style name="cursor" foreground="#4da3ff"/>
+  <style name="bracket-match" foreground="#4da3ff" bold="true"/>
+  <style name="search-match" background="#264779"/>
+  <style name="def:comment" foreground="#8f9bc4" italic="true"/>
+  <style name="def:keyword" foreground="#8a6bff" bold="true"/>
+  <style name="def:statement" foreground="#8a6bff"/>
+  <style name="def:type" foreground="#4da3ff"/>
+  <style name="def:function" foreground="#4fd6ff"/>
+  <style name="def:string" foreground="#5ee6a8"/>
+  <style name="def:special-char" foreground="#ffd166"/>
+  <style name="def:number" foreground="#ffd166"/>
+  <style name="def:boolean" foreground="#ffd166"/>
+  <style name="def:constant" foreground="#ffd166"/>
+  <style name="def:preprocessor" foreground="#a98bff"/>
+  <style name="def:identifier" foreground="#d9e0f6"/>
+  <style name="def:error" foreground="#ff5c7a" underline="error"/>
+  <style name="def:heading" foreground="#4da3ff" bold="true"/>
+</style-scheme>

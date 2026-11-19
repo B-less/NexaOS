@@ -1,0 +1,11 @@
+// trap: a window has one primary action; use ui.button for the others
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let a = ui.row(page)
+    let b = ui.row(page)
+    ui.primary_button(a, "One")
+    ui.clear(b)  // clearing another row doesn't free the primary action
+    ui.primary_button(b, "Two")
+    return ok()
+}

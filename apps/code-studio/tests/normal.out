@@ -1,0 +1,175 @@
+column
+  row
+    button "Open…"
+    button "Save" (off)
+    button "New"
+  row
+    button "Lay out" (off)
+    button "Explain" (off)
+    button "Stop" (off)
+    primary button "Run" (off)
+  column
+    heading "Write NexaLang"
+    text "Open a .nx file or start a new one."
+    note "Mistakes show up as you type. Run builds and runs the program, and its output appears here."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "A new program, not saved yet"
+    editor (4 lines, 0 marked, at 2:5, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(\"Hello\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+status "No mistakes."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "A new program, not saved yet"
+    editor (5 lines, 1 marked, at 5:2, colours nexalang-horizon)
+      | "fn main() {"
+      | "let total = 1"
+      | "total += 41"
+      | "print(\"The answer is {total}\")"
+      | "}"
+    list "No mistakes found." (1 rows)
+      - "Line 3: can't change `total`: it was made with `let` (or is a parameter)"
+status "1 mistake. Pick one to see it; Enter goes there."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "A new program, not saved yet"
+    editor (5 lines, 1 marked, at 5:2, colours nexalang-horizon)
+      | "fn main() {"
+      | "let total = 1"
+      | "total += 41"
+      | "print(\"The answer is {total}\")"
+      | "}"
+    list "No mistakes found." (1 rows)
+      - "Line 3: can't change `total`: it was made with `let` (or is a parameter)"
+    code (25 lines)
+      | "About this mistake: Changing something that can't change"
+      | ""
+      | "`let` makes a value that stays the same, `var` one that can change."
+      | "Most values never change, so the compiler holds you to it: a value you"
+      | "didn't mean to change can't change by accident."
+      | ""
+      | "Parameters are like `let`. To change a copy, make one: `var list = items`."
+      | "Changing a list (`push`, `pop`, `a[i] = ...`) needs it to be `var` too."
+      | ""
+      | "This is refused:"
+      | ""
+      | "fn main() {"
+      | "    let total = 1"
+      | "    total += 1"
+      | "    print(total)"
+      | "}"
+      | ""
+      | "This works:"
+      | ""
+      | "fn main() {"
+      | "    var total = 1"
+      | "    total += 1"
+      | "    print(total)"
+      | "}"
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "A new program, not saved yet"
+    editor (5 lines, 0 marked, at 2:4, colours nexalang-horizon)
+      | "fn main() {"
+      | "var total = 1"
+      | "total += 41"
+      | "print(\"The answer is {total}\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+    code (25 lines)
+      | "About this mistake: Changing something that can't change"
+      | ""
+      | "`let` makes a value that stays the same, `var` one that can change."
+      | "Most values never change, so the compiler holds you to it: a value you"
+      | "didn't mean to change can't change by accident."
+      | ""
+      | "Parameters are like `let`. To change a copy, make one: `var list = items`."
+      | "Changing a list (`push`, `pop`, `a[i] = ...`) needs it to be `var` too."
+      | ""
+      | "This is refused:"
+      | ""
+      | "fn main() {"
+      | "    let total = 1"
+      | "    total += 1"
+      | "    print(total)"
+      | "}"
+      | ""
+      | "This works:"
+      | ""
+      | "fn main() {"
+      | "    var total = 1"
+      | "    total += 1"
+      | "    print(total)"
+      | "}"
+status "No mistakes."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/answer.nx"
+    editor (6 lines, 0 marked, at 2:4, colours nexalang-horizon)
+      | "fn main() {"
+      | "    var total = 1"
+      | "    total += 41"
+      | "    print(\"The answer is {total}\")"
+      | "}"
+    list "No mistakes found." (0 rows)
+    code (6 lines)
+      | "Running answer.nx…"
+      | ""
+      | "The answer is 42"
+      | ""
+      | "[The program ended.]"
+status "The program ended."
+--- Documents/answer.nx
+fn main() {
+    var total = 1
+    total += 41
+    print("The answer is {total}")
+}

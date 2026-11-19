@@ -1,0 +1,10 @@
+empty.txt: 0 bytes
+hello.txt: 7 bytes
+big.txt: 100000 bytes
+error: can't find the size of FOLDER/missing.txt: it doesn't exist
+error: can't find the size of FOLDER: it's a folder
+error: can't find the size of: the path contains a zero byte
+error: can't find the size of: the path is empty
+héllo
+
+refused: big.txt is too big to be a settings file

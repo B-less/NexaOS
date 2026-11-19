@@ -1,0 +1,127 @@
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/loop.nx"
+    editor (9 lines, 0 marked, at 1:1, colours nexalang-horizon)
+      | "use time"
+      | ""
+      | "fn main() {"
+      | "    print(\"started\")"
+      | "    while true {"
+      | "        time.sleep_ms(100)"
+      | "    }"
+      | "}"
+    list "No mistakes found." (0 rows)
+status "There's no mistake to explain. Mistakes show up in the list under the program."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop"
+    primary button "Run" (off)
+  column
+    note "/HOME/Documents/loop.nx"
+    editor (9 lines, 0 marked, at 1:1, colours nexalang-horizon)
+      | "use time"
+      | ""
+      | "fn main() {"
+      | "    print(\"started\")"
+      | "    while true {"
+      | "        time.sleep_ms(100)"
+      | "    }"
+      | "}"
+    list "No mistakes found." (0 rows)
+    code (4 lines)
+      | "Running loop.nx…"
+      | ""
+      | "started"
+status "Running loop.nx. Shift+F5 stops it."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/loop.nx"
+    editor (9 lines, 0 marked, at 1:1, colours nexalang-horizon)
+      | "use time"
+      | ""
+      | "fn main() {"
+      | "    print(\"started\")"
+      | "    while true {"
+      | "        time.sleep_ms(100)"
+      | "    }"
+      | "}"
+    list "No mistakes found." (0 rows)
+    code (6 lines)
+      | "Running loop.nx…"
+      | ""
+      | "started"
+      | ""
+      | "[Stopped.]"
+status "The program was stopped."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/broken.nx"
+    editor (4 lines, 1 marked, at 1:1, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(1 +)"
+      | "}"
+    list "No mistakes found." (1 rows)
+      - "Line 2: expected a value, found `)`"
+status error "It can't be laid out until this mistake is fixed: expected a value, found `)`"
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/broken.nx"
+    editor (4 lines, 1 marked, at 1:1, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(1 +)"
+      | "}"
+    list "No mistakes found." (1 rows)
+      - "Line 2: expected a value, found `)`"
+    code (10 lines)
+      | "Running broken.nx…"
+      | ""
+      | "error: expected a value, found `)`"
+      | "  --> broken.nx:2:14"
+      | "   |"
+      | " 2 |     print(1 +)"
+      | "   |              ^"
+      | ""
+      | "[The program ended with exit code 1.]"
+status "The program ended with exit code 1."

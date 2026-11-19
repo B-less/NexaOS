@@ -1,0 +1,52 @@
+# program: ../apps/window-designer/src/main.nx
+# Window Designer, used the normal way: a window with a heading, a text
+# field, a row with two buttons, a list and a check box; moved around,
+# seen in the preview and as code, exported and copied. After a part is
+# added its words are typed straight away; Enter goes back to the parts.
+file Documents/readme.txt my documents
+window Window Designer
+shot empty
+key shift+Tab shift+Tab ctrl+a
+type Notes
+key Tab ctrl+a
+type notes-app
+# into the parts list: Heading is picked; Enter adds it
+key Tab Return
+type My notes
+key Return Down Down Down Down Down Return
+type Write a note
+key Return Down Down Down Return
+key Up Up Up Up Up Return
+type Clear
+key Return Down Return
+type Add note
+key Return
+# the main button goes first in its row; a list after the row
+key alt+Up
+key Down Down Down Return
+key alt+Left
+type No notes yet. Write one above and press Add note.
+key Return Up Return
+type Keep them "sorted" {by date}
+key Tab space
+# a second main button is refused
+key shift+Tab shift+Tab shift+Tab Up Up Return
+shot editing
+key F5
+shot preview
+key ctrl+shift+F12
+key F5
+key F6
+shot code
+key F6
+key ctrl+e
+window Export the program
+shot export
+key Return
+gone Export the program
+window Window Designer
+shot exported
+key ctrl+shift+F12
+key Escape
+show Documents/notes-app.nx
+show .local/share/window-designer/design.json

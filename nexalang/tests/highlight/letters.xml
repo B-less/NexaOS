@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Test-only: one colour per style, so check_lang.c can tell them apart. -->
+<style-scheme id="nexalang-letters" name="NexaLang test letters" version="1.0">
+  <style name="def:comment" foreground="#010000"/>
+  <style name="def:string" foreground="#020000"/>
+  <style name="def:special-char" foreground="#030000"/>
+  <style name="def:error" foreground="#040000"/>
+  <style name="def:keyword" foreground="#050000"/>
+  <style name="def:operator" foreground="#060000"/>
+  <style name="def:type" foreground="#070000"/>
+  <style name="def:builtin" foreground="#080000"/>
+  <style name="def:preprocessor" foreground="#090000"/>
+  <style name="def:special-constant" foreground="#0a0000"/>
+  <style name="def:boolean" foreground="#0b0000"/>
+  <style name="def:decimal" foreground="#0c0000"/>
+  <style name="def:base-n-integer" foreground="#0d0000"/>
+  <style name="def:floating-point" foreground="#0e0000"/>
+  <style name="def:function" foreground="#0f0000"/>
+</style-scheme>

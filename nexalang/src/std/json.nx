@@ -513,8 +513,6 @@ fn match_hex(text: str, pos: int) -> !int {
     }
 }
 
-
-
 // At `[`.
 fn list(text: str, pos: int, depth: int) -> !Step {
     var items: [Json] = []

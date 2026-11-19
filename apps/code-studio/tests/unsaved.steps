@@ -1,0 +1,74 @@
+# program: ../apps/code-studio/src/main.nx
+# tree: full
+# Changes that aren't saved are never lost without asking: closing,
+# opening another file, starting a new one. A new program is saved
+# through the file chooser; a name without .nx is refused.
+file Documents/first.nx fn main() {\n    print("first")\n}\n
+window Code Studio
+key ctrl+o
+window Open a NexaLang file
+key ctrl+l
+wait 1
+type first.nx
+wait 1
+key Return
+gone Open a NexaLang file
+window Code Studio
+wait 1
+key End
+type  // changed
+wait 2
+key ctrl+shift+F12
+# close: asked; Cancel keeps it open
+key Escape
+wait 1
+shot after-escape
+window Close without saving\?
+shot ask-close
+key Escape
+gone Close without saving\?
+window Code Studio
+# new: asked; Cancel keeps the changes
+key ctrl+n
+window Leave without saving\?
+key Escape
+gone Leave without saving\?
+window Code Studio
+key ctrl+shift+F12
+# save, then start a new one: no question now
+key ctrl+s
+wait 1
+key ctrl+n
+wait 2
+key ctrl+shift+F12
+# a new program saved without .nx: refused, nothing written
+key ctrl+s
+window Save the program
+wait 1
+key ctrl+a
+type notes.txt
+key Return
+gone Save the program
+window Code Studio
+key ctrl+shift+F12
+# its first save asks where; then Ctrl+S just saves
+key ctrl+s
+window Save the program
+wait 1
+key ctrl+a
+type second.nx
+key Return
+gone Save the program
+window Code Studio
+key ctrl+s
+key ctrl+shift+F12
+# change it and close: asked, and this time closed without saving
+type // not kept
+key ctrl+shift+F12
+shot before-close
+key Escape
+window Close without saving\?
+key Return
+show Documents/first.nx
+show Documents/second.nx
+show Documents/notes.txt

@@ -1,0 +1,33 @@
+# program: tests/ui/code_editor.nx
+# tree: full
+window Editor
+key ctrl+shift+F12
+# typing: Return keeps the indent; Tab is 4 spaces
+key Return
+type print(x)
+key Return Tab
+type // a tab before me
+key ctrl+p
+# lay out: one step back with Ctrl+Z, and forward again with Ctrl+Shift+Z
+key ctrl+r
+key ctrl+shift+F12
+key ctrl+z
+key ctrl+p
+key ctrl+shift+z
+key ctrl+p
+# mistakes underlined, then the cursor at the very end
+key ctrl+m
+key ctrl+shift+F12
+# new text can't be undone back to the old one
+key ctrl+n
+key ctrl+z
+key ctrl+p
+# Ctrl+Tab leaves the editor (Tab indents inside it)
+key ctrl+Tab
+key space
+key ctrl+shift+F12
+# the theme's own editor colours are used once they're there, live
+write .local/share/gtksourceview-4/styles/nexa.xml <?xml version="1.0" encoding="UTF-8"?>\n<style-scheme id="nexa" name="NexaOS" version="1.0">\n  <style name="text" foreground="#101010" background="#f4f4f8"/>\n</style-scheme>\n
+wait 5
+key ctrl+shift+F12
+key Escape

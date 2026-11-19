@@ -1,0 +1,58 @@
+// Standard module `editor` (0.8): a code editor for NexaLang in a window.
+//
+//   use ui
+//   use editor
+//
+//   let page = ui.start("my-editor", "Editor")?
+//   let code = editor.add(page)
+//   ui.set_text(code, "fn main() \{\n}\n")
+//   match ui.wait() {
+//       Edited(id) => { let text = ui.get_text(code) }
+//       ...
+//   }
+//
+// It's GtkSourceView 4 with NexaLang's colours (the same language file as
+// NexaOS's text editor) in the theme's editor colours, line numbers,
+// 4-space indents (as `nexac fmt` lays code out) and undo (Ctrl+Z,
+// Ctrl+Shift+Z). Tab indents; Ctrl+Tab moves on to the next widget.
+// The editor is a widget like the others: `ui.get_text`, `ui.set_text`
+// (new text, which can't be undone), `ui.focus`, `ui.set_enabled` and
+// `ui.remove` work on it. The person's changes come as `Edited(id)`
+// events (one waits at a time, however fast they type); changes the
+// program makes never do.
+//
+// Programs that use `editor` need GtkSourceView 4 (NexaOS has it:
+// nexa.toml's depends = ["gtk+3.0", "gtksourceview4"]); other programs
+// don't.
+use ui
+
+// A code editor for NexaLang in `parent` (a column or row). It takes the
+// free height, like a list.
+pub fn add(parent: int) -> int {
+    return __editor_add(parent)
+}
+
+// Replace all the text as one change the person can undo (Ctrl+Z), and
+// keep the cursor on the same line: for `nexac fmt`'s result.
+pub fn replace_text(id: int, text: str) {
+    __editor_replace(id, text)
+}
+
+// Underline a mistake: `line` and `column` from 1, `length` letters (as
+// `nexac check --json` gives them). A place that isn't in the text (any
+// more) is left alone, so marks from a check that's a little out of date
+// are safe.
+pub fn mark(id: int, line: int, column: int, length: int) {
+    __editor_mark(id, line, column, length)
+}
+
+// Take away every underline.
+pub fn clear_marks(id: int) {
+    __editor_clear_marks(id)
+}
+
+// Put the cursor at `line`, `column` (from 1; past the end goes to the
+// nearest real place), show it and put the keyboard there.
+pub fn go_to(id: int, line: int, column: int) {
+    __editor_go_to(id, line, column)
+}

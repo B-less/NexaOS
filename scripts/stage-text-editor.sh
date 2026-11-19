@@ -11,6 +11,12 @@ rm -rf "$rootfs/usr/local/lib/nexa-edit/nexa_edit"
 cp -a "$base/text-editor/nexa_edit" "$rootfs/usr/local/lib/nexa-edit/nexa_edit"
 find "$rootfs/usr/local/lib/nexa-edit/nexa_edit" -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
 
+# NexaLang colours (nexalang/editors/gtksourceview, 0.6): GtkSourceView
+# finds .nx files by the language file's glob
+mkdir -p "$rootfs/usr/share/gtksourceview-4/language-specs"
+install -m 0644 "$base/nexalang/editors/gtksourceview/nexalang.lang" \
+    "$rootfs/usr/share/gtksourceview-4/language-specs/nexalang.lang"
+
 printf '%s\n' \
     '#!/bin/sh' \
     '. /usr/local/lib/nexa-wayland-env.sh' \
@@ -27,7 +33,7 @@ Exec=/usr/local/bin/nexa-edit %f
 Icon=nexa-edit
 Terminal=false
 Categories=Utility;TextEditor;
-MimeType=text/plain;application/x-shellscript;text/x-python;text/x-csrc;text/x-chdr;application/json;text/markdown;text/x-yaml;text/xml;text/css;application/toml;
+MimeType=text/plain;application/x-shellscript;text/x-python;text/x-csrc;text/x-chdr;application/json;text/markdown;text/x-yaml;text/xml;text/css;application/toml;text/x-nexalang;
 DESKTOP_EOF
 
 echo "nexa-edit staged into $rootfs"

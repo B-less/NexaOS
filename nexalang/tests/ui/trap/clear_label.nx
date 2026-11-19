@@ -1,0 +1,8 @@
+// trap: widget 2 is a text, which can't be cleared (only columns and rows hold widgets)
+use ui
+fn main() -> !void {
+    let page = ui.start("trap-test", "Trap")?
+    let l = ui.label(page, "x")
+    ui.clear(l)
+    return ok()
+}

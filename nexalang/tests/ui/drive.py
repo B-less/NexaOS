@@ -6,25 +6,42 @@ server (Xvfb). Test-only; not part of NexaOS.
 
 STEPS is a file with one step per line:
     file PATH TEXT    before the program starts: a file in the new $HOME
-                      (TEXT may use \\xNN escapes for bytes)
+                      (TEXT may use \\xNN escapes for bytes; PATH \\x20
+                      for a space)
     write PATH TEXT   while it runs: write a file in $HOME (same escapes)
     window TITLE      wait until a window with this title is shown, focus it
+    gone TITLE        wait until no window has this title (a dialog closed)
     size W H          resize the last window found (W and H in pixels)
     type TEXT         type the text
     key K [K...]      press keys (xdotool names: Return, Tab, ctrl+n, Escape)
     wait SECONDS      let the program catch up
     shot NAME         screenshot the screen into $NX_SHOTS/NAME.png (if set)
+    fill PATH N TEXT  before the program starts: a file in $HOME of N bytes,
+                      TEXT repeated (hostile-input tests: huge files)
+    show PATH         after the program ends: print that file from $HOME
+                      (or "(no file)"), with 10-digit numbers (Unix times)
+                      shown as T and bytes that aren't UTF-8 as \\xNN, so
+                      saved data can be compared exactly
     # ...             a comment
+    # tree: full      (anywhere) print the text of code views and editors
+                      too (NEXALANG_UI_TREE=full, 0.8)
+    # env: NAME=VALUE (anywhere) set an environment variable for the
+                      program (0.8: PATH without nexac)
 
 The program's output is passed through (with the new $HOME shown as
 /HOME); the exit code is the program's (124 if it hasn't finished
 $NX_WINDOW_WAIT seconds, default 15, after the last step). $HOME is a new
-empty folder unless NX_KEEP_HOME is set.
+empty folder unless NX_KEEP_HOME is set. NEXALANG_UI_TREE is set, so
+`key ctrl+shift+F12` prints the window's visible widgets (0.7).
+NX_SCREEN sets the screen's size (default 1024x768; a bigger one keeps the
+pointer, which starts in the middle, off the window: no tooltips in
+screenshots).
 """
 import os, shutil, subprocess, sys, tempfile, time
 
 def put_file(home, spec):
     rel, _, text = spec.partition(" ")
+    rel = rel.encode("utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")  # \x20 for a space (0.8)
     path = os.path.join(home, rel)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
@@ -58,7 +75,7 @@ def main():
         lock = f"/tmp/.X{n}-lock"
         if os.path.exists(lock) or os.path.exists(f"/tmp/.X11-unix/X{n}"):
             continue
-        xvfb = subprocess.Popen(["Xvfb", f":{n}", "-screen", "0", "1024x768x24", "-nolisten", "tcp"],
+        xvfb = subprocess.Popen(["Xvfb", f":{n}", "-screen", "0", os.environ.get("NX_SCREEN", "1024x768") + "x24", "-nolisten", "tcp"],
                                 stderr=subprocess.DEVNULL)
         ok = False
         for _ in range(100):
@@ -87,9 +104,29 @@ def main():
             env.pop(k, None)
     env["GDK_BACKEND"] = "x11"
     env["NO_AT_BRIDGE"] = "1"  # no accessibility bus in a headless test
+    # no session bus here: GTK's file chooser keeps its settings in memory
+    env["GSETTINGS_BACKEND"] = "memory"
+    # Ctrl+Shift+F12 prints the window's widgets (0.7): steps compare them
+    env["NEXALANG_UI_TREE"] = "1"
+    if any(l.rstrip("\n") == "# tree: full" for l in open(steps_file, encoding="utf-8")):
+        env["NEXALANG_UI_TREE"] = "full"
+    for l in open(steps_file, encoding="utf-8"):
+        if l.startswith("# env: "):
+            k, _, v = l.rstrip("\n")[7:].partition("=")
+            env[k] = v
+    shows = []
     for raw in open(steps_file, encoding="utf-8"):
         if raw.startswith("file ") and home:
             put_file(home, raw.rstrip("\n").split(" ", 1)[1])
+        elif raw.startswith("fill ") and home:
+            rel, n, text = raw.rstrip("\n").split(" ", 3)[1:]
+            path = os.path.join(home, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            data = text.encode() * (int(n) // len(text.encode()) + 1)
+            with open(path, "wb") as f:
+                f.write(data[:int(n)])
+        elif raw.startswith("show "):
+            shows.append(raw.rstrip("\n").split(" ", 1)[1])
     window_wait = float(env.get("NX_WINDOW_WAIT", "15"))
     last_window = ""
     prog = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE)
@@ -101,7 +138,7 @@ def main():
     try:
         for raw in open(steps_file, encoding="utf-8"):
             line = raw.rstrip("\n")
-            if not line.strip() or line.lstrip().startswith("#") or word_of(line) == "file":
+            if not line.strip() or line.lstrip().startswith("#") or word_of(line) in ("file", "fill", "show"):
                 continue
             word, _, rest = line.partition(" ")
             x = lambda *a: xdotool(env, a)
@@ -129,6 +166,20 @@ def main():
                 last_window = wid
                 x("windowfocus", "--sync", wid)
                 time.sleep(0.3)
+            elif word == "gone":
+                # wait until no window has this title any more (a dialog closed)
+                deadline = time.time() + window_wait
+                while prog.poll() is None and time.time() < deadline:
+                    r = x("search", "--onlyvisible", "--name", "^" + rest + "$")
+                    if r.returncode != 0 or not r.stdout.split():
+                        break
+                    time.sleep(0.2)
+                else:
+                    if prog.poll() is None:
+                        print(f"drive: the window {rest!r} is still there", file=sys.stderr)
+                        break
+                time.sleep(0.3)
+                continue
             elif word == "size":
                 w, h = rest.split()
                 x("windowsize", "--sync", last_window, w, h)
@@ -168,6 +219,13 @@ def main():
         xvfb.wait()
         reader.join()
         text = b"".join(out)
+        if home:
+            import re
+            for rel in shows:
+                path = os.path.join(home, rel)
+                body = open(path, "rb").read() if os.path.exists(path) else b"(no file)\n"
+                body = body.decode("utf-8", "backslashreplace").encode()  # bytes that aren't text as \xNN
+                text += f"--- {rel}\n".encode() + re.sub(rb"\b\d{10}\b", b"T", body)
         if home:
             text = text.replace(home.encode(), b"/HOME")
         sys.stdout.buffer.write(text)

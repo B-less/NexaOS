@@ -1,0 +1,437 @@
+// Focus Timer: work on one thing for a set time, then take a break.
+// A NexaOS app written in NexaLang (nexalang/NEXALANG.md).
+//
+// Keys: Enter or Ctrl+Return starts and pauses, Ctrl+R resets,
+// Ctrl+Shift+Delete clears the history, Esc or Ctrl+Q closes.
+// Finished sessions are kept in ~/.local/share/focus-timer/sessions.json.
+use ui
+use files
+use json
+use time
+
+struct Session {
+    what: str
+    seconds: int
+    ended: int
+}
+
+enum State {
+    Idle
+    Running
+    Paused
+}
+
+// ---- limits: everything read from disk or typed is untrusted ----
+
+fn max_sessions() -> int {
+    return 200
+}
+
+// The history file is small (200 sessions is about 20 KB); anything much
+// bigger isn't ours, and reading it would only waste memory.
+fn max_file_bytes() -> int {
+    return 1_000_000
+}
+
+fn max_what_bytes() -> int {
+    return 120
+}
+
+// ---- text ----
+
+// At most `max` bytes of `s`, never cutting a letter in half, on one line.
+fn cut(s: str, max: int) -> str {
+    let one_line = trim(replace(replace(replace(s, "\r", " "), "\n", " "), "\t", " "))
+    if len(one_line) <= max {
+        return one_line
+    }
+    var end = max
+    // UTF-8: bytes 0x80-0xBF continue a letter; step back to its start
+    while end > 0 and byte_at(one_line, end) >= 128 and byte_at(one_line, end) < 192 {
+        end -= 1
+    }
+    return "{trim(slice(one_line, 0, end))}…"
+}
+
+fn two(n: int) -> str {
+    if n < 10 {
+        return "0{n}"
+    }
+    return "{n}"
+}
+
+// 1500 -> "25:00"
+fn clock(seconds: int) -> str {
+    return "{seconds / 60}:{two(seconds % 60)}"
+}
+
+// "25" (minutes) or "1:30" (minutes and seconds) -> seconds;
+// none unless it's between one second and 180 minutes.
+fn parse_length(text: str) -> ?int {
+    let t = trim(text)
+    var total = 0
+    match find(t, ":") {
+        none => {
+            let minutes = parse_int(t)?
+            if minutes < 1 or minutes > 180 {
+                return none
+            }
+            total = minutes * 60
+        }
+        some(i) => {
+            let rest = slice(t, i + 1, len(t))
+            if len(rest) != 2 {
+                return none
+            }
+            let minutes = parse_int(slice(t, 0, i))?
+            let seconds = parse_int(rest)?
+            if minutes < 0 or minutes > 180 or seconds < 0 or seconds > 59 {
+                return none
+            }
+            total = minutes * 60 + seconds
+        }
+    }
+    if total < 1 or total > 180 * 60 {
+        return none
+    }
+    return some(total)
+}
+
+fn length_problem(text: str) -> str {
+    return "“{cut(text, 20)}” isn't a length. Type minutes, like 25, or minutes and seconds, like 1:30 (up to 180 minutes)."
+}
+
+// ---- the history file ----
+
+fn read_int(j: Json, key: str) -> ?int {
+    return json.as_int(json.get(j, key)?)
+}
+
+// The saved sessions, oldest first. Entries that don't make sense are
+// skipped; a file that isn't ours at all is an error (and is left alone).
+fn load(path: str) -> ![Session] {
+    var sessions: [Session] = []
+    if not files.exists(path) {
+        return ok(sessions)
+    }
+    if files.size(path)? > max_file_bytes() {
+        return err("the file is too big to be a timer history")
+    }
+    let text = files.read(path)?
+    if trim(text) == "" {
+        return ok(sessions)  // an empty file is an empty history
+    }
+    var doc = Json.Null
+    match json.parse(text) {
+        ok(d) => { doc = d }
+        err(_) => { return err("the file is damaged") }
+    }
+    let list = unwrap_or(json.get(doc, "sessions"), Json.Null)
+    match list {
+        List(_) => { }
+        _ => { return err("it has no list of sessions") }
+    }
+    for item in json.items(list) {
+        let what = cut(unwrap_or(json.as_text(unwrap_or(json.get(item, "what"), Json.Null)), ""), max_what_bytes())
+        let seconds = unwrap_or(read_int(item, "seconds"), 0)
+        let ended = unwrap_or(read_int(item, "ended"), -1)
+        if what != "" and seconds >= 1 and seconds <= 180 * 60 and ended >= 0 {
+            push(sessions, Session { what: what, seconds: seconds, ended: ended })
+        }
+    }
+    return ok(keep_last(sessions))
+}
+
+fn keep_last(sessions: [Session]) -> [Session] {
+    if len(sessions) <= max_sessions() {
+        return sessions
+    }
+    var kept: [Session] = []
+    for i in len(sessions) - max_sessions()..len(sessions) {
+        push(kept, sessions[i])
+    }
+    return kept
+}
+
+fn save(dir: str, path: str, sessions: [Session]) -> !void {
+    files.make_dir(dir)?
+    var items: [Json] = []
+    for s in sessions {
+        push(items, json.obj([
+            json.field("what", Json.Text(s.what)),
+            json.field("seconds", Json.Num(to_float(s.seconds))),
+            json.field("ended", Json.Num(to_float(s.ended))),
+        ]))
+    }
+    let doc = json.obj([json.field("version", Json.Num(1.0)), json.field("sessions", Json.List(items))])
+    return files.write(path, "{json.pretty(doc)}\n")
+}
+
+// ---- what the window shows ----
+
+// Newest first: "09:30  Writing the report  25:00"
+fn rows(sessions: [Session]) -> [str] {
+    var out: [str] = []
+    var i = len(sessions) - 1
+    while i >= 0 {
+        let s = sessions[i]
+        let when = unwrap_or(time.format(s.ended, "%a %d %b, %H:%M"), "")
+        push(out, "{when}   {s.what}   {clock(s.seconds)}")
+        i -= 1
+    }
+    return out
+}
+
+fn summary(sessions: [Session]) -> str {
+    if len(sessions) == 0 {
+        return "Finished sessions"
+    }
+    var total = 0
+    for s in sessions {
+        total += s.seconds
+    }
+    let count = if_one(len(sessions), "session", "sessions")
+    return "Finished sessions: {count}, {duration(total)} in all"
+}
+
+// 45 -> "45 s", 1500 -> "25 min", 5400 -> "1 h 30 min"
+fn duration(seconds: int) -> str {
+    if seconds < 60 {
+        return "{seconds} s"
+    }
+    if seconds < 3600 {
+        return "{seconds / 60} min"
+    }
+    return "{seconds / 3600} h {seconds % 3600 / 60} min"
+}
+
+fn if_one(n: int, one: str, many: str) -> str {
+    if n == 1 {
+        return "1 {one}"
+    }
+    return "{n} {many}"
+}
+
+fn main() -> !void {
+    let dir = files.data_dir("focus-timer")?
+    let path = files.join_path(dir, "sessions.json")
+    var sessions: [Session] = []
+    var problem = ""
+    match load(path) {
+        ok(list) => { sessions = list }
+        // the path is long and the same every time: name it in words
+        err(e) => { problem = replace(e, path, "the history file") }
+    }
+
+    let page = ui.start("focus-timer", "Focus Timer")?
+    ui.heading(page, "Focus")
+    let face = ui.display(page, "25:00")
+    let state_note = ui.note(page, "Ready when you are.")
+    let form = ui.row(page)
+    let what = ui.entry(form, "What are you working on?")
+    let length = ui.entry(form, "Length: 25 or 1:30")
+    ui.set_text(length, "25")
+    ui.tooltip(length, "Minutes (like 25) or minutes and seconds (like 1:30), up to 180 minutes")
+    let controls = ui.row(page)
+    let go = ui.primary_button(controls, "Start")
+    ui.shortcut(go, "Ctrl+Return")
+    ui.tooltip(go, "Start or pause the timer (Enter in a text field starts it too)")
+    let reset = ui.button(controls, "Reset")
+    ui.shortcut(reset, "Ctrl+R")
+    ui.tooltip(reset, "Stop and set the timer back to its full length")
+    ui.set_enabled(reset, false)
+    let history_title = ui.label(page, summary(sessions))
+    let history = ui.list(page, "No finished sessions yet. Set a length, press Start, and each session you finish shows up here.")
+    ui.set_items(history, rows(sessions))
+    let bottom = ui.row(page)
+    let clear = ui.danger_button(bottom, "Clear history")
+    ui.shortcut(clear, "Ctrl+Shift+Delete")
+    ui.tooltip(clear, "Remove every finished session")
+    ui.set_enabled(clear, len(sessions) > 0)
+    ui.focus(what)
+
+    // Never write over a history that couldn't be read: the person may
+    // want it. "Clear history" offers to start a new one instead.
+    var can_save = problem == ""
+    if not can_save {
+        ui.show_error("Your past sessions couldn't be read ({problem}). The file is left as it is, so new sessions won't be saved. Press Clear history to start a new history.")
+        ui.set_enabled(clear, true)
+    }
+
+    var state = State.Idle
+    var full = 25 * 60  // the length set when the timer started
+    var done_ms = 0     // time already counted before the last start
+    var started = 0     // time.millis() at the last start
+    var shown = full
+    var session_what = ""
+
+    while true {
+        var event = UiEvent.Tick
+        if state == State.Running {
+            event = ui.wait_ms(200)
+        } else {
+            event = ui.wait()
+        }
+        var start_or_pause = false
+        var finished = false
+        match event {
+            Clicked(id) => {
+                if id == go {
+                    start_or_pause = true
+                } else if id == reset {
+                    state = State.Idle
+                    done_ms = 0
+                    shown = unwrap_or(parse_length(ui.get_text(length)), full)
+                    ui.set_text(face, clock(shown))
+                    ui.set_text(go, "Start")
+                    ui.set_text(state_note, "Ready when you are.")
+                    ui.set_enabled(reset, false)
+                    ui.set_enabled(what, true)
+                    ui.set_enabled(length, true)
+                    ui.status("")
+                    ui.focus(what)
+                } else if id == clear {
+                    var question = "This removes all {if_one(len(sessions), "finished session", "finished sessions")}. It can't be undone."
+                    if not can_save {
+                        question = "The history file that couldn't be read will be replaced by a new, empty one."
+                    }
+                    if ui.confirm("Clear the history?", question, "Clear", true) {
+                        sessions = []
+                        can_save = true
+                        match save(dir, path, sessions) {
+                            ok => { ui.status("History cleared.") }
+                            err(e) => { ui.show_error("The history couldn't be saved ({e}). Check that the disk isn't full.") }
+                        }
+                        ui.set_items(history, rows(sessions))
+                        ui.set_text(history_title, summary(sessions))
+                        ui.set_enabled(clear, false)
+                    }
+                }
+            }
+            Submitted(_, _) => {
+                if state == State.Idle {
+                    start_or_pause = true
+                }
+            }
+            Changed(id, text) => {
+                if id == length and state == State.Idle {
+                    match parse_length(text) {
+                        some(n) => {
+                            shown = n
+                            ui.set_text(face, clock(n))
+                            ui.status("")
+                        }
+                        none => { }
+                    }
+                }
+            }
+            Activated(_, row) => {
+                // a past session: work on the same thing again
+                if state == State.Idle and row >= 0 and row < len(sessions) {
+                    let s = sessions[len(sessions) - 1 - row]
+                    ui.set_text(what, s.what)
+                    ui.set_text(length, clock(s.seconds))
+                    shown = s.seconds
+                    ui.set_text(face, clock(shown))
+                    ui.status("Press Start to work on “{s.what}” again.")
+                    ui.focus(go)
+                }
+            }
+            Selected(_, _) => { }
+            Toggled(_, _) => { }
+            Tick => { }
+            Edited(_) => { }     // (0.8) a code editor: this window has none
+            Output(_, _) => { }  // (0.8) programs it started: none
+            Finished(_, _) => { }
+            Closed => {
+                if state == State.Idle {
+                    return ok()
+                }
+                if ui.confirm("Stop the timer?", "The session that's running won't be kept.", "Stop and close", true) {
+                    return ok()
+                }
+            }
+        }
+
+        if start_or_pause {
+            if state == State.Running {
+                done_ms += time.millis() - started
+                state = State.Paused
+                ui.set_text(go, "Resume")
+                ui.set_text(state_note, "Paused.")
+            } else if state == State.Paused {
+                started = time.millis()
+                state = State.Running
+                ui.set_text(go, "Pause")
+                ui.set_text(state_note, "Working on “{session_what}”.")
+            } else {
+                match parse_length(ui.get_text(length)) {
+                    some(n) => {
+                        full = n
+                        done_ms = 0
+                        started = time.millis()
+                        state = State.Running
+                        session_what = cut(ui.get_text(what), max_what_bytes())
+                        if session_what == "" {
+                            session_what = "Focus"
+                        }
+                        shown = n
+                        ui.set_text(face, clock(n))
+                        ui.set_text(go, "Pause")
+                        ui.set_text(state_note, "Working on “{session_what}”.")
+                        ui.set_enabled(reset, true)
+                        ui.set_enabled(what, false)
+                        ui.set_enabled(length, false)
+                        ui.status("")
+                        ui.focus(go)
+                    }
+                    none => {
+                        ui.show_error(length_problem(ui.get_text(length)))
+                        ui.focus(length)
+                    }
+                }
+            }
+        }
+
+        if state == State.Running {
+            let elapsed = done_ms + time.millis() - started
+            let left_ms = full * 1000 - elapsed
+            if left_ms <= 0 {
+                finished = true
+            } else {
+                // round up: 25:00 shows until a full second has passed
+                let left = (left_ms + 999) / 1000
+                if left != shown {
+                    shown = left
+                    ui.set_text(face, clock(left))
+                }
+            }
+        }
+
+        if finished {
+            push(sessions, Session { what: session_what, seconds: full, ended: time.now() })
+            sessions = keep_last(sessions)
+            state = State.Idle
+            done_ms = 0
+            shown = full
+            ui.set_text(face, clock(full))
+            ui.set_text(go, "Start")
+            ui.set_text(state_note, "Ready when you are.")
+            ui.set_enabled(reset, false)
+            ui.set_enabled(what, true)
+            ui.set_enabled(length, true)
+            ui.set_items(history, rows(sessions))
+            ui.set_text(history_title, summary(sessions))
+            if can_save {
+                ui.set_enabled(clear, true)
+                match save(dir, path, sessions) {
+                    ok => { ui.status("Done: “{session_what}”, {clock(full)}. Time for a short break.") }
+                    err(e) => { ui.show_error("Done, but the history couldn't be saved ({e}). Check that the disk isn't full.") }
+                }
+            } else {
+                ui.status("Done: “{session_what}”, {clock(full)}. (Not saved: the old history couldn't be read.)")
+            }
+        }
+    }
+    return ok()
+}

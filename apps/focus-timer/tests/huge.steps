@@ -1,0 +1,6 @@
+# program: ../apps/focus-timer/src/main.nx
+# A 3 MB history file: refused before reading it, and left alone.
+fill .local/share/focus-timer/sessions.json 3000000 [{"what": "x", "seconds": 60, "ended": 1700000000},
+window Focus Timer
+shot huge
+key Escape

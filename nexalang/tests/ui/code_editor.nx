@@ -1,0 +1,64 @@
+// The code editor (`use editor`, 0.8): typing, Edited events, laying out
+// as one undo step, underlined mistakes, going to a place, new text that
+// can't be undone, Ctrl+Tab out of it, and the theme's colours.
+use ui
+use editor
+
+fn main() -> !void {
+    let page = ui.start("editor-test", "Editor")?
+    let ed = editor.add(page)
+    let buttons = ui.row(page)
+    let show = ui.button(buttons, "Show")
+    let lay = ui.button(buttons, "Lay out")
+    let marks = ui.button(buttons, "Marks")
+    let fresh = ui.button(buttons, "New text")
+    let after = ui.button(page, "After the editor")
+    ui.shortcut(show, "Ctrl+P")
+    ui.shortcut(lay, "Ctrl+R")
+    ui.shortcut(marks, "Ctrl+M")
+    ui.shortcut(fresh, "Ctrl+N")
+    ui.set_text(ed, "fn main() \{\n    let x = 1\n}\n")
+    editor.go_to(ed, 2, 14)
+    var edits = 0
+    while true {
+        match ui.wait() {
+            Edited(id) => {
+                if id == ed {
+                    edits += 1
+                }
+            }
+            Clicked(id) => {
+                if id == show {
+                    print("edited: {edits > 0}")
+                    print("text: {ui.get_text(ed)}")
+                    edits = 0
+                } else if id == lay {
+                    editor.replace_text(ed, "fn main() \{\n    let x = 1\n    print(x)\n}\n")
+                    editor.replace_text(ed, ui.get_text(ed))  // the same text: nothing to undo
+                    print("laid out")
+                } else if id == marks {
+                    editor.clear_marks(ed)
+                    editor.mark(ed, 2, 5, 3)    // `let`
+                    editor.mark(ed, 99, 1, 1)   // not in the text: left alone
+                    editor.mark(ed, 1, 999, 5)  // past the end of the line: its last letter
+                    editor.mark(ed, 3, -4, 0)   // before the start, no length: the first letter
+                    editor.mark(ed, 0, 1, 1)    // line 0: left alone
+                    editor.go_to(ed, 999, 999)  // the end
+                    print("marked")
+                } else if id == fresh {
+                    ui.set_text(ed, "// new text \0 with a zero byte, an emoji 🦊 and\ta tab\n")
+                    print("new text: {ui.get_text(ed)}")
+                } else if id == after {
+                    print("clicked the button after the editor")
+                }
+            }
+            Closed => {
+                editor.clear_marks(ed)
+                print("closed: {ui.get_text(ed)}")
+                return ok()
+            }
+            _ => { }
+        }
+    }
+    return ok()
+}

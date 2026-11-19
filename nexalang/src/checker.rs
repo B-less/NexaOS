@@ -48,6 +48,7 @@ fn std_primitive(name: &str) -> Option<(Vec<Type>, Type)> {
         "__files_write" => (vec![s(), s()], res(Void)),
         "__files_append" => (vec![s(), s()], res(Void)),
         "__files_exists" => (vec![s()], Bool),
+        "__files_size" => (vec![s()], res(s())),
         "__files_is_dir" => (vec![s()], Bool),
         "__files_list" => (vec![s()], res(list(s()))),
         "__files_make_dir" => (vec![s()], res(Void)),
@@ -78,6 +79,20 @@ fn std_primitive(name: &str) -> Option<(Vec<Type>, Type)> {
         "__ui_event_text" => (vec![], s()),
         "__ui_ask_password" => (vec![s(), s()], Maybe(Box::new(s()))),
         "__ui_confirm" => (vec![s(), s(), s(), Bool], Bool),
+        "__ui_code" => (vec![Int, s()], Int),
+        "__ui_remove" => (vec![Int, Bool], Void),
+        "__ui_to_clipboard" => (vec![s()], Void),
+        "__ui_choose" => (vec![s(), s(), Bool], Maybe(Box::new(s()))),
+        // 0.8: adding to code views, starting programs, the code editor
+        "__ui_append" => (vec![Int, s()], Void),
+        "__ui_start_program" => (vec![s(), list(s()), s()], Int),
+        "__ui_program_error" => (vec![], s()),
+        "__ui_stop_program" => (vec![Int], Void),
+        "__editor_add" => (vec![Int], Int),
+        "__editor_replace" => (vec![Int, s()], Void),
+        "__editor_mark" => (vec![Int, Int, Int, Int], Void),
+        "__editor_clear_marks" => (vec![Int], Void),
+        "__editor_go_to" => (vec![Int, Int, Int], Void),
         _ => return None,
     })
 }

@@ -76,8 +76,10 @@ pub fn plan(id: &str, lib: &Path, program: &Path, permissions: &[String], env: &
     }
     rules.push((PathBuf::from(format!("/run/user/{}", env.uid)), READ_WRITE));
     // What GTK reads from the home folder: theme, fonts, icons, folder names.
+    // The theme's code-editor colours (nexa-theme writes them to
+    // gtksourceview-4/styles) belong with the theme: read-only, like gtk.css.
     for p in [".config/gtk-3.0", ".config/fontconfig", ".local/share/fonts", ".fonts", ".icons", ".local/share/icons",
-              ".local/share/mime", ".config/user-dirs.dirs", ".config/dconf"] {
+              ".local/share/mime", ".config/user-dirs.dirs", ".config/dconf", ".local/share/gtksourceview-4/styles"] {
         rules.push((h(p), READ));
     }
     for p in [".cache/fontconfig", ".cache/mesa_shader_cache", ".local/share/recently-used.xbel"] {
@@ -263,6 +265,14 @@ mod tests {
         assert!(paths(&drives).contains(&"/media".into()) && !paths(&drives).contains(&"/home/ama".into()), "drives: /media only");
         let all = plan("fm", Path::new("/l"), Path::new("/x/fm"), &["files.home".into()], &env(), &[]);
         assert!(paths(&all).contains(&"/home/ama".into()));
+    }
+
+    #[test]
+    fn the_themes_editor_colours_are_readable_only() {
+        let p = plan("code-studio", Path::new("/l"), Path::new("/x/cs"), &[], &env(), &[]);
+        let styles = PathBuf::from("/home/ama/.local/share/gtksourceview-4/styles");
+        assert!(p.rules.contains(&(styles.clone(), READ)), "the theme's nexa.xml, read-only");
+        assert!(!p.rules.iter().any(|(x, a)| x.starts_with("/home/ama/.local/share/gtksourceview-4") && *a != READ));
     }
 
     #[test]

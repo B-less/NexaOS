@@ -1,0 +1,55 @@
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "A new program, not saved yet"
+    editor (4 lines, 0 marked, at 2:5, colours nexalang-horizon)
+      | "fn main() {"
+      | "    print(\"Hello\")"
+      | "}"
+status error "NexaLang's compiler (nexac) isn't installed, so programs can't be checked or run here."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "A new program, not saved yet"
+    editor (4 lines, 0 marked, at 2:19, colours nexalang-horizon)
+      | "fn main() {"
+      | "    // still worksprint(\"Hello\")"
+      | "}"
+status error "NexaLang's compiler (nexac) isn't installed, so programs can't be checked or run here."
+column
+  row
+    button "Open…"
+    button "Save"
+    button "New"
+  row
+    button "Lay out"
+    button "Explain"
+    button "Stop" (off)
+    primary button "Run"
+  column
+    note "/HOME/Documents/main.nx"
+    editor (4 lines, 0 marked, at 2:19, colours nexalang-horizon)
+      | "fn main() {"
+      | "    // still worksprint(\"Hello\")"
+      | "}"
+status "Saved main.nx."
+--- Documents/main.nx
+fn main() {
+    // still worksprint("Hello")
+}

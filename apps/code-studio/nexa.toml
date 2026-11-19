@@ -1,0 +1,23 @@
+[package]
+id = "code-studio"
+name = "Code Studio"
+version = "1.0.0"
+description = "Write NexaLang programs: mistakes as you type, laying out, explanations, and Run"
+categories = "Development;"
+icon = "icon.svg"
+screenshots = ["shots/editing.png", "shots/explained.png", "shots/ran.png"]
+
+[build]
+# Written in NexaLang (nexalang/): nexac builds it with the hardened flags.
+command = "nexac build src/main.nx -o build/code-studio"
+binary = "build/code-studio"
+
+[requires]
+# Already part of NexaOS, so installing needs no internet. It starts
+# nexac (NexaOS has it in /usr/local/bin) for checking, laying out,
+# explaining and running.
+depends = ["gtk+3.0", "gtksourceview4"]
+# Documents only: programs are opened and saved through the file chooser,
+# which runs inside the app, so an installed app can only reach the
+# folders its permissions name. Not files.home (far more than it needs).
+permissions = ["files.documents"]
