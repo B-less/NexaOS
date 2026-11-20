@@ -1,0 +1,102 @@
+{
+  "name": "nexalang",
+  "displayName": "NexaLang",
+  "description": "NexaLang, the programming language of NexaOS: colours, mistakes as you type, layout on save and explanations, all from nexac.",
+  "version": "0.9.2",
+  "publisher": "nexaos",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/B-less/NexaOS.git",
+    "directory": "nexalang/editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Linters"
+  ],
+  "keywords": [
+    "nexalang",
+    "nexaos",
+    "nx"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:nexalang"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "nexac only reads .nx files: it checks, lays out and explains them, and never runs them. The program it starts is chosen only in your own settings."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "nexalang",
+        "aliases": [
+          "NexaLang",
+          "nexalang"
+        ],
+        "extensions": [
+          ".nx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "nexalang",
+        "scopeName": "source.nexalang",
+        "path": "./syntaxes/nexalang.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "NexaLang",
+      "properties": {
+        "nexalang.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "The full path to `nexac` (`nexac.exe` on Windows), or to the folder that holds it. Empty: the first one in a folder of `PATH`. Only your own settings can set this, not a folder's settings."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[nexalang]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "nexaos.nexalang",
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        "editor.detectIndentation": false
+      }
+    },
+    "commands": [
+      {
+        "command": "nexalang.explain",
+        "title": "Explain a kind of mistake",
+        "category": "NexaLang"
+      },
+      {
+        "command": "nexalang.restart",
+        "title": "Restart the language server",
+        "category": "NexaLang"
+      }
+    ]
+  },
+  "scripts": {
+    "test": "node --test test/lib.test.js test/extension.test.js test/client.test.js test/nexac.test.js",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "10.1.2"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "4.1.0",
+    "vscode-languageserver-protocol": "3.18.4"
+  }
+}

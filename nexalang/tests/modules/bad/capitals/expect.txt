@@ -1,0 +1,1 @@
+main.nx|can't find module `helpers`: the file here is called Helpers.nx, and capitals count

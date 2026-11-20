@@ -277,31 +277,48 @@ fn capabilities() -> Json {
 /// path in a folder that doesn't exist, so `use` of a local module there
 /// says it can't be found rather than reading some other folder.
 pub fn uri_to_path(uri: &str) -> PathBuf {
+    const NOWHERE: &str = "/nonexistent-nexalang-folder/untitled.nx";
     let Some(rest) = uri.strip_prefix("file://") else {
-        return PathBuf::from("/nonexistent-nexalang-folder/untitled.nx");
+        return PathBuf::from(NOWHERE);
     };
-    // skip a host ("file://localhost/x"); keep the path
-    let path = match rest.find('/') {
-        Some(0) => rest,
-        Some(i) => &rest[i..],
-        None => "/",
+    // "file://host/path": the host is empty or "localhost" for this computer
+    let (host, path) = match rest.find('/') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, "/"),
     };
+    let host = if host.eq_ignore_ascii_case("localhost") { "" } else { host };
     let bytes = percent_decode(path);
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStringExt;
+        if !host.is_empty() {
+            // another computer's file: not some local file with its path
+            return PathBuf::from(NOWHERE);
+        }
         PathBuf::from(std::ffi::OsString::from_vec(bytes))
     }
     #[cfg(not(unix))]
     {
-        let s = String::from_utf8_lossy(&bytes).into_owned();
-        // "/c:/Users/x" -> "c:/Users/x"
-        let b = s.as_bytes();
-        if b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' {
-            PathBuf::from(&s[1..])
-        } else {
-            PathBuf::from(s)
-        }
+        PathBuf::from(windows_path(host, &String::from_utf8_lossy(&bytes)))
+    }
+}
+
+/// A `file:` URI's (decoded) path as Windows writes it (0.9):
+/// `/c:/Users/x.nx` is `c:\Users\x.nx`, and a host is a shared folder,
+/// `file://server/share/x.nx` is `\\server\share\x.nx`.
+#[cfg_attr(unix, allow(dead_code))]
+fn windows_path(host: &str, path: &str) -> String {
+    let b = path.as_bytes();
+    let path = if host.is_empty() && b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' {
+        &path[1..]
+    } else {
+        path
+    };
+    let path = path.replace('/', "\\");
+    if host.is_empty() {
+        path
+    } else {
+        format!("\\\\{}{}", host, path)
     }
 }
 
@@ -472,6 +489,20 @@ mod tests {
         assert_eq!(uri_to_path("file:///home/a%20b/x.nx"), PathBuf::from("/home/a b/x.nx"));
         assert_eq!(uri_to_path("file://localhost/tmp/x.nx"), PathBuf::from("/tmp/x.nx"));
         assert_eq!(uri_to_path("file:///t/%zz%4"), PathBuf::from("/t/%zz%4"));
+        assert_eq!(uri_to_path("file://LOCALHOST/tmp/x.nx"), PathBuf::from("/tmp/x.nx"));
+        #[cfg(unix)]
+        assert!(uri_to_path("file://server/share/x.nx").starts_with("/nonexistent-nexalang-folder"));
         assert!(uri_to_path("untitled:Untitled-1").starts_with("/nonexistent-nexalang-folder"));
+    }
+
+    #[test]
+    fn windows_uris() {
+        // as VS Code sends them on Windows (`file:///c%3A/...`, decoded first)
+        assert_eq!(windows_path("", "/c:/Users/Bless Boateng/app.nx"), "c:\\Users\\Bless Boateng\\app.nx");
+        assert_eq!(windows_path("", "/C:/x.nx"), "C:\\x.nx");
+        assert_eq!(windows_path("server", "/share/apps/x.nx"), "\\\\server\\share\\apps\\x.nx");
+        assert_eq!(windows_path("", "/tmp/x.nx"), "\\tmp\\x.nx");
+        // not a drive: kept as a path from the root
+        assert_eq!(windows_path("", "/1:/x"), "\\1:\\x");
     }
 }

@@ -1,6 +1,6 @@
 # NexaLang: the programming language of NexaOS
 
-Started 2026-11-16. Current version **0.8** (compiler `nexac`, in `nexalang/`).
+Started 2026-11-16. Current version **0.9** (compiler `nexac`, in `nexalang/`).
 
 NexaLang is a small, safe, readable language for writing NexaOS programs.
 The compiler `nexac` (Rust, no dependencies) turns a `.nx` file into C11
@@ -128,6 +128,19 @@ editor.mark(code, 3, 7, 1)                        // underline a mistake
 `apps/code-studio` is a NexaLang code editor written in NexaLang: mistakes
 as you type, Lay out, Explain, and Run with Stop.
 
+Writing NexaLang on Microsoft Windows (0.9), in VS Code:
+
+```sh
+sh editors/windows/build.sh     # dist/nexac.exe and dist/nexalang-0.9.2.vsix
+```
+
+Put `nexac.exe` in a folder of `PATH` on Windows, install the `.vsix` in VS
+Code (Extensions, `...`, "Install from VSIX..."), and open a `.nx` file:
+colours, mistakes as you type, layout on save, and an explanation of each
+mistake. On Windows `nexac` checks, lays out and explains programs;
+building and running them happens on NexaOS (see the decisions).
+`editors/vscode/README.md` says more.
+
 ---
 
 ## 1. Design decisions (and why)
@@ -209,9 +222,18 @@ and for the compiler itself.
 | **Files Code Studio won't open: over 1 MB, not UTF-8, with a zero byte, or a line over 10,000 bytes** (0.8) | Measured: GtkSourceView takes ~1.2 s to show 2 MB and a 1 MB line makes every key press slow; a zero byte can't be shown and would be saved as U+FFFD (a silent change); bytes that aren't UTF-8 can't be NexaLang text. Each is refused with a message that says why | Opening anything (slow, or a different file saved) |
 | **Code views wrap long lines; an editor takes the free height and the lists and code views beside it keep theirs; both sit in a card** (0.8) | WRITING_NEXA_APPS.md §4: text wraps, never goes off the side (an explanation was cut off at 560 px). In a code editor's column the editor is what needs the room (the list and output are 80 and 112 px at least, so everything fits in 640 px). GTK 3 doesn't clip a scrolled view to rounded corners; a padded card around it does | Horizontal scrolling for read-only text; sharing the height equally (a half-size editor) |
 | **A button can have more than one shortcut** (0.8) | Run is Ctrl+Return and F5; the tooltip lists both | One key per action |
+| **On Windows, `nexac` checks, lays out, explains and is a language server; `build` and `run` say programs are built on NexaOS** (0.9) | The C a program becomes uses POSIX (Unix sockets for the broker, signals, process groups, `fsync`/`rename` file writes, `getrlimit`) and GTK's Unix parts (`glib-unix.h`, `waitpid`). A Windows version of that runtime is a second runtime to write and secure, and it couldn't be run here at all (no Windows, no MSYS2 GTK). Editing is what Windows needs for now: `nexac check` there gives exactly the mistakes NexaOS gives (tested), and the message names the way to run the program (copy it to NexaOS, `nexac run`). The program is checked first, so its mistakes are still shown | Porting the runtime to MSYS2 MinGW + GTK 3 (large, and untestable here: it would ship unrun); building C on Windows that then fails (a confusing C compiler error instead of one clear sentence) |
+| **`nexac.exe` is the same source, cross-built with mingw-w64 (`x86_64-pc-windows-gnu`)** (0.9) | Only three places differ by platform (the refusal above, the "stopped by signal" message, and how a `file:` URI becomes a path), so it can't drift from the Linux compiler: a test compares the two on every `.nx` file in the repository and on fuzzed programs, byte for byte. It needs only Windows' own DLLs (no `libgcc`, no `libwinpthread`), so one file is all there is to copy. `editors/windows/build.sh` removes this computer's paths from it | The MSVC target (needs Microsoft's SDK and linker: can't be built on Linux); a separate Windows tool (two compilers to keep in step) |
+| **`nexac fmt` keeps the file's line ends** (`\r\n` stays `\r\n`) (0.9) | On Windows, Notepad, VS Code and git (`core.autocrlf`) write `\r\n`; 0.6 turned them into `\n`, so `nexac fmt --check` would call every such file unformatted and `fmt` would rewrite every line. The first line end decides (a file with both gets the first one's everywhere). Only line ends change: strings and comments can't hold a line break, so the meaning can't (still tested on every program) | Always `\n` (0.6: every Windows file "unformatted"); always the computer's own (the same file formatted differently on two computers) |
+| **A module's file must be spelled as in `use`, capitals too, on every computer** (0.9) | Windows (and macOS) would find `Helpers.nx` for `use helpers`; NexaOS wouldn't, so a program checked on Windows would fail on NexaOS. `nexac` looks at the real file names and says "the file here is called Helpers.nx, and capitals count", on Linux too (where before it said only "can't find module"). For the same reason a `Json.nx` beside `use json` is no longer "also a json.nx here" on Windows | Trusting the file system (works on one computer, not the other) |
+| **The VS Code extension talks to `nexac lsp` through VS Code's own language client** (`vscode-languageclient`) (0.9) | Mistakes, layout and hover then come from the language server 0.6 built and fuzzed, with its UTF-16 positions already tested (emoji, accents); the client is Microsoft's, used by most language extensions, so framing, restarts and document syncing aren't new code. The extension itself is ~330 lines of JavaScript: finding `nexac`, the "Explain" command and quick fix, and the settings | Its own LSP client (framing and syncing written again); running `check --json` on every key press (each keystroke a new process, and characters → UTF-16 converted again in JavaScript, a known source of off-by-one bugs) |
+| **The extension starts `nexac` only by its full path, with an argument list, never a shell** (0.9) | Started by name, Windows looks in the current folder first, so a `nexac.exe` inside a downloaded project would run. The extension finds `nexac` itself: the `nexalang.path` setting (it must be a full path, and it has `machine` scope: a folder's `.vscode/settings.json` can't set it), else the first `nexac.exe` in a folder of `PATH` written as a full path (`.` and empty entries are skipped); it starts it in the home folder. Only `.exe` (a `.bat` or `.cmd` needs a shell). So it can be trusted in an untrusted folder: `nexac` only reads `.nx` files there | Starting `"nexac"` and letting the system search (the open folder could choose the program) |
+| **`nexac lsp --stdio` is accepted, and the extension gives no transport** (0.9) | `vscode-languageclient` adds `--stdio` to the arguments when told the transport is stdio (found by reading its code before the first run); 0.6's `nexac lsp` refused any argument. Now it accepts that one (many editors' clients add it), and the extension says nothing about the transport, which means stdin/stdout without the extra argument. Both are tested | Leaving it (the server wouldn't start in VS Code) |
+| **The extension is plain JavaScript, with no build step** (0.9) | What runs in VS Code is exactly the file that's reviewed and tested; no TypeScript compiler, bundler or source maps between them. Its one dependency (`vscode-languageclient`) is pinned with `package-lock.json` and packed into the `.vsix` by `vsce` | TypeScript + a bundler (a build step whose output nobody reads) |
+| **Binaries aren't committed: `editors/windows/build.sh` makes `dist/nexac.exe` and the `.vsix`** (0.9) | The repository has no built programs in it (packages are built by scripts); a committed `.exe` couldn't be checked against its source. The script builds the same bytes each time (tested: two folders, the same `nexac.exe`) | Committing `nexac.exe` and the `.vsix` |
 | **Passwords are asked for by `ui`, checked by the broker** (0.4) | `ui.broker_call` shows a password dialog when the broker asks, three tries, the way `nexa_common/broker.py` does; the password goes only into the request to the broker. Apps never check or keep it | Apps asking with their own dialogs |
 
-## 2. The language (v0.8: no changes since 0.5; `ui` grew in 0.7 and 0.8; `editor` is new)
+## 2. The language (v0.9: no changes since 0.5; `ui` grew in 0.7 and 0.8; `editor` is 0.8's)
 
 **Types:** `int` (64-bit, checked), `float` (64-bit), `bool`, `str`
 (immutable UTF-8 text), `[T]` (growable list), `?T` (a `T` or `none`),
@@ -491,7 +513,7 @@ nexalang/
   examples/*.nx    + .out expected output (+ .in input, .args arguments)
   tests/fail/*.nx  programs that must be rejected (64)
   tests/trap/*.nx  programs that must stop with a runtime error (11)
-  tests/modules/   a three-file program, and 11 module mistakes
+  tests/modules/   a three-file program, and 12 module mistakes
   tests/broker/    a stand-in broker (Python) and a client
   tests/json/      JSON round-trip reader + differential fuzz vs Python
   tests/stress/    2-million-round memory churn
@@ -504,7 +526,12 @@ nexalang/
   tests/highlight/ both colour grammars against one expected colouring
   editors/         gtksourceview/nexalang.lang (built into programs that use
                    `editor`, 0.8) and nexa-horizon.xml (their fallback
-                   colours), vscode/ (grammar), README
+                   colours), vscode/ (grammar; the extension, 0.9:
+                   extension.js, lib.js, package.json, test/), windows/
+                   build.sh (nexac.exe and the .vsix, 0.9), README
+  tests/windows/   nexac-wine.sh (runs nexac.exe under Wine);
+                   differential.py: the Windows nexac against the Linux
+                   one, on every .nx file and on fuzzed programs (0.9)
 ../apps/*/src/main.nx   NexaOS apps written in NexaLang (0.5): Focus Timer,
                  Window Designer (0.7), Code Studio (0.8); their tests/*.steps run with the
                  window tests, three ways; the programs Window Designer
@@ -522,6 +549,68 @@ only. A runtime error knows its file: the location passed to the runtime
 is file number × 1,000,000 + line.
 
 ## 5. Testing done
+
+**0.9 (2026-11-18)** — Ubuntu 24.04 here: gcc 13.3, mingw-w64 (gcc
+13), Rust 1.97 (its Windows libraries built from Rust 1.97's own library
+source: this machine couldn't download Rust's ready-made ones), Wine 9.0,
+Node.js 22, Valgrind, GTK 3.24.41, GtkSourceView 4.8.4, Xvfb.
+`cd nexalang && cargo test`: **68 tests, all pass** (29 unit, 26 end to
+end, 13 in `tests/tooling.rs`). No earlier test was removed or weakened;
+one expectation changed with `fmt`: a `\r\n` file now stays `\r\n`
+(0.6's unit test expected `\n`; it now expects the line ends kept, and a
+new test covers mixed and comment-ending lines). New: the extension's
+tests run from `cargo test` (`the_vscode_extension_passes_its_tests`).
+
+| Check | Result |
+|---|---|
+| Every earlier check (examples with gcc and clang, ASan + UBSan, Valgrind, window scenarios, Focus Timer's, Window Designer's and Code Studio's scenarios three ways, misuse, broker, modules, rejected programs, runtime errors, the 0.6 tools, reproducible builds) | all still pass |
+| **Every 0.6 tool test against `nexac.exe` under Wine** (`NEXAC_TEST_WINDOWS=1 NEXAC_TEST_EXE=<a script running wine nexac.exe> cargo test --test tooling`): fmt never changes meaning on every program in the repository, fmt in place (all-or-nothing replace on Windows), `check --json`, explain's examples, whole language server sessions, modules | **all pass** (only the Unix file mode check is skipped: Windows has no modes) |
+| **The Windows `nexac` against the Linux one** (`tests/windows/differential.py`): `check --json`, `emit-c`, `fmt --stdin` (also with `\r\n`) and `explain --json` on all 167 `.nx` files in the repository and apps, and `check --json --stdin`, `fmt --stdin`, `explain` on 1,500 fuzzed programs | **4,953 outputs identical**, 3 differing only in `\` in a printed path (a missing module's message), **0 different** |
+| **The VS Code extension's tests** (`editors/vscode/test`, node's test runner), with the Linux `nexac` and with `nexac.exe` under Wine (URIs as VS Code writes them on Windows, `file:///z%3A/...`): finding `nexac` (setting, PATH, skipped relative folders, `.exe` only), the exact command (`nexac lsp`, no shell), explanations checked and turned into Markdown, quick fix topics; `activate()` with stand-ins for VS Code's API and the language client (registrations, how the server is started, the warning without `nexac`, a relative setting refused, the Explain command with the real `nexac`, a restart when the setting changes, `package.json`'s contributions); and two whole sessions through `vscode-languageserver-protocol` (the library VS Code's client uses) with `nexac lsp` and `nexac lsp --stdio`: a `\r\n` file with an emoji, a module beside it, a mistake (UTF-16 range, topic), hover, a fix, formatting that keeps `\r\n`, a module spelled with other capitals, save, close, an untitled file, shutdown | **12/12 pass** with each `nexac` (13/13 since 0.9.2's real-client test); with `nexac.exe` also as part of the whole `tests/tooling.rs` run under Wine (**13/13**) |
+| An earlier full run, made while Wine and the fuzzer ran beside it, had one Valgrind window scenario (Code Studio's `stop.steps`) time out waiting for the file chooser; the final run, alone on the machine, passed everything | noted: slow under load, not a failure of the code |
+| `nexac build` / `run` on Windows (Wine) | the program is checked, then the message; exit 1 |
+| Unwinding (the language server catches a compiler panic) in a Windows build made the same way | a caught panic under Wine: works |
+| **`nexac.exe`**: built twice in different folders | byte-identical (sha256 `1b23521c…`), 1.6 MB, needs only Windows' own DLLs; ASLR (high entropy), DEP; no paths of the build machine in it |
+| **The `.vsix`** (`vsce package`) | 413 KB: the extension, the grammar, `vscode-languageclient` and its 8 dependencies; no tests |
+| **Fuzzing the compiler** (`tests/fuzz/fuzz.py`, every accepted mutant built with the **exact hardened `-O2 -Werror` flags** and run under ASan + UBSan + the leak counter, and through every 0.6 tool check) | **4,000 mutants** (seeds 2042-2045), **842 accepted** and run (161 window programs): **0 compiler crashes, 0 C build failures, 0 memory errors, 0 leaks**, 0 tool findings |
+| **Fuzzing the tools** (`--tools-only`) | **10,000 mutants** (seeds 127-131): **1 finding** (seed 129: the first mistake shown changed when `fmt` removed an empty first line, because "no `fn main()`" was placed at line 1), fixed and re-run: 0 findings |
+
+Found and fixed while building 0.9:
+- On the first try on a real Windows PC (after the PR), `nexalang.path`
+  was set to the folder holding `nexac.exe`, and the extension refused
+  it. Extension 0.9.1 accepts the folder too (and quotes around the path,
+  as Windows' "Copy as path" adds them); tested.
+- Then, in the real VS Code: "nexac's language server didn't start:
+  this.outputChannel.error is not a function". The extension made a plain
+  output channel; `vscode-languageclient` 10 writes to it with `.error()`
+  and `.info()`, which only a log channel (`{ log: true }`) has. The
+  stand-in language client in the tests never wrote to the channel, so
+  they couldn't see it; now it writes like the real one, the stand-in
+  channel has `.error()` only when made with `{ log: true }` (as in VS
+  Code), and the test fails on 0.9.1's code. Extension 0.9.2.
+  The other message seen there, "this.traceOutputChannel.onDidChangeLogLevel
+  is not a function", is the same mistake (the client's first use of the
+  channel). **New test `editors/vscode/test/client.test.js`**: the
+  extension with the *real* `vscode-languageclient`, VS Code's API
+  replaced by output channels shaped exactly like VS Code's and an
+  automatic stand-in for the rest. With 0.9.1's code it fails with exactly
+  the two messages seen in VS Code; with 0.9.2 the client starts `nexac lsp`
+  (Linux, and `nexac.exe` under Wine) and reaches "running". The
+  extension's tests are now 13.
+- `vscode-languageclient` adds `--stdio` to the server's arguments when
+  the transport is stdio, and 0.6's `nexac lsp` refused any argument: the
+  server would never have started in VS Code. Found by reading the
+  client's code; `nexac lsp --stdio` is accepted now, and the extension
+  gives no transport.
+- A `file://server/share/x.nx` URI lost its server: on Windows the
+  language server would have read `\share\x.nx` on the current drive.
+- `nexac fmt` turned `\r\n` into `\n`, so on Windows every file was
+  "not formatted".
+- "the program has no `fn main()`" came first or second depending on an
+  empty first line (fuzzing).
+- Wine itself crashed on this machine (`free(): invalid pointer`) until
+  `/run/user/0` existed: Wine's fallback for a missing runtime folder (not
+  NexaLang's).
 
 **0.8 (2026-11-18)** — Ubuntu 24.04 here: gcc 13.3, clang, GTK 3.24.41,
 GtkSourceView 4.8.4, Xvfb, xdotool, Inter, JetBrains Mono, Valgrind.
@@ -823,7 +912,37 @@ Found and fixed while building 0.2: strings inside `{...}` were refused,
 which made the new text functions awkward (now allowed, 8 levels max);
 floats printed as `1e+03` (now `1000.0`).
 
-## 6. Known limits of 0.8
+## 6. Known limits of 0.9
+
+Windows and VS Code (0.9):
+- **Not tried on a real Windows PC or in a real VS Code.** This machine
+  couldn't download VS Code or VSCodium (their servers are blocked here),
+  and has no Windows. `nexac.exe` ran under Wine 9.0 (every 0.6 tool test,
+  the comparison with the Linux `nexac`, the extension's sessions with
+  it); the extension ran in Node.js against a stand-in for VS Code's API
+  and the real `nexac`. What only a real VS Code can show (the extension
+  loading, the colours on screen, the light bulb, format on save happening
+  on Ctrl+S) is untested. Please try it once: the steps are in
+  `editors/README.md`.
+- **On Windows, programs can't be built or run** (`nexac build`/`run` say
+  so: see the decisions). Checking, layout, explanations and the language
+  server work. WSL (a Linux inside Windows) can probably run the Linux
+  `nexac` fully; not tried.
+- `nexac.exe` needs 64-bit Windows 10 or later (what Rust supports); no
+  32-bit or ARM build.
+- The `.vsix` isn't published to the VS Code Marketplace or Open VSX
+  (that needs an account and a publisher token: the author's decision);
+  it's installed from the file. It isn't byte-for-byte reproducible (the
+  zip keeps file times); `nexac.exe` is.
+- The extension has no Run or Build command (they'd only work on Linux),
+  no completion or go-to-definition (the language server doesn't have
+  them yet: 0.6's limits).
+- A path in a message about a missing module is written Windows' way
+  (`z:\work\helpers.nx`) on Windows; every other message is the same.
+- Under Wine, file names with letters outside ASCII need a UTF-8 locale on
+  the Linux side (`LANG=C.UTF-8`); on Windows itself names are Unicode.
+
+## Known limits of 0.8 (still true)
 
 Code Studio, `editor` and programs (0.8):
 - **Installed, Code Studio can't Run**: NexaOS's app confinement
@@ -900,7 +1019,7 @@ Tools (0.6):
   once `nexalang.lang` is installed (`scripts/stage-text-editor.sh`); it
   doesn't show mistakes as you type. Code Studio (0.8) does.
 - The VS Code grammar is tested with VS Code's own engine, not inside VS
-  Code; the extension around it is 0.9.
+  Code (0.9's extension: see above).
 
 The language and `ui` (the language unchanged since 0.5):
 
@@ -956,5 +1075,5 @@ The language and `ui` (the language unchanged since 0.5):
 | **0.6** ✅ | `nexac fmt` (meaning-preserving, idempotent, keeps comments); `nexac check --json`; `nexac explain` (20 topics; 19 with a refused and a fixed program, both tested); `nexac lsp` (diagnostics, formatting, hover); colours for GtkSourceView 4 (NexaOS's text editor) and VS Code | §5. Nexa Mind integration waits for a tool that may run programs |
 | **0.7** ✅ | **Window Designer** (`apps/window-designer`), a NexaOS app written in NexaLang: build a window from headings, text, notes, buttons, a main button, text fields, check boxes, lists, rows and columns; move them; see the preview; get the `ui` program (export or copy). First, in `ui`: `remove`, `clear`, `code`, `save_file`, `open_file`, `to_clipboard`; lists grow with their rows and columns; tests can print a window's widgets | §5: every exported program is accepted by `nexac check` and `fmt --check`, builds with the hardened flags and shows exactly the preview's widgets |
 | **0.8** ✅ | **Code Studio** (`apps/code-studio`), a NexaLang code editor written in NexaLang: GtkSourceView with 0.6's colours, mistakes as you type (underlined and listed), Lay out, Explain, Run with Stop. First, in nexac: the `editor` module, `ui.start_program`/`stop_program` with `Output`/`Finished`, `ui.append`; `nexac run` leaves nothing behind when stopped | §5: driven by key presses three ways, packaged, run confined (where Run can't start what it builds: see the decisions) |
-| **0.9** | **Editing NexaLang on Windows**: a VS Code extension (0.6's grammar and language server, format on save, explanations); `nexac` for Windows | tested as far as possible without a Windows PC (Wine) |
+| **0.9** ✅ | **Editing NexaLang on Windows**: a VS Code extension (`editors/vscode`: 0.6's grammar and language server, format on save, explanations on hover, as a quick fix and a command), packaged as a `.vsix`; `nexac.exe` for Windows (check, fmt, explain, lsp; build and run say programs are built on NexaOS); `fmt` keeps `\r\n`; modules spelled with the file's capitals everywhere | §5: `nexac.exe` under Wine passes every tool test and gives the same output as the Linux `nexac` on every program; the extension's tests pass with both. Not run on a real Windows PC or VS Code (§6) |
 | later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (images, menus); a hexagon widget; in-place string append; completion in the language server; self-hosting | |

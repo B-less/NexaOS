@@ -26,6 +26,8 @@
 //!   after a line whose code ends in an opening bracket, or before a line starting
 //!   with a closing one. The file ends with one line break.
 //! - Long lines are not split (a line break could change the meaning).
+//! - Line ends are `\n`, or `\r\n` when the file's first line ends that
+//!   way (0.9: files from Windows).
 
 use crate::diag::Diag;
 use crate::lexer::{lex_layout, Tok};
@@ -66,6 +68,18 @@ fn is_close(t: &Tok) -> bool {
 /// being read (formatting needs a file that parses; type mistakes are
 /// fine).
 pub fn format(src: &str) -> Result<String, Diag> {
+    let out = format_lf(src)?;
+    // Keep the file's line ends (0.9): a file from Windows (`\r\n`, as
+    // Notepad, VS Code and git there write it) stays one, so `fmt --check`
+    // agrees on every computer. The first line end decides; strings and
+    // comments can't contain a line break, so only line ends change.
+    match src.find('\n') {
+        Some(i) if i > 0 && src.as_bytes()[i - 1] == b'\r' => Ok(out.replace('\n', "\r\n")),
+        _ => Ok(out),
+    }
+}
+
+fn format_lf(src: &str) -> Result<String, Diag> {
     let lay = lex_layout(src)?;
     parser::parse(lay.toks.clone())?;
     let toks = &lay.toks;
@@ -242,6 +256,18 @@ mod tests {
     }
 
     #[test]
+    fn line_ends_from_windows_are_kept() {
+        let crlf = "fn main(){\r\n// a note\r\nprint( \"a\rb\" )   // one\r\n\r\n\r\n}";
+        let want = "fn main() {\r\n    // a note\r\n    print(\"a\rb\")  // one\r\n}\r\n";
+        assert_eq!(f(crlf), want);
+        assert_eq!(f(want), want);
+        // the first line end decides, for a file with both
+        assert_eq!(f("fn main() {\r\nprint(1)\n}\n"), "fn main() {\r\n    print(1)\r\n}\r\n");
+        assert_eq!(f("fn main() {\nprint(1)\r\n}\r\n"), "fn main() {\n    print(1)\n}\n");
+        assert_eq!(f("fn main() { }"), "fn main() { }\n");
+    }
+
+    #[test]
     fn spacing() {
         assert_eq!(f("fn  main( ) {\nlet x=-1+2*( 3-4 )\nprint( x )\n}"), "fn main() {\n    let x = -1 + 2 * (3 - 4)\n    print(x)\n}\n");
         assert_eq!(
@@ -287,6 +313,7 @@ mod tests {
         assert_eq!(f(""), "");
         assert_eq!(f("\n\n  \n"), "");
         assert_eq!(f("// only\n"), "// only\n");
-        assert_eq!(f("fn main() {\r\n    print(1)\r\n}\r\n"), "fn main() {\n    print(1)\n}\n");
+        // 0.6 turned `\r\n` into `\n`; since 0.9 the file's line ends are kept
+        assert_eq!(f("fn main() {\r\n    print(1)\r\n}\r\n"), "fn main() {\r\n    print(1)\r\n}\r\n");
     }
 }

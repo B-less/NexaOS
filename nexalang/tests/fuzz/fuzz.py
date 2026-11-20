@@ -24,9 +24,11 @@ import concurrent.futures as cf
 import json, os, random, re, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-NEXAC = os.path.abspath(sys.argv[1])
-COUNT = int(sys.argv[2])
-SEED = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+# (imported by tests/windows/differential.py for seeds() and mutate())
+MAIN = __name__ == "__main__"
+NEXAC = os.path.abspath(sys.argv[1]) if MAIN else None
+COUNT = int(sys.argv[2]) if MAIN else 0
+SEED = int(sys.argv[3]) if MAIN and len(sys.argv) > 3 else 1
 # --tools-only: only 0.6's tools, no C builds (much faster)
 TOOLS_ONLY = "--tools-only" in sys.argv[4:]
 FINDINGS = os.path.join(ROOT, "tests", "fuzz", "findings")
@@ -337,4 +339,5 @@ def main():
         print(f"{len(found)} finding(s) in {FINDINGS}")
         sys.exit(1)
 
-main()
+if MAIN:
+    main()
