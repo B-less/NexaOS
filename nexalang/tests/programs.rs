@@ -259,6 +259,41 @@ fn build_writes_a_program() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// 0.10: a shipped program carries no symbol table and no debug info, so
+/// its function names and the toolchain's source paths aren't handed out
+/// with it. The runtime still names the .nx file and line in its messages,
+/// from its own table, not from symbols. `NEXAC_KEEP_SYMBOLS` keeps them
+/// (the valgrind test wants named frames).
+#[test]
+fn shipped_programs_carry_no_symbols() {
+    if !have("nm") {
+        eprintln!("nm (binutils) isn't installed; skipped");
+        return;
+    }
+    let dir = tmpdir("stripped");
+    let src = root().join("examples/hello.nx");
+    let names = |exe: &Path| -> String {
+        String::from_utf8_lossy(&Command::new("nm").arg(exe).output().unwrap().stdout).into_owned()
+    };
+
+    let shipped = dir.join("hello");
+    assert!(nexac().arg("build").arg(&src).arg("-o").arg(&shipped).status().unwrap().success());
+    // nx_trap takes varargs, so it is never inlined away: a reliable witness
+    let s = names(&shipped);
+    assert!(!s.contains("nx_trap") && !s.contains("nx_f_"), "a shipped build still names its functions:\n{}", s);
+    // it still runs
+    let run = Command::new(&shipped).output().unwrap();
+    assert!(run.status.success());
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "Hello from NexaLang on NexaOS!\n");
+
+    let kept = dir.join("hello-dbg");
+    assert!(nexac().env("NEXAC_KEEP_SYMBOLS", "1").arg("build").arg(&src).arg("-o").arg(&kept).status().unwrap().success());
+    assert!(names(&kept).contains("nx_trap"), "NEXAC_KEEP_SYMBOLS should keep the symbols");
+    // and stripping makes it smaller
+    assert!(std::fs::metadata(&shipped).unwrap().len() < std::fs::metadata(&kept).unwrap().len());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// 0.5: nexa-pack projects build into `build/`, which starts out missing.
 #[test]
 fn build_makes_the_output_folder() {
@@ -393,6 +428,76 @@ fn broker_client_talks_to_a_broker() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// ---- the internet (`use network`, 0.10) ------------------------------------
+//
+// tests/network/client.nx against tests/network/server.py: a local HTTPS
+// server with its own certificate (for 127.0.0.1 only), trusted through
+// NEXALANG_TEST_CA. Needs libcurl's headers, python3 and openssl.
+
+fn have_curl() -> bool {
+    Command::new("pkg-config").args(["--exists", "libcurl"]).status().is_ok_and(|s| s.success())
+}
+
+#[test]
+fn network_talks_https_and_keeps_its_rules() {
+    if !have_curl() || !have("python3") || !Command::new("openssl").arg("version").output().is_ok_and(|o| o.status.success()) {
+        eprintln!("libcurl (pkg-config libcurl), python3 or openssl missing; skipped");
+        return;
+    }
+    let dir = tmpdir("network");
+    let mut server = Command::new("python3")
+        .arg(root().join("tests/network/server.py"))
+        .arg(&dir)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(server.stdout.take().unwrap()), &mut line).unwrap();
+    let port = line.trim().strip_prefix("ready ").unwrap_or_else(|| panic!("the test server said `{}`", line.trim())).to_string();
+    // without the test certificate the server isn't trusted: every request
+    // fails (its /stop too, so the server keeps running for the next run)
+    let out = nexac()
+        .arg("run")
+        .arg(root().join("tests/network/client.nx"))
+        .arg(&port)
+        .arg(dir.join("downloads-untrusted"))
+        .output()
+        .unwrap();
+    let got = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(got.starts_with("get_text: error: 127.0.0.1's certificate couldn't be checked, so nothing was sent"), "{}", got);
+    assert!(got.contains("\nstop: error: "), "{}", got);
+    let out = nexac()
+        .arg("run")
+        .arg("--check-memory")
+        .arg(root().join("tests/network/client.nx"))
+        .arg(&port)
+        .arg(dir.join("downloads"))
+        .env("NEXALANG_TEST_CA", dir.join("cert.pem"))
+        .output()
+        .unwrap();
+    let _ = server.kill();
+    let _ = server.wait();
+    let got = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(out.status.success(), "{}\n{}", got, String::from_utf8_lossy(&out.stderr));
+    let want = std::fs::read_to_string(root().join("tests/network/expected.out")).unwrap();
+    for (g, w) in got.lines().zip(want.lines()) {
+        assert_eq!(g, w);
+    }
+    assert_eq!(got.lines().count(), want.lines().count(), "{}", got);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn network_programs_are_built_only_with_libcurl_when_they_use_it() {
+    // a program without `use network` has no libcurl in its C
+    let c = nexac().arg("emit-c").arg(root().join("examples/hello.nx")).output().unwrap();
+    assert!(!String::from_utf8_lossy(&c.stdout).contains("curl/curl.h"));
+    let c = nexac().arg("emit-c").arg(root().join("tests/network/client.nx")).output().unwrap();
+    assert!(c.status.success());
+    let c = String::from_utf8_lossy(&c.stdout);
+    assert!(c.contains("#include <curl/curl.h>") && c.contains("CURLOPT_PROTOCOLS_STR, \"https\""));
+}
+
 // ---- windows (`use ui`, GTK 3) -------------------------------------------
 //
 // tests/ui/*.steps drive a program with real key presses on a private
@@ -414,10 +519,6 @@ fn have_display_tools() -> bool {
     ["Xvfb", "xdotool"].iter().all(|t| Command::new("which").arg(t).output().is_ok_and(|o| o.status.success()))
 }
 
-fn gtk_flags(which: &str) -> Vec<String> {
-    gtk_flags_for(which, false)
-}
-
 /// With GtkSourceView 4 too, for programs that `use editor` (0.8: their C
 /// starts with `#define NX_UI_SOURCE`).
 fn gtk_flags_for(which: &str, source: bool) -> Vec<String> {
@@ -436,6 +537,8 @@ fn ui_programs() -> Vec<PathBuf> {
     let mut v = files("examples/ui");
     v.extend(files("tests/ui"));
     v.extend(nexa_apps().into_iter().map(|a| a.join("src/main.nx")));
+    // without libcurl, programs that use `network` can't be built (0.10)
+    v.retain(|p| have_curl() || !std::fs::read_to_string(p).unwrap_or_default().lines().any(|l| l.trim() == "use network"));
     v
 }
 
@@ -452,6 +555,8 @@ struct Steps {
     file: PathBuf,
     program: PathBuf,
     broker: bool,
+    /// `# network`: the test HTTPS server runs alongside (0.10)
+    net: bool,
 }
 
 /// tests/ui/*.steps, then each NexaLang app's tests/*.steps (0.5).
@@ -471,8 +576,10 @@ fn ui_steps() -> Vec<Steps> {
         .map(|file| {
             let src = std::fs::read_to_string(&file).unwrap();
             let prog = src.lines().next().and_then(|l| l.strip_prefix("# program: ")).unwrap_or_else(|| panic!("{} must start with `# program: PATH`", file.display()));
-            Steps { program: root().join(prog), broker: src.lines().any(|l| l == "# broker"), file }
+            Steps { program: root().join(prog), broker: src.lines().any(|l| l == "# broker"), net: src.lines().any(|l| l == "# network"), file }
         })
+        // without libcurl a window that uses `network` can't be built (0.10)
+        .filter(|s| !s.net || have_curl())
         .collect()
 }
 
@@ -493,11 +600,49 @@ impl FakeBroker {
     }
 }
 
+/// The test HTTPS server (tests/network/server.py) for windows that use
+/// `network` (0.10): its port, and its certificate to trust.
+struct NetServer {
+    child: std::process::Child,
+    port: String,
+    ca: PathBuf,
+}
+
+impl NetServer {
+    fn start(dir: &Path) -> NetServer {
+        let d = dir.join("net");
+        std::fs::create_dir_all(&d).unwrap();
+        let mut child = Command::new("python3").arg(root().join("tests/network/server.py")).arg(&d).stdout(Stdio::piped()).spawn().unwrap();
+        let mut line = String::new();
+        std::io::BufRead::read_line(&mut std::io::BufReader::new(child.stdout.take().unwrap()), &mut line).unwrap();
+        let port = line.trim().strip_prefix("ready ").unwrap_or_else(|| panic!("the test server said `{}`", line.trim())).to_string();
+        NetServer { child, port, ca: d.join("cert.pem") }
+    }
+}
+
+impl Drop for NetServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 impl Drop for FakeBroker {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Driving a window (Xvfb + xdotool, and especially Valgrind's ~20x
+/// slowdown) is timing-sensitive: several at once on one machine starve
+/// each other for the CPU and the X server, and keystrokes sent to a
+/// dialog get dropped. So the window tests take turns on this lock rather
+/// than run at the same time. (Poisoning from a failed test is ignored:
+/// the next one still gets its turn.)
+fn gui_turn() -> std::sync::MutexGuard<'static, ()> {
+    static GUI: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    GUI.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Run `cmd` driven by the steps; returns its output.
@@ -507,11 +652,16 @@ fn drive(s: &Steps, dir: &Path, cmd: &[&std::ffi::OsStr], wait_s: u32, shots: Op
 
 fn drive_env(s: &Steps, dir: &Path, cmd: &[&std::ffi::OsStr], wait_s: u32, shots: Option<&Path>, env: &[(&str, &str)]) -> Output {
     let broker = if s.broker { Some(FakeBroker::start(dir)) } else { None };
+    let net = if s.net { Some(NetServer::start(dir)) } else { None };
     let mut c = Command::new("python3");
     c.arg(root().join("tests/ui/drive.py")).arg(&s.file).arg("--").args(cmd);
     c.env("NX_WINDOW_WAIT", wait_s.to_string());
     if let Some(b) = &broker {
         c.env("NEXA_BROKER_SOCKET", &b.sock);
+    }
+    if let Some(n) = &net {
+        c.env("NX_NET_PORT", &n.port);
+        c.env("NEXALANG_TEST_CA", &n.ca);
     }
     if let Some(d) = shots {
         c.env("NX_SHOTS", d);
@@ -628,6 +778,7 @@ fn windows_driven_by_the_keyboard_do_what_they_should_and_free_all_memory() {
         eprintln!("GTK 3, Xvfb, xdotool or python3 missing; skipped");
         return;
     }
+    let _gui = gui_turn();
     let dir = tmpdir("ui-drive");
     for s in ui_steps() {
         let mut cmd: Vec<&std::ffi::OsStr> = vec![env!("CARGO_BIN_EXE_nexac").as_ref(), "run".as_ref(), "--check-memory".as_ref()];
@@ -647,6 +798,7 @@ fn windows_are_clean_under_address_and_undefined_sanitizers() {
         eprintln!("GTK 3, Xvfb, xdotool or python3 missing; skipped");
         return;
     }
+    let _gui = gui_turn();
     let dir = tmpdir("ui-asan");
     for s in ui_steps() {
         let c = nexac().arg("emit-c").arg(&s.program).output().unwrap();
@@ -654,23 +806,42 @@ fn windows_are_clean_under_address_and_undefined_sanitizers() {
         let cfile = dir.join("prog.c");
         std::fs::write(&cfile, &c.stdout).unwrap();
         let source = String::from_utf8_lossy(&c.stdout).contains("\n#define NX_UI_SOURCE 1\n");
+        let curl = String::from_utf8_lossy(&c.stdout).contains("\n#include <curl/curl.h>\n");
+        let curl_flags = |which: &str| -> Vec<String> {
+            if !curl {
+                return Vec::new();
+            }
+            let o = Command::new("pkg-config").arg(which).arg("libcurl").output().unwrap();
+            String::from_utf8(o.stdout).unwrap().split_whitespace().map(String::from).collect()
+        };
         let exe = dir.join("prog-asan");
         let st = Command::new("gcc")
             .args(["-std=gnu11", "-O1", "-g", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"])
             .args(["-fno-omit-frame-pointer", "-DNX_LEAK_CHECK", "-Wall", "-Wextra", "-Werror"])
             .args(gtk_flags_for("--cflags", source))
+            .args(curl_flags("--cflags"))
             .arg(&cfile)
             .arg("-o")
             .arg(&exe)
             .arg("-lm")
             .args(gtk_flags_for("--libs", source))
+            .args(curl_flags("--libs"))
             .status()
             .unwrap();
         assert!(st.success(), "{} didn't build with sanitizers", s.program.display());
         // leaks are judged below (only the program's own count), so they
         // don't change the exit code here; memory errors still do
+        // The slow unwinder (exact stacks through libraries built without
+        // frame pointers) takes over 10 minutes for churn.steps on musl
+        // (Alpine, NexaOS) against 17 s with the fast one; the program's
+        // own C is built with frame pointers, so its frames are still seen.
+        let asan = if cfg!(target_env = "musl") {
+            "detect_leaks=1:malloc_context_size=60:abort_on_error=0"
+        } else {
+            "detect_leaks=1:fast_unwind_on_malloc=0:malloc_context_size=60:abort_on_error=0"
+        };
         let env = [
-            ("ASAN_OPTIONS", "detect_leaks=1:fast_unwind_on_malloc=0:malloc_context_size=60:abort_on_error=0"),
+            ("ASAN_OPTIONS", asan),
             ("LSAN_OPTIONS", "exitcode=0"),
         ];
         let out = drive_env(&s, &dir, &[exe.as_os_str()], 60, None, &env);
@@ -690,10 +861,12 @@ fn windows_are_clean_under_valgrind() {
         eprintln!("GTK 3, Xvfb, xdotool, python3 or valgrind missing; skipped");
         return;
     }
+    let _gui = gui_turn();
     let dir = tmpdir("ui-vg");
     for s in ui_steps() {
         let exe = dir.join("prog-vg");
-        assert!(nexac().arg("build").arg(&s.program).arg("-o").arg(&exe).status().unwrap().success());
+        // keep the symbols: valgrind names the program's own frames with them
+        assert!(nexac().env("NEXAC_KEEP_SYMBOLS", "1").arg("build").arg(&s.program).arg("-o").arg(&exe).status().unwrap().success());
         let log = dir.join("vg.log");
         let supp = format!("--suppressions={}", root().join("tests/ui/valgrind.supp").display());
         let logf = format!("--log-file={}", log.display());
@@ -709,7 +882,13 @@ fn windows_are_clean_under_valgrind() {
             "--errors-for-leak-kinds=none".as_ref(),
             exe.as_os_str(),
         ];
-        let out = drive(&s, &dir, &args, 180, None);
+        // a ceiling, not a wait: churn.steps takes 213 s on Alpine here.
+        // Keystrokes are spaced further apart: the program reads them slowly
+        // under valgrind, so at the usual spacing it drops typed text and
+        // Returns (file-chooser dialogs then never close); and a file
+        // chooser still busy completing a typed name swallows the Enter, so
+        // a dialog still open and focused after 30 s gets the key again.
+        let out = drive_env(&s, &dir, &args, 600, None, &[("NX_KEY_DELAY_SCALE", "4"), ("NX_GONE_RETRY", "30")]);
         let report = std::fs::read_to_string(&log).unwrap_or_default();
         assert!(out.status.success(), "{} under valgrind ({:?}):\n{}\n{}", s.file.display(), out.status.code(), String::from_utf8_lossy(&out.stderr), report);
         let mine = own_leaks(&report, &["definitely lost"], &exe.display().to_string());
@@ -725,12 +904,13 @@ fn window_misuse_stops_with_a_message_in_the_programs_own_file() {
         eprintln!("GTK 3, Xvfb, xdotool or python3 missing; skipped");
         return;
     }
+    let _gui = gui_turn();
     let dir = tmpdir("ui-trap");
     let empty = dir.join("none.steps");
     std::fs::write(&empty, "# program: none\n").unwrap();
     for p in files("tests/ui/trap") {
         let want = expectation(&p, "trap");
-        let s = Steps { file: empty.clone(), program: p.clone(), broker: false };
+        let s = Steps { file: empty.clone(), program: p.clone(), broker: false, net: false };
         let cmd: Vec<&std::ffi::OsStr> = vec![env!("CARGO_BIN_EXE_nexac").as_ref(), "run".as_ref(), "--check-memory".as_ref(), p.as_os_str()];
         let out = drive(&s, &dir, &cmd, 30, None);
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -748,9 +928,10 @@ fn windows_follow_the_theme_live() {
         eprintln!("GTK 3, Xvfb, xdotool, python3 or ImageMagick missing; skipped");
         return;
     }
+    let _gui = gui_turn();
     let dir = tmpdir("ui-theme");
     let shots = dir.join("shots");
-    let s = Steps { file: root().join("tests/ui/theme.steps"), program: root().join("tests/ui/widgets.nx"), broker: false };
+    let s = Steps { file: root().join("tests/ui/theme.steps"), program: root().join("tests/ui/widgets.nx"), broker: false, net: false };
     let cmd: Vec<&std::ffi::OsStr> = vec![env!("CARGO_BIN_EXE_nexac").as_ref(), "run".as_ref(), s.program.as_os_str()];
     let out = drive(&s, &dir, &cmd, 30, Some(&shots));
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -843,6 +1024,7 @@ fn window_designer_programs_build_and_show_what_the_preview_showed() {
         eprintln!("GTK 3, Xvfb, xdotool or python3 missing; skipped");
         return;
     }
+    let _gui = gui_turn();
     let dir = tmpdir("designer-programs");
     let tests = root().join("../apps/window-designer/tests");
     let mut outs: Vec<PathBuf> = std::fs::read_dir(&tests).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "out")).collect();
@@ -863,7 +1045,7 @@ fn window_designer_programs_build_and_show_what_the_preview_showed() {
             assert!(b.status.success(), "{}: didn't build:\n{}", name, String::from_utf8_lossy(&b.stderr));
             let steps = dir.join("designed.steps");
             std::fs::write(&steps, format!("# program: none\nwindow {}\nkey ctrl+shift+F12\nkey Escape\n", title_pattern(&program))).unwrap();
-            let s = Steps { file: steps, program: prog.clone(), broker: false };
+            let s = Steps { file: steps, program: prog.clone(), broker: false, net: false };
             let cmd: Vec<&std::ffi::OsStr> = vec![env!("CARGO_BIN_EXE_nexac").as_ref(), "run".as_ref(), "--check-memory".as_ref(), prog.as_os_str()];
             let run = drive(&s, &dir, &cmd, 30, None);
             assert!(run.status.success(), "{}: failed ({:?}):\n{}", name, run.status.code(), String::from_utf8_lossy(&run.stderr));
@@ -897,7 +1079,11 @@ fn run_shows_output_as_it_happens_and_leaves_nothing_behind() {
     // the program is running and its file is already gone
     assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "left in the temporary folder while running");
     let pgid = format!("-{}", child.id());
-    assert!(Command::new("kill").args(["-TERM", "--", &pgid]).status().unwrap().success());
+    // GNU kill needs `--` before a negative number; BusyBox's (Alpine,
+    // NexaOS) refuses it
+    let stopped = Command::new("kill").args(["-s", "TERM", "--", &pgid]).stderr(Stdio::null()).status().unwrap().success()
+        || Command::new("kill").args(["-s", "TERM", &pgid]).status().unwrap().success();
+    assert!(stopped, "couldn't stop the program's process group");
     let _ = child.wait();
     assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "left behind after being stopped");
     // a build that fails leaves nothing either

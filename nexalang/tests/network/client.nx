@@ -1,0 +1,135 @@
+// The `network` module against tests/network/server.py (a local HTTPS
+// server whose certificate is trusted through NEXALANG_TEST_CA).
+// Arguments: the server's port, then an empty folder for downloads.
+use network
+use json
+use files
+
+fn say(what: str, r: !str) {
+    match r {
+        ok(v) => { print("{what}: {v}") }
+        err(e) => { print("{what}: error: {e}") }
+    }
+}
+
+// messages without the run's own folder in them
+fn in_dir(r: !str, dir: str) -> !str {
+    match r {
+        ok(v) => { return ok(replace(v, dir, "DIR")) }
+        err(e) => { return err(replace(e, dir, "DIR")) }
+    }
+}
+
+fn status_of(r: !HttpResponse) -> !str {
+    let a = r?
+    return ok("{a.status} [{a.content_type}] {a.body}")
+}
+
+fn json_text(r: !Json) -> !str {
+    return ok(json.to_text(r?))
+}
+
+fn size_of(path: str) -> !str {
+    return ok("{files.size(path)?}")
+}
+
+fn saved(r: !int) -> !str {
+    return ok("{r?} bytes")
+}
+
+fn main() -> !void {
+    let a = args()
+    let base = "https://127.0.0.1:{a[0]}"
+    let dir = a[1]
+
+    // ---- ordinary use ----
+    say("get_text", network.get_text("{base}/hello"))
+    say("get_json", json_text(network.get_json("{base}/json")))
+    say("redirect", network.get_text("{base}/redirect"))
+    say("gzip", network.get_text("{base}/gzip"))
+    say("404 as an answer", status_of(network.get("{base}/status/404")))
+    say("404 as text", network.get_text("{base}/status/404"))
+    say("503 as json", json_text(network.get_json("{base}/status/503")))
+    say("204", status_of(network.get("{base}/empty")))
+    say("post_json", json_text(network.post_json("{base}/echo", json.obj([json.field("city", Json.Text("Kumasi")), json.field("days", Json.Num(3.0))]))))
+    var put = network.request("PUT", network.with_query("{base}/echo", [network.param("q", "tea & cake"), network.param("x", "é")]))
+    put.body = "plain body"
+    push(put.headers, network.header("X-Test", "yes"))
+    push(put.headers, network.header("X-Empty", ""))
+    push(put.headers, network.header("Authorization", "Bearer t0ken"))
+    say("put", status_of(network.send(put)))
+    say("delete", status_of(network.send(network.request("DELETE", "{base}/echo"))))
+    say("head", status_of(network.send(network.request("HEAD", "{base}/hello"))))
+    match network.get("{base}/headers") {
+        ok(h) => {
+            print("headers: {len(h.headers)}, etag {unwrap_or(network.header_value(h, "ETAG"), "-")}, x-one {unwrap_or(network.header_value(h, "x-one"), "-")}, missing {unwrap_or(network.header_value(h, "x-none"), "-")}")
+            print("succeeded: {network.succeeded(h)}, ends with /headers: {ends_with(h.url, "/headers")}")
+        }
+        err(e) => { print("headers: error: {e}") }
+    }
+    // a cookie the server set is not sent back
+    say("no cookies kept", json_text(network.get_json("{base}/echo/cookie")))
+    say("html as json", json_text(network.get_json("{base}/html")))
+
+    // ---- limits ----
+    var small = network.request("GET", "{base}/big")
+    small.max_bytes = 1048576
+    say("too big (length known)", status_of(network.send(small)))
+    var chunked = network.request("GET", "{base}/big-chunked")
+    chunked.max_bytes = 1048576
+    say("too big (chunked)", status_of(network.send(chunked)))
+    var bomb = network.request("GET", "{base}/bomb")
+    bomb.max_bytes = 1048576
+    say("gzip bomb", status_of(network.send(bomb)))
+    var slow = network.request("GET", "{base}/slow")
+    slow.timeout_ms = 500
+    say("too slow", status_of(network.send(slow)))
+    say("binary as text", network.get_text("{base}/binary"))
+    say("closed", network.get_text("{base}/close"))
+    say("redirect loop", network.get_text("{base}/loop"))
+    say("redirect to http", network.get_text("{base}/to-http"))
+    say("wrong certificate name", network.get_text("https://localhost:{a[0]}/hello"))
+    say("nobody listening", network.get_text("https://127.0.0.1:1/hello"))
+
+    // ---- refused before anything is sent ----
+    say("http", network.get_text("http://127.0.0.1:{a[0]}/hello"))
+    say("ftp", network.get_text("ftp://example.org/x"))
+    say("no scheme", network.get_text("example.org/x"))
+    say("space", network.get_text("https://example.org/a b"))
+    say("password in address", network.get_text("https://me:secret@127.0.0.1:{a[0]}/hello"))
+    say("empty", network.get_text(""))
+    say("bad method", status_of(network.send(network.request("get", "{base}/hello"))))
+    var get_body = network.request("GET", "{base}/echo")
+    get_body.body = "x"
+    say("GET with a body", status_of(network.send(get_body)))
+    var crlf = network.request("GET", "{base}/echo")
+    push(crlf.headers, network.header("X-Test", "a\r\nX-Evil: 1"))
+    say("line break in a header", status_of(network.send(crlf)))
+    var host = network.request("GET", "{base}/echo")
+    push(host.headers, network.header("Host", "evil.example"))
+    say("Host header", status_of(network.send(host)))
+    var bad_name = network.request("GET", "{base}/echo")
+    push(bad_name.headers, network.header("X Test", "1"))
+    say("header name", status_of(network.send(bad_name)))
+    var no_time = network.request("GET", "{base}/hello")
+    no_time.timeout_ms = 0
+    say("time limit 0", status_of(network.send(no_time)))
+    var huge = network.request("GET", "{base}/hello")
+    huge.max_bytes = 1073741824
+    say("size limit too big", status_of(network.send(huge)))
+
+    // ---- downloads: all or nothing ----
+    files.make_dir(dir)?
+    let png = files.join_path(dir, "dot.png")
+    say("download", saved(network.download("{base}/binary", png)))
+    say("downloaded size", size_of(png))
+    say("download 404", saved(network.download("{base}/status/404", files.join_path(dir, "missing.png"))))
+    var cut = network.request("GET", "{base}/big")
+    cut.max_bytes = 1000
+    say("download too big", saved(network.save(cut, files.join_path(dir, "big.txt"))))
+    say("download into a missing folder", in_dir(saved(network.download("{base}/binary", files.join_path(dir, "no/such/x.png"))), dir))
+    say("folder afterwards", ok(join(files.list(dir)?, ", ")))
+
+    say("stop", network.get_text("{base}/stop"))
+    return ok()
+}

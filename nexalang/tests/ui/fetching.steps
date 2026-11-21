@@ -1,0 +1,21 @@
+# program: tests/ui/fetching.nx
+# network
+window Network
+type $NETPORT
+key ctrl+f
+# long waits: under Valgrind a TLS handshake takes seconds
+wait 10
+key ctrl+shift+F12
+# a request that takes 3 seconds: while it runs the window still draws
+# (the widget list prints) but takes no clicks (Ctrl+M does nothing)
+key ctrl+s
+wait 1
+key ctrl+shift+F12
+shot fetching-waiting
+key ctrl+m
+wait 12
+key ctrl+shift+F12
+key ctrl+m
+wait 10
+key ctrl+shift+F12
+key Escape

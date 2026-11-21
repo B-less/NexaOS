@@ -1,0 +1,301 @@
+// Standard module `network` (0.10): ask a web server something, over HTTPS.
+//
+//   use network
+//   use json
+//
+//   fn main() -> !void {
+//       let w = network.get_json("https://api.example.org/weather?city=Accra")?
+//       print(json.pretty(w))
+//       return ok()
+//   }
+//
+// Rules the runtime keeps, whatever the program asks:
+// - Only https:// addresses, and redirects only to https:// addresses.
+//   The server's certificate is always checked (TLS 1.2 or newer); there's
+//   no way to switch that off.
+// - Every request has a time limit (30 seconds unless the request says
+//   otherwise) and a size limit on the answer (16 MiB in memory unless the
+//   request says otherwise; up to 256 MiB). An answer that grows past it
+//   is stopped, compressed or not.
+// - Nothing is kept between requests: no cookies, no saved passwords.
+// - An answer is untrusted: text that isn't UTF-8 is refused (save it to a
+//   file with `download` instead), and nothing downloaded is ever run.
+//
+// Installed apps need the `network` permission in nexa.toml (and the
+// person can switch it off in Settings); without it every request fails
+// with a message saying so. In a window (`use ui`), the window keeps
+// drawing while a request runs, but takes no clicks until it's done.
+use json
+
+// One header of a request or an answer: `Accept: application/json`.
+pub struct HttpHeader {
+    name: str
+    value: str
+}
+
+// One part of an address's query: `city=Accra`.
+pub struct HttpParam {
+    name: str
+    value: str
+}
+
+// A request, for when `get`, `get_json` and `post_json` aren't enough.
+// Make one with `request(method, url)`, then change what you need:
+//
+//   var req = network.request("PUT", url)
+//   req.body = json.to_text(item)
+//   push(req.headers, network.header("Content-Type", "application/json"))
+//   req.timeout_ms = 10000
+//   let answer = network.send(req)?
+pub struct HttpRequest {
+    method: str  // GET, POST, PUT, PATCH, DELETE or HEAD
+    url: str     // https:// only
+    headers: [HttpHeader]
+    body: str        // sent as it is; "" sends nothing
+    timeout_ms: int  // the whole request, connecting included
+    max_bytes: int   // the biggest answer accepted
+}
+
+// What the server answered.
+pub struct HttpResponse {
+    status: int            // 200, 404, ...
+    url: str               // where the answer came from (after redirects)
+    content_type: str      // "application/json", "" when the server didn't say
+    headers: [HttpHeader]  // as the server sent them (the last answer's, after redirects)
+    body: str
+}
+
+// ---------- building requests ----------
+
+pub fn header(name: str, value: str) -> HttpHeader {
+    return HttpHeader { name: name, value: value }
+}
+
+pub fn param(name: str, value: str) -> HttpParam {
+    return HttpParam { name: name, value: value }
+}
+
+// A request with no headers and no body, 30 seconds and 16 MiB at most.
+pub fn request(method: str, url: str) -> HttpRequest {
+    let no_headers: [HttpHeader] = []
+    return HttpRequest { method: method, url: url, headers: no_headers, body: "", timeout_ms: 30000, max_bytes: 16777216 }
+}
+
+// Text made safe for one part of an address: letters, digits and `-._~`
+// stay; everything else becomes %XX (UTF-8 bytes). `encode("a b&c")` is
+// "a%20b%26c".
+pub fn encode(text: str) -> str {
+    let hex = "0123456789ABCDEF"
+    var parts: [str] = []
+    for i in 0..len(text) {
+        let b = byte_at(text, i)
+        let plain = (b >= 48 and b <= 57) or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 45 or b == 46 or b == 95 or b == 126
+        if plain {
+            push(parts, char_from_code(b))
+        } else {
+            push(parts, "%" + slice(hex, b / 16, b / 16 + 1) + slice(hex, b % 16, b % 16 + 1))
+        }
+    }
+    return join(parts, "")
+}
+
+// The address with these query parts added, each encoded:
+// `with_query("https://x.org/find", [param("q", "tea & cake")])` is
+// "https://x.org/find?q=tea%20%26%20cake".
+pub fn with_query(url: str, params: [HttpParam]) -> str {
+    if len(params) == 0 {
+        return url
+    }
+    var parts: [str] = []
+    for p in params {
+        push(parts, "{encode(p.name)}={encode(p.value)}")
+    }
+    var sep = "?"
+    match find(url, "?") {
+        some(_) => {
+            sep = "&"
+            if ends_with(url, "?") or ends_with(url, "&") {
+                sep = ""
+            }
+        }
+        none => { }
+    }
+    return url + sep + join(parts, "&")
+}
+
+// ---------- sending ----------
+
+// Send a request and return the answer, whatever its status (a 404 is an
+// answer, not an error). Errors are what kept an answer from arriving:
+// no internet, a wrong address, a certificate that doesn't check out, too
+// slow, too big.
+pub fn send(req: HttpRequest) -> !HttpResponse {
+    let parts = __net_request(req.method, req.url, flat(req.headers), req.body, req.timeout_ms, req.max_bytes, "")?
+    return ok(response_from(parts))
+}
+
+// GET the address; the answer whatever its status.
+pub fn get(url: str) -> !HttpResponse {
+    return send(request("GET", url))
+}
+
+// GET the address; its text, when the status is 2xx (an error otherwise).
+pub fn get_text(url: str) -> !str {
+    let answer = must_succeed(get(url)?)?
+    return ok(answer.body)
+}
+
+// GET the address and read its JSON (status 2xx).
+pub fn get_json(url: str) -> !Json {
+    var req = request("GET", url)
+    push(req.headers, header("Accept", "application/json"))
+    let answer = must_succeed(send(req)?)?
+    return read_json(answer)
+}
+
+// POST JSON to the address and read the JSON it answers (status 2xx);
+// an empty answer is `Json.Null`.
+pub fn post_json(url: str, body: Json) -> !Json {
+    var req = request("POST", url)
+    req.body = json.to_text(body)
+    push(req.headers, header("Content-Type", "application/json"))
+    push(req.headers, header("Accept", "application/json"))
+    let answer = must_succeed(send(req)?)?
+    return read_json(answer)
+}
+
+// Save what the address answers to a file, all or nothing: it's written
+// next to `path` first and only put in place once it has all arrived with
+// a 2xx status. Any kind of file (pictures, archives), up to 1 GiB.
+// Returns the number of bytes saved.
+pub fn download(url: str, path: str) -> !int {
+    var req = request("GET", url)
+    req.timeout_ms = 600000
+    req.max_bytes = 1073741824
+    return save(req, path)
+}
+
+// `download` for a request you made, with its own limits.
+pub fn save(req: HttpRequest, path: str) -> !int {
+    if path == "" {
+        return err("can't save the download: the path is empty")
+    }
+    let parts = __net_request(req.method, req.url, flat(req.headers), req.body, req.timeout_ms, req.max_bytes, path)?
+    let answer = must_succeed(response_from(parts))?
+    match parse_int(answer.body) {
+        some(n) => { return ok(n) }
+        none => { return err("the download's size couldn't be read") }
+    }
+}
+
+// ---------- reading answers ----------
+
+// A header of the answer by name, ignoring capitals (`header_value(a,
+// "etag")`); the last one when the server sent it twice.
+pub fn header_value(answer: HttpResponse, name: str) -> ?str {
+    let want = to_lower(name)
+    var found: ?str = none
+    for h in answer.headers {
+        if to_lower(h.name) == want {
+            found = some(h.value)
+        }
+    }
+    return found
+}
+
+// True for 200-299.
+pub fn succeeded(answer: HttpResponse) -> bool {
+    return answer.status >= 200 and answer.status <= 299
+}
+
+// ---------- inside ----------
+
+// [name, value, name, value, ...] for the runtime
+fn flat(headers: [HttpHeader]) -> [str] {
+    var out: [str] = []
+    for h in headers {
+        push(out, h.name)
+        push(out, h.value)
+    }
+    return out
+}
+
+// The runtime answers [status, url, content type, body, name, value, ...].
+fn response_from(parts: [str]) -> HttpResponse {
+    var headers: [HttpHeader] = []
+    var i = 4
+    while i + 1 < len(parts) {
+        push(headers, HttpHeader { name: parts[i], value: parts[i + 1] })
+        i += 2
+    }
+    return HttpResponse { status: unwrap_or(parse_int(parts[0]), 0), url: parts[1], content_type: parts[2], headers: headers, body: parts[3] }
+}
+
+fn host_of(url: str) -> str {
+    var rest = url
+    match find(rest, "://") {
+        some(i) => { rest = slice(rest, i + 3, len(rest)) }
+        none => { }
+    }
+    for sep in ["/", "?", "#"] {
+        match find(rest, sep) {
+            some(i) => { rest = slice(rest, 0, i) }
+            none => { }
+        }
+    }
+    if starts_with(rest, "[") {
+        // [::1]:8443
+        match find(rest, "]") {
+            some(i) => { return slice(rest, 1, i) }
+            none => { return rest }
+        }
+    }
+    match find(rest, ":") {
+        some(i) => { return slice(rest, 0, i) }
+        none => { return rest }
+    }
+}
+
+fn status_words(status: int) -> str {
+    match status {
+        400 => { return " Bad Request" }
+        401 => { return " Unauthorized: it needs you to sign in" }
+        403 => { return " Forbidden: it refused" }
+        404 => { return " Not Found: there's nothing at that address" }
+        405 => { return " Method Not Allowed" }
+        408 => { return " Request Timeout" }
+        409 => { return " Conflict" }
+        410 => { return " Gone" }
+        413 => { return " Content Too Large" }
+        415 => { return " Unsupported Media Type" }
+        422 => { return " Unprocessable Content" }
+        429 => { return " Too Many Requests: try again later" }
+        500 => { return " Internal Server Error: the server has a problem" }
+        502 => { return " Bad Gateway" }
+        503 => { return " Service Unavailable: try again later" }
+        504 => { return " Gateway Timeout" }
+        _ => { return "" }
+    }
+}
+
+fn must_succeed(answer: HttpResponse) -> !HttpResponse {
+    if succeeded(answer) {
+        return ok(answer)
+    }
+    return err("{host_of(answer.url)} answered {answer.status}{status_words(answer.status)}")
+}
+
+fn read_json(answer: HttpResponse) -> !Json {
+    if trim(answer.body) == "" {
+        return ok(Json.Null)
+    }
+    match json.parse(answer.body) {
+        ok(j) => { return ok(j) }
+        err(e) => {
+            if starts_with(answer.content_type, "text/html") {
+                return err("{host_of(answer.url)} answered with a web page, not JSON")
+            }
+            return err("{host_of(answer.url)}'s answer isn't JSON ({e})")
+        }
+    }
+}

@@ -1,0 +1,50 @@
+get_text: hello
+
+get_json: {"name":"Ama","n":3}
+redirect: hello
+
+gzip: unpacked fine ✓
+
+404 as an answer: 404 [text/plain; charset=utf-8] nope
+404 as text: error: 127.0.0.1 answered 404 Not Found: there's nothing at that address
+503 as json: error: 127.0.0.1 answered 503 Service Unavailable: try again later
+204: 204 [] 
+post_json: {"body":"{\"city\":\"Kumasi\",\"days\":3}","headers":{"accept":"application/json","content-type":"application/json","user-agent":"NexaLang/0.10"},"method":"POST","path":"/echo"}
+put: 200 [application/json] {"body": "plain body", "headers": {"accept": "*/*", "authorization": "Bearer t0ken", "user-agent": "NexaLang/0.10", "x-empty": "", "x-test": "yes"}, "method": "PUT", "path": "/echo?q=tea%20%26%20cake&x=%C3%A9"}
+delete: 200 [application/json] {"body": "", "headers": {"accept": "*/*", "user-agent": "NexaLang/0.10"}, "method": "DELETE", "path": "/echo"}
+head: 200 [text/plain; charset=utf-8] 
+headers: 8, etag "abc", x-one 2, missing -
+succeeded: true, ends with /headers: true
+no cookies kept: {"body":"","headers":{"accept":"application/json","user-agent":"NexaLang/0.10"},"method":"GET","path":"/echo/cookie"}
+html as json: error: 127.0.0.1 answered with a web page, not JSON
+too big (length known): error: the answer from 127.0.0.1 is bigger than 1 MiB, so it was stopped
+too big (chunked): error: the answer from 127.0.0.1 is bigger than 1 MiB, so it was stopped
+gzip bomb: error: the answer from 127.0.0.1 is bigger than 1 MiB, so it was stopped
+too slow: error: no answer from 127.0.0.1 within 0.5 seconds
+binary as text: error: the answer from 127.0.0.1 isn't text (image/png): save it to a file with network.download instead
+closed: error: the connection to 127.0.0.1 broke before the answer was complete
+redirect loop: error: 127.0.0.1 sent the request on too many times (more than 5 redirects)
+redirect to http: error: 127.0.0.1 sent the request on to an address that isn't https://, so it was stopped
+wrong certificate name: error: localhost's certificate couldn't be checked, so nothing was sent: it may not be the real localhost (or this computer's clock is wrong)
+nobody listening: error: 127.0.0.1 refused the connection
+http: error: only https:// addresses are allowed, so nothing can be read or changed on the way (this one starts with http://)
+ftp: error: the address must start with https:// ("ftp://example.org/x")
+no scheme: error: the address must start with https:// ("example.org/x")
+space: error: the address has a space or a control character in it (use network.encode for the parts of an address)
+password in address: error: the address has a name or password in it; send those in a header instead, where they aren't logged with the address
+empty: error: the address is empty
+bad method: error: the method must be GET, POST, PUT, PATCH, DELETE or HEAD (not "get")
+GET with a body: error: a GET request can't have a body
+line break in a header: error: the X-Test header has a line break or a zero byte in it
+Host header: error: the Host header is set by the network module itself
+header name: error: "X Test" can't be a header's name (letters, digits and !#$%&'*+-.^_`|~ only)
+time limit 0: error: the time limit must be 1 to 600000 ms (10 minutes), not 0
+size limit too big: error: the size limit must be 1 byte to 256 MiB, not 1073741824
+download: 66 bytes
+downloaded size: 66
+download 404: error: 127.0.0.1 answered 404 Not Found: there's nothing at that address
+download too big: error: the answer from 127.0.0.1 is bigger than 1000 bytes, so it was stopped
+download into a missing folder: error: can't save the download as DIR/no/such/x.png: it doesn't exist
+folder afterwards: dot.png
+stop: bye
+

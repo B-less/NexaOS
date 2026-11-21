@@ -24,10 +24,17 @@ use std::collections::{BTreeMap, HashSet};
 pub const RUNTIME: &str = include_str!("runtime.h");
 /// Windows (GTK 3): only in programs that `use ui`.
 pub const RUNTIME_UI: &str = include_str!("runtime_ui.h");
+/// HTTPS through libcurl (0.10): only in programs that `use network`.
+pub const RUNTIME_NET: &str = include_str!("runtime_net.h");
 
 /// Whether the program uses the standard module `ui` (and so needs GTK).
 pub fn uses_ui(mods: &[Module]) -> bool {
     mods.iter().any(|m| m.is_std && m.name == "ui")
+}
+
+/// Programs that `use network` (0.10) get libcurl; others don't link it.
+pub fn uses_network(mods: &[Module]) -> bool {
+    mods.iter().any(|m| m.is_std && m.name == "network")
 }
 
 /// Programs that `use editor` (0.8) also get GtkSourceView 4; others don't
@@ -179,6 +186,9 @@ pub fn generate(mods: &[Module], checked: &Checked, lines: bool) -> String {
             out += &format!("static const char NX_UI_SCHEME[] = {};\n", c_string_literal(EDITOR_SCHEME.as_bytes()));
         }
         out += RUNTIME_UI;
+    }
+    if uses_network(mods) {
+        out += RUNTIME_NET;
     }
     out += "\n/* ---- types ---- */\n";
     out += &types;
@@ -1001,12 +1011,28 @@ impl<'a> Gen<'a> {
                     let c = self.take(v, pt);
                     inits.push(format!(".a{} = {}", i, c));
                 }
-                let init = if inits.is_empty() {
-                    format!("{{ .tag = {} }}", tag)
-                } else {
-                    format!("{{ .tag = {}, .u.v_{} = {{ {} }} }}", tag, vn, inits.join(", "))
-                };
-                self.temp(&e.ty, init, true)
+                if inits.is_empty() {
+                    return self.temp(&e.ty, format!("{{ .tag = {} }}", tag), true);
+                }
+                // Zeroed first, then filled (0.10): an initializer naming one
+                // member of the union leaves the bytes of a bigger member
+                // unset, and copying the value then reads them; gcc 15 on
+                // Alpine (NexaOS) calls that "may be used uninitialized",
+                // which -Werror makes a failed build.
+                let n = self.new_tmp();
+                let ct = self.ctype(&e.ty);
+                self.line(format!("{} {};", ct, n));
+                self.line(format!("memset(&{}, 0, sizeof {});", n, n));
+                self.line(format!("{}.tag = {};", n, tag));
+                for init in inits {
+                    // ".aN = VALUE"
+                    self.line(format!("{}.u.v_{}{};", n, vn, init));
+                }
+                let owned = self.managed(&e.ty);
+                if owned {
+                    self.own(&n, &e.ty);
+                }
+                CVal { code: n, owned }
             }
             ExprKind::Call(name, args) => self.call(name, args, e),
         }

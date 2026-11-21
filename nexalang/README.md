@@ -1,6 +1,6 @@
 # NexaLang: the programming language of NexaOS
 
-Started 2026-11-16. Current version **0.9** (compiler `nexac`, in `nexalang/`).
+Started 2026-11-16. Current version **0.10** (compiler `nexac`, in `nexalang/`).
 
 NexaLang is a small, safe, readable language for writing NexaOS programs.
 The compiler `nexac` (Rust, no dependencies) turns a `.nx` file into C11
@@ -69,6 +69,22 @@ nexa-pack verify dist/my-app-0.1.0.nexa
 ```
 
 `apps/focus-timer` is a complete NexaOS app written in NexaLang.
+
+Asking a web server, over HTTPS only (0.10):
+
+```nx
+use network
+use json
+
+fn main() -> !void {
+    let url = network.with_query("https://geocoding-api.open-meteo.com/v1/search", [network.param("name", "Accra")])
+    let found = network.get_json(url)?
+    print(json.pretty(found))
+    return ok()
+}
+```
+
+`examples/ui/weather.nx` is a weather window built on it.
 
 ```sh
 nexac run hello.nx                  # build and run
@@ -231,9 +247,20 @@ and for the compiler itself.
 | **`nexac lsp --stdio` is accepted, and the extension gives no transport** (0.9) | `vscode-languageclient` adds `--stdio` to the arguments when told the transport is stdio (found by reading its code before the first run); 0.6's `nexac lsp` refused any argument. Now it accepts that one (many editors' clients add it), and the extension says nothing about the transport, which means stdin/stdout without the extra argument. Both are tested | Leaving it (the server wouldn't start in VS Code) |
 | **The extension is plain JavaScript, with no build step** (0.9) | What runs in VS Code is exactly the file that's reviewed and tested; no TypeScript compiler, bundler or source maps between them. Its one dependency (`vscode-languageclient`) is pinned with `package-lock.json` and packed into the `.vsix` by `vsce` | TypeScript + a bundler (a build step whose output nobody reads) |
 | **Binaries aren't committed: `editors/windows/build.sh` makes `dist/nexac.exe` and the `.vsix`** (0.9) | The repository has no built programs in it (packages are built by scripts); a committed `.exe` couldn't be checked against its source. The script builds the same bytes each time (tested: two folders, the same `nexac.exe`) | Committing `nexac.exe` and the `.vsix` |
+| **The internet is one standard module, `network`, over libcurl; only programs that `use network` link it** (0.10) | libcurl is already in NexaOS (curl, Mail), does TLS with the system's certificates, HTTP/2, redirects and gzip, and is among the most tested network code there is. The same rule as GTK for `ui`: a program says what it needs at the top, `nexac` adds `pkg-config libcurl`'s flags only then | Our own HTTP and TLS (years of security work to get right); a separate `curl` program per request (a process per request, and arguments to keep safe) |
+| **The rules are kept in C, not in `network.nx`** (0.10) | https:// only (redirects too), the certificate always checked, TLS 1.2 or newer, a time limit and a size limit on every request, no cookies, header names checked and line breaks refused in values (so a value can't add a second header or request), `Host`, `Content-Length`, `Transfer-Encoding` and the other framing headers set only by the module, addresses with a name or password in them refused. WRITING_NEXA_APPS.md: "Network only with the `network` permission, HTTPS only". A program can build any request it likes; it can't build one that breaks these | Options to switch checking off (the classic way certificate checks end up off in shipped apps); `http://` for "local" servers (the network between isn't always local) |
+| **Errors are what kept an answer from arriving; a 404 is an answer** (0.10) | `send` and `get` give back every status with its body, so a program can read an API's own error message. `get_text`, `get_json`, `post_json` and `download` treat anything but 2xx as an error, with the status in words ("api.example.org answered 404 Not Found: there's nothing at that address") | Every non-2xx an error everywhere (the server's explanation is lost); none (every simple call needs a status check) |
+| **Every failure in plain words, from curl's codes and the OS's** (0.10) | "can't find api.example.org: check the address, and that this computer is online", "no answer from ... within 30 seconds", "...'s certificate couldn't be checked, so nothing was sent", and, when Landlock refuses the connection (`EACCES` from `connect`), "NexaOS didn't let this program use the internet: an app needs the `network` permission" | curl's own messages ("SSL certificate problem: unable to get local issuer certificate") |
+| **Limits by default, changeable per request** (0.10) | 30 seconds and 16 MiB unless the request says otherwise; at most 10 minutes, 256 MiB in memory or 1 TiB to a file. The size counts what's unpacked, so a small gzip "bomb" is stopped at the limit, not after filling memory | No limit (one request can take all memory); a fixed one (a big download impossible) |
+| **Answers are text; anything else is saved to a file** (0.10) | Every `str` is valid UTF-8 (0.3), so an answer that isn't is refused with a pointer to `download`, which writes the bytes to a file all or nothing (next to it first, put in place only once it's all there with a 2xx status) | A bytes type (a language change for one module); turning bad bytes into `�` (a picture silently ruined) |
+| **A request is a struct you change, not a function with ten parameters** (0.10) | `var req = network.request("PUT", url)`, then `req.body = ...`, `push(req.headers, ...)`, `req.timeout_ms = ...`: every field has a name, and the defaults are in one place. Values copy, so changing one request never changes another | Optional arguments (NexaLang has none); one function per combination |
+| **Its types are called `HttpRequest`, `HttpResponse`, `HttpHeader`, `HttpParam`** (0.10) | Type names are shared by all the files of a program (0.3), so `Response` would clash with a program's own `Response` | Short names |
+| **In a window, a request runs on a helper thread while the window keeps drawing and takes no clicks** (0.10) | The same way as the broker's requests (0.4): the program's code stays in order (no callbacks, no events to match up), and nothing can be clicked half-way. libcurl runs on the helper thread with plain C buffers only; NexaLang values are made afterwards on the main thread | An event per answer (`Fetched(n)`; a new `UiEvent` kind breaks every `match` that lists them all, 0.8's lesson, and few programs need two requests at once): later, if apps need it |
+| **`nexac build` strips the program** (0.10) | What you hand out shouldn't carry your function names or the build machine's paths, and needn't: runtime errors come from the runtime's own file-and-line table. `nexac run` and `--check-memory` keep the symbols (debuggers, sanitizers), as does `NEXAC_KEEP_SYMBOLS=1`. The `.nx` file's name (not its folder) stays in, for those error messages | Leaving symbols in (easier to read back); obfuscation (security by obscurity, and harder to debug real crashes) |
+| **`NEXALANG_TEST_CA` for tests** (0.10) | The tests need a local HTTPS server with its own certificate. Like `NEXA_BROKER_SOCKET` it only changes the program's own requests, and checking stays on: it names the certificates to trust, it doesn't switch trust off | An option in the language (it would end up in apps) |
 | **Passwords are asked for by `ui`, checked by the broker** (0.4) | `ui.broker_call` shows a password dialog when the broker asks, three tries, the way `nexa_common/broker.py` does; the password goes only into the request to the broker. Apps never check or keep it | Apps asking with their own dialogs |
 
-## 2. The language (v0.9: no changes since 0.5; `ui` grew in 0.7 and 0.8; `editor` is 0.8's)
+## 2. The language (v0.10: no changes since 0.5; `ui` grew in 0.7 and 0.8; `editor` is 0.8's, `network` 0.10's)
 
 **Types:** `int` (64-bit, checked), `float` (64-bit), `bool`, `str`
 (immutable UTF-8 text), `[T]` (growable list), `?T` (a `T` or `none`),
@@ -345,6 +372,7 @@ Integer `/` rounds toward zero; `%` takes the sign of the left side.
 | `broker` (0.4) | `call(action, args: Json) -> !Json` (the action's result; refusals, a needed password and unverified packages are `err`), `ask(action, args, password: ?str) -> !BrokerReply` (`Done(result)`, `NeedsPassword(what, why)`, `Unverified(why)`; a plain refusal or "too many wrong passwords" is `err`), `call_timeout`, `ask_timeout`, `no_args()`. One request to `/run/nexa-broker.sock`; 30-minute limit |
 | `ui` (0.4) | see below |
 | `editor` (0.8) | a code editor for NexaLang in a window; see below |
+| `network` (0.10) | HTTPS requests: `get_json(url) -> !Json`, `get_text`, `post_json`, `download(url, path) -> !int`, `send(request) -> !HttpResponse`; see below |
 
 **Windows: `ui` (0.4).** GTK 3 with Hexa built in. Every function that
 makes a widget takes its parent (a column or a row) and returns the new
@@ -427,6 +455,57 @@ half. `to_upper`/`to_lower` change ASCII letters only (for now).
 - A function that calls itself on every path before it can return is
   refused (it could never finish). Recursion that runs too deep anyway
   stops with "the program ran out of stack space" (0.4).
+
+**The internet: `network` (0.10).** HTTPS only. Programs that use it are
+linked with libcurl (on NexaOS: `depends = ["libcurl"]` in nexa.toml,
+and the `network` permission; building needs `curl-dev`).
+
+| Function | What it does |
+|---|---|
+| `get_json(url) -> !Json` | GET with `Accept: application/json`; the JSON, when the status is 2xx (an empty answer is `Json.Null`). A web page instead of JSON says so |
+| `get_text(url) -> !str` | GET; the text, when the status is 2xx |
+| `post_json(url, body: Json) -> !Json` | POST the JSON; the JSON answered (status 2xx) |
+| `get(url) -> !HttpResponse` | GET; the answer whatever its status |
+| `send(req: HttpRequest) -> !HttpResponse` | any request; the answer whatever its status |
+| `request(method, url) -> HttpRequest` | a request to change and `send`: no headers, no body, 30 s, 16 MiB |
+| `download(url, path) -> !int` | save the answer to a file, all or nothing, status 2xx; any kind of file, up to 1 GiB and 10 minutes; the bytes saved |
+| `save(req, path) -> !int` | `download` for a request you made, with its limits |
+| `header(name, value) -> HttpHeader`, `param(name, value) -> HttpParam` | the parts of a request |
+| `with_query(url, [HttpParam]) -> str` | the address with `?name=value&...` added, each part encoded |
+| `encode(text) -> str` | text made safe for one part of an address (`a b&c` → `a%20b%26c`) |
+| `header_value(answer, name) -> ?str` | a header of the answer, ignoring capitals |
+| `succeeded(answer) -> bool` | the status is 200-299 |
+
+```nx
+pub struct HttpRequest {
+    method: str            // GET, POST, PUT, PATCH, DELETE or HEAD
+    url: str               // https:// only
+    headers: [HttpHeader]
+    body: str              // "" sends nothing (GET and HEAD can't have one)
+    timeout_ms: int        // 1 to 600000; the whole request
+    max_bytes: int         // the biggest answer accepted (256 MiB at most in memory)
+}
+
+pub struct HttpResponse {
+    status: int            // 200, 404, ...
+    url: str               // where the answer came from, after redirects
+    content_type: str      // as sent, with its parameters: "application/json; charset=utf-8"
+    headers: [HttpHeader]  // the last answer's, at most 100
+    body: str
+}
+```
+
+What the runtime does whatever the program asks: https:// addresses only,
+and up to 5 redirects, to https:// only; the certificate checked (TLS 1.2
+or newer); no cookies kept, nothing saved between requests; gzip and
+other packing unpacked, with the size limit counting what's unpacked;
+`Content-Type` only when the program sends one; header names checked,
+values with a line break refused, `Host`, `Content-Length`,
+`Transfer-Encoding`, `Connection`, `Expect`, `Upgrade` and the other
+framing headers refused (the module sets them); an address with a name
+or password in it refused (send those in a header). Requests say
+`User-Agent: NexaLang/0.10`. In a window, a request runs on a helper
+thread: the window keeps drawing and takes no clicks until it's done.
 
 **Tools (0.6).**
 
@@ -549,6 +628,29 @@ only. A runtime error knows its file: the location passed to the runtime
 is file number × 1,000,000 + line.
 
 ## 5. Testing done
+
+**0.10 (2026-11-20)** — for the first time in **Alpine 3.24, NexaOS's own
+base** (`sh scripts/test-nexalang.sh`: a container with gcc 15.2, musl,
+libcurl 8.23, GTK 3.24.52, GtkSourceView 4, Xvfb, xdotool, Valgrind,
+ImageMagick, openssl); earlier versions were tested on Ubuntu (glibc).
+`cargo test`: **71 tests, all pass** (29 unit, 29 end to end, 13 in
+`tests/tooling.rs`); 3 new: `network_talks_https_and_keeps_its_rules`,
+`network_programs_are_built_only_with_libcurl_when_they_use_it` and
+`shipped_programs_carry_no_symbols`. No earlier test was removed or
+weakened.
+
+| Check | Result |
+|---|---|
+| **`tests/network/client.nx` against `tests/network/server.py`**, a local HTTPS server with its own certificate (for the IP address 127.0.0.1 only), built with the hardened flags and run with the leak counter | 50 lines, exactly `expected.out`, every byte freed: `get_text`, `get_json`, a redirect, gzip, 404 and 503 as answers and as errors, 204, `post_json`, PUT with a query and an empty header, DELETE, HEAD, headers read back, a cookie the server set **not** sent back; an answer over the limit stopped when the length is known, when it's chunked, and when it's a gzip "bomb" (64 MiB of zeros in 64 KiB); too slow (0.5 s); a picture as text refused; a connection closed early; a redirect loop; a redirect to `http://` stopped; **a certificate for another name refused**; nobody listening; and, before anything is sent, `http://`, `ftp://`, no scheme, a space, a password in the address, an empty address, a lower-case method, a GET with a body, a header with a line break, a `Host` header, a header name with a space, a time limit of 0, a size limit over 256 MiB. Downloads: saved and the right size, a 404 and an answer over the limit leave **no file and no temporary file**, a missing folder says so |
+| The same program **without** `NEXALANG_TEST_CA` | every request refused at the certificate ("...'s certificate couldn't be checked, so nothing was sent") |
+| **A window that asks a server** (`tests/ui/fetching.steps`, with `# network`): three ways, like every window scenario (leak counter; ASan + UBSan; Valgrind) | JSON shown; during a 3-second request the window still draws (the widget list prints, the content marked off) and **Ctrl+M pressed meanwhile does nothing**; a 404 shown as an error |
+| **Installed and confined by the real `nexa-run`** (Landlock; a program that GETs example.org, registered without and with `network`) | without: "NexaOS didn't let this program use the internet: an app needs the `network` permission in its nexa.toml, and you can switch it on in Settings" (exit 1); with: status 200; with it but switched off by the person (`app-permissions.json`): refused again |
+| **`examples/ui/weather.nx` against the real Open-Meteo** | "Accra, Ghana: 31.5 °C, Partly cloudy, wind 11.9 km/h"; the leak counter clean |
+| A program without `use network` | no libcurl in its C or its links |
+| **Bug found by running in Alpine, fixed:** gcc 15.2 on Alpine refused the C of `examples/ownership.nx` (`'nx_t95' may be used uninitialized`, made an error by `-Werror`): an enum value whose initializer named one member of the union left the bytes of a bigger member unset, and copying the value read them. **0.9 has the same bug** (checked with 0.9's `nexac`): a valid program could fail to build on NexaOS. Enum values with a payload are now made zeroed, then filled | every example, test program and app builds with Alpine's gcc |
+| **A shipped program carries no symbols** (`nexac build`) | built with `-s`: no symbol table and no debug info (`nm` finds no `nx_trap`, no `nx_f_*`; the sample is 27% smaller), so the program's function names and the C toolchain's paths aren't handed out with it. Runtime errors still name the `.nx` file and line (the runtime's own table, not symbols). `nexac run`, `--check-memory` and `NEXAC_KEEP_SYMBOLS=1` keep them; builds stay byte-identical |
+| Test fixes for Alpine, not changes to NexaLang | BusyBox's `kill` refuses `--` before a negative number (the test tries both forms); the slow unwinder AddressSanitizer was told to use takes over 10 minutes for `churn.steps` on musl (17 s with the fast one, which still sees the program's own frames: they're built with frame pointers); Valgrind's ceiling raised from 3 to 10 minutes (`churn.steps` takes 213 s there) |
+| Test fixes for timing, not changes to NexaLang | The window tests (plain, ASan, Valgrind, theme, designer) **take turns** on a lock: run at once on one machine they starved each other, and keys sent to dialogs were lost, a different scenario failing each run. Under Valgrind, keys are spaced 4× further apart (`NX_KEY_DELAY_SCALE`), and a file dialog still open and focused after 30 s gets its last key again (`NX_GONE_RETRY`, at most 3 times): GTK's file chooser, busy completing a typed name, can swallow the Enter (seen in a screenshot: the name typed, the dialog still there) |
 
 **0.9 (2026-11-18)** — Ubuntu 24.04 here: gcc 13.3, mingw-w64 (gcc
 13), Rust 1.97 (its Windows libraries built from Rust 1.97's own library
@@ -912,7 +1014,29 @@ Found and fixed while building 0.2: strings inside `{...}` were refused,
 which made the new text functions awkward (now allowed, 8 levels max);
 floats printed as `1e+03` (now `1000.0`).
 
-## 6. Known limits of 0.9
+## 6. Known limits of 0.10
+
+The internet (0.10):
+- **One request at a time, and the program waits for it.** In a window,
+  the window keeps drawing but takes no clicks until the answer is back
+  (or the time limit passes); there's no Cancel button and no way to
+  start two requests at once. Events for answers are the likely next step
+  if apps need them (see the decisions).
+- **Answers must be UTF-8 text** unless they're saved to a file
+  (`download`/`save`); there's no bytes type. Pictures can be saved, not
+  shown (`ui` has no image widget yet).
+- No streaming: an answer is complete or an error (no progress for a
+  download, no server-sent events, no WebSockets).
+- Requests go through the proxy named by `https_proxy` in the
+  environment, as libcurl does; there's no setting of its own.
+- No client certificates and no pinning; the system's certificate store
+  is the only one (plus `NEXALANG_TEST_CA` in tests).
+- UDP isn't confined by `nexa-run` (Landlock only covers TCP), so name
+  lookups work without the permission; the connection itself is refused.
+- On Windows `nexac.exe` checks programs that `use network` like any
+  other; building them is refused there as before (0.9).
+
+## Known limits of 0.9 (still true)
 
 Windows and VS Code (0.9):
 - **Not tried on a real Windows PC or in a real VS Code.** This machine
@@ -1076,4 +1200,5 @@ The language and `ui` (the language unchanged since 0.5):
 | **0.7** ✅ | **Window Designer** (`apps/window-designer`), a NexaOS app written in NexaLang: build a window from headings, text, notes, buttons, a main button, text fields, check boxes, lists, rows and columns; move them; see the preview; get the `ui` program (export or copy). First, in `ui`: `remove`, `clear`, `code`, `save_file`, `open_file`, `to_clipboard`; lists grow with their rows and columns; tests can print a window's widgets | §5: every exported program is accepted by `nexac check` and `fmt --check`, builds with the hardened flags and shows exactly the preview's widgets |
 | **0.8** ✅ | **Code Studio** (`apps/code-studio`), a NexaLang code editor written in NexaLang: GtkSourceView with 0.6's colours, mistakes as you type (underlined and listed), Lay out, Explain, Run with Stop. First, in nexac: the `editor` module, `ui.start_program`/`stop_program` with `Output`/`Finished`, `ui.append`; `nexac run` leaves nothing behind when stopped | §5: driven by key presses three ways, packaged, run confined (where Run can't start what it builds: see the decisions) |
 | **0.9** ✅ | **Editing NexaLang on Windows**: a VS Code extension (`editors/vscode`: 0.6's grammar and language server, format on save, explanations on hover, as a quick fix and a command), packaged as a `.vsix`; `nexac.exe` for Windows (check, fmt, explain, lsp; build and run say programs are built on NexaOS); `fmt` keeps `\r\n`; modules spelled with the file's capitals everywhere | §5: `nexac.exe` under Wine passes every tool test and gives the same output as the Linux `nexac` on every program; the extension's tests pass with both. Not run on a real Windows PC or VS Code (§6) |
-| later | Generics; typed widget handles; threads with message passing; HTTPS (`network` permission); more widgets (images, menus); a hexagon widget; in-place string append; completion in the language server; self-hosting | |
+| **0.10** ✅ | **The internet: `network`** (HTTPS over libcurl, only in programs that use it): `get_json`, `get_text`, `post_json`, `send` with `HttpRequest`/`HttpResponse`, `download`/`save` to files all or nothing, `with_query`/`encode`; https:// only, certificates always checked, time and size limits, plain-words errors; a window keeps drawing during a request. `examples/ui/weather.nx`. `scripts/test-nexalang.sh` runs every test in a container that has GTK, libcurl, Xvfb and Valgrind | §5 |
+| later | Answers as events in windows (several requests at once, Cancel); images in `ui` (the pictures `download` saves); generics; typed widget handles; threads with message passing; more widgets (menus); a hexagon widget; in-place string append; completion in the language server; self-hosting | |
