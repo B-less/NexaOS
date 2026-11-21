@@ -79,7 +79,7 @@
     },
     "modules": {
       "name": "entity.name.namespace.nexalang",
-      "match": "\\b(files|time|json|broker|ui|editor)(?=\\.)"
+      "match": "\\b(files|time|json|broker|ui|editor|network)(?=\\.)"
     },
     "type-names": {
       "name": "entity.name.type.nexalang",

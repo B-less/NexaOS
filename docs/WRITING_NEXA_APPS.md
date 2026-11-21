@@ -112,7 +112,9 @@ permissions = []         # see below
   **Must never** read or write `~/.ssh`, `~/.gnupg`, keyrings, password
   stores, browser profiles, cloud credentials, or `~/.local/share/nexa-*`.
 - Network **only** with the `network` permission, HTTPS only. **Must
-  never** run, load or `eval` anything downloaded.
+  never** run, load or `eval` anything downloaded. (NexaLang: the
+  `network` module keeps these rules for you: https:// only, certificates
+  always checked, time and size limits; add `"libcurl"` to `depends`.)
 - Every file, network reply and argument is untrusted: check sizes and
   bounds, refuse what doesn't parse, and **never crash on bad input**:
   show a message.

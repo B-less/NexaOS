@@ -1,0 +1,149 @@
+// Weather (0.10): type a town, see its weather now and for the next three
+// days, from Open-Meteo (open-meteo.com: free, no account, no key).
+// Packaged as an app it needs the `network` permission in nexa.toml.
+use ui
+use network
+use json
+
+struct Place {
+    name: str
+    country: str
+    lat: float
+    lon: float
+}
+
+struct Report {
+    now: str     // "28.4 °C"
+    sky: str     // "Partly cloudy, wind 12.3 km/h"
+    days: [str]  // "2026-11-20  Rain  23.1 to 30.2 °C"
+}
+
+fn num(j: Json, key: str) -> ?float {
+    return json.as_num(json.get(j, key)?)
+}
+
+fn text(j: Json, key: str) -> str {
+    match json.get(j, key) {
+        some(v) => { return unwrap_or(json.as_text(v), "") }
+        none => { return "" }
+    }
+}
+
+// WMO weather codes, as Open-Meteo sends them
+fn sky_words(code: int) -> str {
+    if code == 0 {
+        return "Clear sky"
+    } else if code <= 3 {
+        return "Partly cloudy"
+    } else if code == 45 or code == 48 {
+        return "Fog"
+    } else if code >= 51 and code <= 57 {
+        return "Drizzle"
+    } else if code >= 61 and code <= 67 {
+        return "Rain"
+    } else if code >= 71 and code <= 77 {
+        return "Snow"
+    } else if code >= 80 and code <= 82 {
+        return "Showers"
+    } else if code >= 95 {
+        return "Thunderstorm"
+    }
+    return "Cloudy"
+}
+
+fn place_of(found: Json) -> ?Place {
+    let p = json.at(json.get(found, "results")?, 0)?
+    return some(Place { name: text(p, "name"), country: text(p, "country"), lat: num(p, "latitude")?, lon: num(p, "longitude")? })
+}
+
+fn find_place(town: str) -> !Place {
+    let url = network.with_query("https://geocoding-api.open-meteo.com/v1/search", [network.param("name", town), network.param("count", "1"), network.param("language", "en")])
+    match place_of(network.get_json(url)?) {
+        some(p) => { return ok(p) }
+        none => { return err("no town called \"{town}\" was found") }
+    }
+}
+
+fn day_line(daily: Json, i: int) -> ?str {
+    let date = json.as_text(json.at(json.get(daily, "time")?, i)?)?
+    let code = json.as_int(json.at(json.get(daily, "weather_code")?, i)?)?
+    let low = json.as_num(json.at(json.get(daily, "temperature_2m_min")?, i)?)?
+    let high = json.as_num(json.at(json.get(daily, "temperature_2m_max")?, i)?)?
+    return some("{date}  {sky_words(code)}  {low} to {high} °C")
+}
+
+fn report_of(w: Json) -> ?Report {
+    let current = json.get(w, "current")?
+    let code = json.as_int(json.get(current, "weather_code")?)?
+    var days: [str] = []
+    let daily = json.get(w, "daily")?
+    for i in 0..3 {
+        match day_line(daily, i) {
+            some(line) => { push(days, line) }
+            none => { }
+        }
+    }
+    return some(Report { now: "{num(current, "temperature_2m")?} °C", sky: "{sky_words(code)}, wind {num(current, "wind_speed_10m")?} km/h", days: days })
+}
+
+fn forecast(p: Place) -> !Report {
+    let url = network.with_query("https://api.open-meteo.com/v1/forecast", [
+        network.param("latitude", "{p.lat}"),
+        network.param("longitude", "{p.lon}"),
+        network.param("current", "temperature_2m,wind_speed_10m,weather_code"),
+        network.param("daily", "weather_code,temperature_2m_max,temperature_2m_min"),
+        network.param("timezone", "auto"),
+        network.param("forecast_days", "3")
+    ])
+    match report_of(network.get_json(url)?) {
+        some(r) => { return ok(r) }
+        none => { return err("Open-Meteo's answer didn't have the weather in it") }
+    }
+}
+
+fn main() -> !void {
+    let page = ui.start("weather", "Weather")?
+    let search = ui.row(page)
+    let town = ui.entry(search, "Town")
+    let show = ui.primary_button(search, "Show")
+    let place = ui.heading(page, "")
+    let now = ui.display(page, "")
+    let sky = ui.label(page, "")
+    let days = ui.list(page, "Type a town and press Enter")
+    ui.note(page, "Weather data by Open-Meteo.com")
+    ui.focus(town)
+    while true {
+        var asked = ""
+        match ui.wait() {
+            Clicked(id) => {
+                if id == show {
+                    asked = trim(ui.get_text(town))
+                }
+            }
+            Submitted(_, t) => { asked = trim(t) }
+            Closed => { return ok() }
+            _ => { }
+        }
+        if asked == "" {
+            continue
+        }
+        ui.status("Asking Open-Meteo about {asked}...")
+        match find_place(asked) {
+            ok(p) => {
+                match forecast(p) {
+                    ok(r) => {
+                        ui.set_text(place, "{p.name}, {p.country}")
+                        ui.set_text(now, r.now)
+                        ui.set_text(sky, r.sky)
+                        ui.set_items(days, r.days)
+                        ui.status("")
+                        print("{p.name}, {p.country}: {r.now}, {r.sky}")
+                    }
+                    err(e) => { ui.show_error(e) }
+                }
+            }
+            err(e) => { ui.show_error(e) }
+        }
+    }
+    return ok()
+}

@@ -93,6 +93,9 @@ fn std_primitive(name: &str) -> Option<(Vec<Type>, Type)> {
         "__editor_mark" => (vec![Int, Int, Int, Int], Void),
         "__editor_clear_marks" => (vec![Int], Void),
         "__editor_go_to" => (vec![Int, Int, Int], Void),
+        // 0.10: HTTPS (method, url, [name, value, ...], body, timeout ms,
+        // max bytes, save to) -> [status, url, content type, body, name, value, ...]
+        "__net_request" => (vec![s(), s(), list(s()), s(), Int, Int, s()], res(list(s()))),
         _ => return None,
     })
 }
