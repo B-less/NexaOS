@@ -1162,34 +1162,87 @@ class FileManagerWindow(Gtk.Window):
             self._error("No applications are available to open this file.")
             return
 
-        dialog = Gtk.Dialog(title="Open With", transient_for=self, modal=True)
-        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK)
-        dialog.set_default_response(Gtk.ResponseType.OK)
-        box = dialog.get_content_area()
+        # A popover over the file, not a dialog window: a popover is part of
+        # this window, so it can't end up behind it. (A dialog could: GTK 3
+        # can't tell Hyprland or Sway it's modal, so clicking the file
+        # manager raised the file manager over it, and GTK, blocking the
+        # click for the dialog, left the person with a window that seemed
+        # stuck.) Clicking elsewhere or Esc closes it, like any menu.
+        pop = Gtk.Popover(relative_to=self.view)
+        pop.set_pointing_to(self._item_rect(self._selected_paths()[0]))
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.set_border_width(10)
+        title = Gtk.Label(xalign=0, max_width_chars=40, wrap=True)
+        title.set_markup(f"<b>Open “{GLib.markup_escape_text(sel['name'])}” with</b>")
+        box.add(title)
 
         listbox = Gtk.ListBox()
+        listbox.set_activate_on_single_click(False)  # a click picks, Enter or a double click opens
         for app in candidates:
             row = Gtk.ListBoxRow()
             row.app_info = app
-            row.add(Gtk.Label(label=app.get_display_name(), xalign=0))
+            line = Gtk.Box(spacing=8)
+            icon = app.get_icon()
+            line.add(Gtk.Image.new_from_gicon(icon, Gtk.IconSize.LARGE_TOOLBAR) if icon else Gtk.Image())
+            line.add(Gtk.Label(label=app.get_display_name(), xalign=0))
+            row.add(line)
             listbox.add(row)
-        listbox.select_row(listbox.get_row_at_index(0))
-        box.add(listbox)
+        first = listbox.get_row_at_index(0)
+        listbox.select_row(first)
+        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroll.set_propagate_natural_height(True)
+        scroll.set_max_content_height(320)
+        scroll.set_min_content_width(260)
+        scroll.add(listbox)
+        box.add(scroll)
 
         default_check = Gtk.CheckButton(label="Set as default for this file type")
-        default_check.set_margin_top(8)
         box.add(default_check)
+        buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END)
+        cancel_btn, open_btn = Gtk.Button(label="Cancel"), Gtk.Button(label="Open")
+        open_btn.get_style_context().add_class("suggested-action")
+        buttons.add(cancel_btn)
+        buttons.add(open_btn)
+        box.add(buttons)
 
-        dialog.show_all()
-        response = dialog.run()
-        chosen_row = listbox.get_selected_row()
-        set_default = default_check.get_active()
-        dialog.destroy()
+        def launch(*_):
+            row = listbox.get_selected_row()
+            set_default = default_check.get_active()
+            pop.popdown()
+            if row is not None:
+                self._launch_with(row.app_info, gfile, content_type, set_default)
 
-        if response != Gtk.ResponseType.OK or chosen_row is None:
-            return
-        app = chosen_row.app_info
+        open_btn.connect("clicked", launch)
+        listbox.connect("row-activated", launch)
+        cancel_btn.connect("clicked", lambda _b: pop.popdown())
+        pop.connect("closed", lambda p: GLib.idle_add(p.destroy))
+        pop.add(box)
+        box.show_all()
+        pop.popup()
+        first.grab_focus()
+        self._open_with_popover = pop  # kept while open (and for the tests)
+
+    def _item_rect(self, path):
+        """Where the item at `path` is drawn in the view, in the view's own
+        coordinates; the middle of the view if it can't be found."""
+        try:
+            if self.is_grid:
+                ok, rect = self.grid.get_cell_rect(path, None)
+                if ok:
+                    return rect
+            else:
+                rect = self.tree.get_cell_area(path, self.tree.get_column(0))
+                if rect.height > 0:
+                    rect.x, rect.y = self.tree.convert_bin_window_to_widget_coords(rect.x, rect.y)
+                    return rect
+        except (TypeError, ValueError):
+            pass
+        alloc = self.view.get_allocation()
+        rect = Gdk.Rectangle()
+        rect.x, rect.y, rect.width, rect.height = alloc.width // 2, alloc.height // 3, 1, 1
+        return rect
+
+    def _launch_with(self, app, gfile, content_type, set_default):
         try:
             app.launch([gfile], None)
         except GLib.Error as e:
