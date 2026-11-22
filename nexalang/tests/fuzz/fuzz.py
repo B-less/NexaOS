@@ -41,6 +41,13 @@ GTK_CFLAGS, GTK_LIBS = gtk("--cflags"), gtk("--libs")
 # programs that `use editor` (0.8) also need GtkSourceView 4
 SRC_CFLAGS, SRC_LIBS = gtk("--cflags", True), gtk("--libs", True)
 
+def pkgc(which, pkg):
+    r = subprocess.run(["pkg-config", which, pkg], capture_output=True, text=True)
+    return r.stdout.split() if r.returncode == 0 else None
+
+# programs that `use network` (0.10) link libcurl
+CURL_CFLAGS, CURL_LIBS = pkgc("--cflags", "libcurl"), pkgc("--libs", "libcurl")
+
 def seeds():
     out = []
     for d in ["examples", "examples/ui", "tests/ui", "tests/trap", "tests/modules/app", "tests/broker", "tests/json", "tests/stress", "tests/main_err"]:
@@ -270,7 +277,10 @@ def one(job):
             return ("rejected", n, path, text, "")
         uses_ui = "#include <gtk/gtk.h>" in c.stdout.decode(errors="replace")
         uses_src = "\n#define NX_UI_SOURCE 1\n" in c.stdout.decode(errors="replace")
-        if (uses_ui and not GTK_CFLAGS) or (uses_src and not SRC_CFLAGS):
+        uses_net = "#include <curl/curl.h>" in c.stdout.decode(errors="replace")
+        # libcurl needs no cflags (just -lcurl), so CURL_CFLAGS is legitimately
+        # []: test CURL_LIBS is None, not falsiness, or network programs get skipped.
+        if (uses_ui and not GTK_CFLAGS) or (uses_src and not SRC_CFLAGS) or (uses_net and CURL_LIBS is None):
             return ("skipped", n, path, text, "")
         exe = os.path.join(work, "prog")
         b = run([NEXAC, "build", prog, "-o", exe], timeout=180)
@@ -283,7 +293,9 @@ def one(job):
                  "-fno-omit-frame-pointer", "-DNX_LEAK_CHECK", "-Wall", "-Wextra", "-Werror"]
         if uses_ui:
             flags += SRC_CFLAGS if uses_src else GTK_CFLAGS
-        flags += [cfile, "-o", asan, "-lm"] + ((SRC_LIBS if uses_src else GTK_LIBS) if uses_ui else [])
+        if uses_net:
+            flags += CURL_CFLAGS or []
+        flags += [cfile, "-o", asan, "-lm"] + ((SRC_LIBS if uses_src else GTK_LIBS) if uses_ui else []) + (CURL_LIBS if uses_net else [])
         s = run(flags, timeout=180)
         if s is None or s.returncode != 0:
             return ("c-build-failure", n, path, text, (s.stderr.decode(errors="replace") if s else "timeout") + " (sanitizer build)")
