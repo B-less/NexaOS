@@ -12,7 +12,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("GtkSource", "4")
 from gi.repository import Gtk, Gdk, Gio, GLib, GtkSource
 
-from nexa_common import themes
+from nexa_common import singleton, themes
 from nexa_common.titlebar import attach_titlebar
 
 from . import engine
@@ -1124,11 +1124,21 @@ class EditorWindow(Gtk.Window):
 
 
 def main(argv):
+    paths = [a for a in argv if not a.startswith("-")]
+    inst = singleton.claim("nexa-edit", paths)
+    if inst is None:
+        return  # already open: the file was handed to that window as a new tab
     Gtk.init()
-    win = EditorWindow([a for a in argv if not a.startswith("-")])
+    win = EditorWindow(paths)
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
     for d in win.docs():
         if not d.infobar.get_visible():
             d.infobar.hide()
+
+    def open_in_running(ps):
+        for p in ps:
+            win.open_path(p)
+        win.present()
+    singleton.serve(inst, open_in_running)
     Gtk.main()

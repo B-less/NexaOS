@@ -22,6 +22,7 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gtk, Gdk, Gio, GLib, Pango, PangoCairo, Poppler
 import cairo
 
+from nexa_common import singleton
 from nexa_common.titlebar import attach_titlebar
 
 from . import engine
@@ -1157,10 +1158,18 @@ class PdfWindow(Gtk.Window):
 
 
 def main():
-    Gtk.init()
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    inst = singleton.claim("nexa-pdf", args)
+    if inst is None:
+        return  # already open: the PDF was handed to that window
+    Gtk.init()
     win = PdfWindow(args[0] if args else None)
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
     win._sync()
+
+    def show_in_running(ps):
+        win.open_path(ps[-1])
+        win.present()
+    singleton.serve(inst, show_in_running)
     Gtk.main()

@@ -12,7 +12,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gst", "1.0")
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, Gst, Pango
 
-from nexa_common import magic
+from nexa_common import magic, singleton
 from nexa_common.titlebar import attach_titlebar
 
 from . import library
@@ -1327,8 +1327,13 @@ class MusicWindow(Gtk.Window):
 
 
 def main(argv):
+    paths = [a for a in argv if not a.startswith("-")]
+    inst = singleton.claim("nexa-music", paths)
+    if inst is None:
+        return  # already playing: the file was handed to that window
     Gtk.init()
-    win = MusicWindow([a for a in argv if not a.startswith("-")])
+    win = MusicWindow(paths)
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
+    singleton.serve(inst, lambda ps: (win.open_paths(ps), win.present()))
     Gtk.main()
