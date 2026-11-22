@@ -689,19 +689,24 @@ class StoreWindow(Gtk.Window):
                 GLib.idle_add(self._action_done, (result or {}).get("done") or f"Installed {name}", None, None)
             except broker.Unverified as e:
                 GLib.idle_add(self._action_done, None, str(e), app)
+            except broker.Downgrade as e:
+                GLib.idle_add(self._action_done, None, str(e), app, True)
             except (engine.StoreError, broker.BrokerError) as e:
                 msg = "Cancelled." if str(e) == "cancelled" else str(e)
                 GLib.idle_add(self._action_done, None, msg, None)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _action_done(self, done, error, unverified_app):
+    def _action_done(self, done, error, override_app, downgrade=False):
         self._set_busy(False)
-        if unverified_app is not None:
-            if self._confirm("Install an app from an unverified publisher?",
-                             f"{error}\n\nNexaOS still limits it to the permissions shown, but nobody NexaOS "
-                             "trusts vouches for it. Install anyway?"):
-                self._install(unverified_app, allow_unverified=True)
+        if override_app is not None:
+            title, body = ("Install an older version?",
+                           f"{error}\n\nInstall it anyway?") if downgrade else (
+                          "Install an app from an unverified publisher?",
+                          f"{error}\n\nNexaOS still limits it to the permissions shown, but nobody NexaOS "
+                          "trusts vouches for it. Install anyway?")
+            if self._confirm(title, body):
+                self._install(override_app, allow_unverified=True)
             else:
                 self._status("Not installed.")
             return False

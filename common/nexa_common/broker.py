@@ -22,6 +22,11 @@ class Unverified(BrokerError):
     ask the user and retry with allow_unverified."""
 
 
+class Downgrade(BrokerError):
+    """The package is older than the version already installed (a rollback).
+    The installer may confirm with the user and retry with allow_unverified."""
+
+
 class NeedsPassword(BrokerError):
     """The action needs the user's password (or the one given was wrong)."""
     def __init__(self, message, what=None):
@@ -70,6 +75,8 @@ def request(action, args=None, password=None, timeout=1900):
         raise NeedsPassword(resp.get("error", "needs your password"), resp.get("what"))
     if resp.get("unverified"):
         raise Unverified(resp.get("error"))
+    if resp.get("downgrade"):
+        raise Downgrade(resp.get("error"))
     raise BrokerError(resp.get("error") or "the system broker refused")
 
 
