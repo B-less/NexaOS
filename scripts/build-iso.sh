@@ -60,7 +60,7 @@ fi
 # Retried: a DNS hiccup in the container makes apk report the packages as
 # missing ("no such package"), which used to fail the whole build.
 # Already in the nexa-build image: only missing tools are downloaded.
-missing=$(for p in xorriso syslinux grub grub-efi mtools dosfstools sbsigntool; do apk info -e "$p" >/dev/null || echo "$p"; done)
+missing=$(for p in xorriso syslinux grub grub-efi mtools dosfstools sbsigntool gnupg; do apk info -e "$p" >/dev/null || echo "$p"; done)
 for try in 1 2 3 4 5; do
     [ -z "$missing" ] && break
     apk add --no-cache $missing >/dev/null 2>&1 && break
@@ -194,11 +194,31 @@ CFG_EOF
 # GRUB's built-in first script runs before its full language is loaded:
 # plain commands only (no if/else). --hint looks on the device GRUB was
 # started from first, so another NexaOS stick or disk isn't picked by mistake.
+# GRUB verifies every file it loads (kernel, initramfs, grub.cfg) with the
+# NexaOS GRUB key (scripts/grub-verify-key.sh), so a tampered kernel is
+# refused even though Alpine's GRUB has no shim_lock -- Secure Boot only
+# verifies shim and GRUB, not what GRUB loads. Gated on the key (next to the
+# Secure Boot key); without it an unsigned ISO is built as before, so
+# check_signatures stays off and nothing needs signing.
+GV_DIR=${NEXA_SB_KEYS:-}
+GV_ENFORCE=""
+if [ -n "$GV_DIR" ] && [ -f "$GV_DIR/grub-verify.key" ] && [ -f "$GV_DIR/grub-verify.pub" ]; then
+    GNUPGHOME=$(mktemp -d); export GNUPGHOME; chmod 700 "$GNUPGHOME"
+    gpg --batch --quiet --import "$GV_DIR/grub-verify.key" 2>/dev/null
+    GV_KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/{print $5; exit}')
+    [ -n "$GV_KEYID" ] && GV_ENFORCE=1
+fi
+grub_sign() { gpg --batch --yes --detach-sign --local-user "$GV_KEYID" -o "$1.sig" "$1"; }
+
+# The built-in script shim runs first (plain commands, no if/else). --hint
+# looks on the device GRUB started from first. With a verification key, turn
+# on enforcement before loading grub.cfg (so grub.cfg itself must be signed).
 cat > "$STAGE/embedded.cfg" << 'CFG_EOF'
 regexp --set=1:bootdev '^\(([^)]*)\)' "$cmdpath"
 search --no-floppy --file /boot/nexa-live.id --set=root --hint="$bootdev"
-configfile ($root)/boot/grub/grub.cfg
 CFG_EOF
+[ -n "$GV_ENFORCE" ] && printf 'set check_signatures=enforce\nexport check_signatures\n' >> "$STAGE/embedded.cfg"
+printf 'configfile ($root)/boot/grub/grub.cfg\n' >> "$STAGE/embedded.cfg"
 # One GRUB image with every module it needs built in (`grub-mkimage`, not
 # a standalone image with modules in a memdisk): with Secure Boot on, GRUB
 # refuses to load module files, so nothing may need loading. Only the
@@ -212,9 +232,14 @@ sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
 grub,5,Free Software Foundation,grub,2.14,https://www.gnu.org/software/grub/
 grub.nexaos,1,NexaOS,grub,2.14,https://github.com/B-less/NexaOS
 SBAT_EOF
-grub-mkimage -O x86_64-efi -o "$STAGE/grub.efi" -p /boot/grub -c "$STAGE/embedded.cfg" --sbat "$STAGE/sbat.csv" \
+GV_PUBKEY_ARG=""
+[ -n "$GV_ENFORCE" ] && GV_PUBKEY_ARG="--pubkey $GV_DIR/grub-verify.pub"
+# pgp (+ its gcry deps) is what checks file signatures; the key is embedded
+# with --pubkey. Harmless to include the modules even when not enforcing.
+grub-mkimage -O x86_64-efi -o "$STAGE/grub.efi" -p /boot/grub -c "$STAGE/embedded.cfg" --sbat "$STAGE/sbat.csv" $GV_PUBKEY_ARG \
     normal linux echo test regexp search search_fs_file configfile iso9660 fat exfat ntfs part_gpt part_msdos \
-    all_video efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup sleep smbios keystatus
+    all_video efi_gop efi_uga video_bochs video_cirrus gzio ls reboot halt efifwsetup sleep smbios keystatus \
+    pgp gcry_rsa gcry_sha256 gcry_sha512
 rm "$STAGE/embedded.cfg" "$STAGE/sbat.csv"
 
 # Secure Boot (docs/SECURE_BOOT.md): with the NexaOS key on the build
@@ -276,6 +301,18 @@ else
     echo "[!] Secure Boot: no NexaOS key or shim here (scripts/secureboot-key.sh, scripts/fetch-shim.sh); this ISO needs Secure Boot off."
 fi
 rm -f "$STAGE/grub.efi"
+
+# Sign everything GRUB loads, so the enforcing GRUB above will boot it (and
+# refuse a tampered copy). vmlinuz is signed here, AFTER any sbsign changed
+# it. The .sig files ride on the ISO next to each file, where GRUB reads them.
+if [ -n "$GV_ENFORCE" ]; then
+    grub_sign "$STAGE/boot/grub/grub.cfg"
+    grub_sign "$STAGE/boot/vmlinuz"
+    for f in initramfs-core.cpio.gz initramfs-i915.cpio initramfs-amdgpu.cpio initramfs-iwlwifi.cpio initramfs-sof.cpio; do
+        [ -f "$STAGE/boot/$f" ] && grub_sign "$STAGE/boot/$f"
+    done
+    echo "[*] GRUB verification: the kernel, initramfs and grub.cfg are GPG-signed; a tampered kernel is refused at boot"
+fi
 
 # El Torito UEFI boot image: a small FAT filesystem holding the same binary.
 EFI_IMG="$STAGE/boot/efiboot.img"
