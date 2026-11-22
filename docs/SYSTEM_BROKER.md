@@ -11,7 +11,14 @@ Python runs as root for any of this.
    `{"action": "set_brightness", "args": {"percent": 40}}`.
 2. **Who:** the kernel says who is asking (SO_PEERCRED). Only root and
    members of the `wheel` group (administrators; the desktop user is one)
-   may ask at all.
+   may ask at all. A non-root asker must also present a **capability
+   token**: a secret the broker writes to `/var/lib/nexa-broker/token`
+   (`0640 root:wheel`) at startup. NexaOS's own components run unconfined
+   and read it; an installed app, confined by `nexa-run`, can't — Landlock
+   denies it the file, the way it denies `~/.ssh` — so an app can't drive
+   the broker even though it can open the socket (Landlock doesn't cover
+   Unix sockets). Without the token every request is refused, before the
+   password is even considered.
 3. **What:** the action must be one of the list below, and every argument is
    checked field by field (names, paths, numbers, packages, VPN files...).
 4. **Password:** actions marked *password* need the asker's password,

@@ -39,6 +39,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SOCKET: &str = "/run/nexa-broker.sock";
 const LOG: &str = "/var/log/nexa-broker.log";
+// A secret only NexaOS's own (unconfined) components can read. An app
+// confined by nexa-run can't: it isn't granted /var/lib, so Landlock
+// denies the file (the same way it denies ~/.ssh). Without the token a
+// non-root caller can't change anything, so a confined app can't drive the
+// broker even though it can open the socket (Landlock doesn't cover Unix
+// sockets). See docs/security/findings/L1-broker-reachable-from-sandbox.md.
+const TOKEN_FILE: &str = "/var/lib/nexa-broker/token";
 const MAX_REQUEST: u64 = 64 * 1024;
 const MAX_FAILURES: u32 = 3;
 const LOCKOUT: Duration = Duration::from_secs(60);
@@ -47,12 +54,56 @@ fn socket_path() -> String {
     std::env::var("NEXA_BROKER_SOCKET").unwrap_or_else(|_| SOCKET.into())
 }
 
+fn token_path() -> String {
+    std::env::var("NEXA_BROKER_TOKEN").unwrap_or_else(|_| TOKEN_FILE.into())
+}
+
+/// The gid of the `wheel` group as this broker's /etc/group has it (so the
+/// token can be read by administrators, no one else). 10 if not found.
+fn wheel_gid(etc: &Path) -> u32 {
+    std::fs::read_to_string(etc.join("group")).ok()
+        .and_then(|t| t.lines().find_map(|l| {
+            let f: Vec<&str> = l.split(':').collect();
+            if f.first() == Some(&"wheel") { f.get(2).and_then(|g| g.parse().ok()) } else { None }
+        }))
+        .unwrap_or(10)
+}
+
+/// Make a fresh capability token for this run and write it where only root
+/// and the `wheel` group can read it (0640 root:wheel). Returns the token.
+fn ensure_token(etc: &Path) -> String {
+    let path = token_path();
+    let mut buf = [0u8; 32];
+    let mut f = std::fs::File::open("/dev/urandom").expect("open /dev/urandom");
+    f.read_exact(&mut buf).expect("read /dev/urandom");
+    let token: String = buf.iter().map(|b| format!("{b:02x}")).collect();
+    if let Some(dir) = Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if std::fs::write(&path, &token).is_ok() {
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640));
+        if let Ok(c) = std::ffi::CString::new(path.clone()) {
+            // SAFETY: a plain chown of a path we just wrote.
+            unsafe { libc::chown(c.as_ptr(), 0, wheel_gid(etc)); }
+        }
+    }
+    token
+}
+
+/// Does the request carry the right token? Compared in constant time.
+fn token_ok(req: &Value, token: &str) -> bool {
+    let given = req.get("token").and_then(Value::as_str).unwrap_or("");
+    given.len() == token.len()
+        && given.bytes().zip(token.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
+}
+
 // ---- the service ---------------------------------------------------------
 
 struct Broker {
     etc: PathBuf,
     log: PathBuf,
     failures: HashMap<u32, (u32, Instant)>,
+    token: String,
 }
 
 fn now() -> u64 {
@@ -75,6 +126,14 @@ impl Broker {
         if !auth::may_ask(peer.uid, &self.etc) {
             let out = json!({"ok": false, "error": "only administrators (the wheel group) can change the system"});
             self.audit(peer.uid, &user, action, "refused: not an administrator", &out);
+            return out;
+        }
+        // A non-root caller must prove it's one of NexaOS's own components by
+        // presenting the capability token. A nexa-run-confined app can't read
+        // it (Landlock), so it stops here: opening the socket isn't enough.
+        if peer.uid != 0 && !token_ok(req, &self.token) {
+            let out = json!({"ok": false, "error": "this program isn't allowed to change the system — that's for NexaOS's own settings, not installed apps"});
+            self.audit(peer.uid, &user, action, "refused: no system token", &out);
             return out;
         }
         let parsed = match policy::parse(action, &args, Path::new("/")) {
@@ -176,7 +235,8 @@ fn serve() -> ! {
     // Tests point these elsewhere; OpenRC starts the service without them.
     let etc = std::env::var_os("NEXA_BROKER_ETC").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/etc"));
     let log = std::env::var_os("NEXA_BROKER_LOG").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(LOG));
-    let mut b = Broker { etc, log, failures: HashMap::new() };
+    let token = ensure_token(&etc);
+    let mut b = Broker { etc, log, failures: HashMap::new(), token };
     eprintln!("nexa-brokerd: listening on {path}");
     // One request at a time: system changes never race each other.
     for stream in listener.incoming().flatten() {
@@ -268,6 +328,13 @@ fn call(action: &str, args: &str) -> Value {
     let mut req = json!({"action": action, "args": args});
     if let Ok(pw) = std::env::var("NEXA_BROKER_PASSWORD") {
         req["password"] = json!(pw);
+    }
+    // NexaOS's own components can read the token; an installed app can't.
+    if let Ok(tok) = std::fs::read_to_string(token_path()) {
+        let tok = tok.trim();
+        if !tok.is_empty() {
+            req["token"] = json!(tok);
+        }
     }
     let mut s = match UnixStream::connect(socket_path()) {
         Ok(s) => s,

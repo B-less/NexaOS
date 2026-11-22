@@ -35,17 +35,41 @@ fn start() -> Option<Service> {
     fs::write(dir.join("etc/shadow"), "root:!::0:::::\nuser:$6$nexasalt$MzZ40LeatUOJUqhCI2oVd1bgvOTb6sBY6vwLqVCZBgpJcOF1s2DBQ8Jftnj.UdYccj83QrC89CZuYVEbDt5Zg1:0:::::\nguest::0:::::\n").unwrap();
     let child = Command::new(BIN).arg("serve")
         .env("NEXA_BROKER_SOCKET", dir.join("sock")).env("NEXA_BROKER_ETC", dir.join("etc")).env("NEXA_BROKER_LOG", dir.join("log"))
+        .env("NEXA_BROKER_TOKEN", dir.join("token"))
         .spawn().unwrap();
     for _ in 0..100 {
         if dir.join("sock").exists() { break; }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    // The token is written root:wheel 0640; the uid-1000 caller in these tests
+    // doesn't carry the wheel group, so open it up for the test's reader (the
+    // real guard for apps is Landlock denying the path, tested in nexa-run).
+    for _ in 0..100 {
+        if dir.join("token").exists() { break; }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let _ = fs::set_permissions(dir.join("token"), std::os::unix::fs::PermissionsExt::from_mode(0o644));
     Some(Service { child, dir })
 }
 
+/// A trusted caller: it can read the capability token (NexaOS's own apps).
 fn ask(dir: &Path, uid: u32, action: &str, args: &str, password: Option<&str>) -> Value {
+    ask_token(dir, uid, action, args, password, Some(dir.join("token")))
+}
+
+/// A confined app can't read the token; point the client at a path it can't
+/// read so no token is sent, exactly as a sandboxed app ends up.
+fn ask_no_token(dir: &Path, uid: u32, action: &str, args: &str) -> Value {
+    ask_token(dir, uid, action, args, None, Some(dir.join("no-such-token")))
+}
+
+fn ask_token(dir: &Path, uid: u32, action: &str, args: &str, password: Option<&str>, token: Option<PathBuf>) -> Value {
     let mut c = Command::new(BIN);
     c.args(["call", action, args]).env("NEXA_BROKER_SOCKET", dir.join("sock")).uid(uid);
+    match token {
+        Some(t) => { c.env("NEXA_BROKER_TOKEN", t); }
+        None => { c.env_remove("NEXA_BROKER_TOKEN"); }
+    }
     if let Some(p) = password { c.env("NEXA_BROKER_PASSWORD", p); }
     let out = c.output().unwrap();
     serde_json::from_slice(&out.stdout).unwrap_or(Value::Null)
@@ -86,4 +110,34 @@ fn who_may_ask_and_passwords() {
     // Everything is in the audit log.
     let log = fs::read_to_string(d.join("log")).unwrap();
     assert!(log.contains("\"refused: not an administrator\"") && log.contains("wrong password") && log.contains("\"user\":\"user\""), "{log}");
+}
+
+/// L1: an administrator caller that can't present the capability token (a
+/// nexa-run-confined app, which Landlock keeps from reading the token file)
+/// is refused every action, with no password even tried. The matching
+/// Landlock denial is tested in nexa-run's sandbox test.
+#[test]
+fn a_caller_without_the_token_cannot_change_anything() {
+    let Some(s) = start() else { return };
+    let d = &s.dir;
+
+    // No token: an administrator is still refused an Allow action...
+    let r = ask_no_token(d, 1000, "set_governor", r#"{"governor": "powersave"}"#);
+    assert!(r["error"].as_str().unwrap().contains("isn't allowed to change the system"), "{r}");
+    assert_ne!(r["needs"], "password", "it must not even reach the password step: {r}");
+    // ...and a password action never gets to ask for the password.
+    let r = ask_no_token(d, 1000, "set_hostname", r#"{"name": "evil"}"#);
+    assert!(r["error"].as_str().unwrap().contains("isn't allowed to change the system"), "{r}");
+    assert_ne!(r["needs"], "password", "{r}");
+
+    // With the token the same admin action goes through to the worker.
+    let r = ask(d, 1000, "set_governor", r#"{"governor": "powersave"}"#, None);
+    assert!(r["error"].as_str().map(|e| !e.contains("isn't allowed")).unwrap_or(true), "token should let it through: {r}");
+
+    // Root never needs the token (udev, the service itself).
+    let r = ask_no_token(d, 0, "set_governor", r#"{"governor": "powersave"}"#);
+    assert!(r["error"].as_str().map(|e| !e.contains("isn't allowed")).unwrap_or(true), "root is exempt: {r}");
+
+    let log = fs::read_to_string(d.join("log")).unwrap();
+    assert!(log.contains("\"refused: no system token\""), "{log}");
 }
