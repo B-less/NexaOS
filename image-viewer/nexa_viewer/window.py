@@ -16,7 +16,7 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, Pango, PangoCairo
 import cairo
 
-from nexa_common import compositor
+from nexa_common import compositor, singleton
 from nexa_common.titlebar import attach_titlebar
 
 from . import engine
@@ -934,11 +934,19 @@ class ViewerWindow(Gtk.Window):
 
 
 def main():
-    Gtk.init()
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    inst = singleton.claim("nexa-viewer", args)
+    if inst is None:
+        return  # already open: the picture was handed to that window
+    Gtk.init()
     win = ViewerWindow(args[0] if args else None)
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
     win.toast.set_reveal_child(False)
     win._sync_buttons()
+
+    def show_in_running(ps):
+        win.open_path(ps[-1])  # show the newest picture
+        win.present()
+    singleton.serve(inst, show_in_running)
     Gtk.main()
