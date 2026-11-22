@@ -31,6 +31,12 @@ const REFER: u64 = 1 << 13; // ABI 2
 const TRUNCATE: u64 = 1 << 14; // ABI 3
 const NET_BIND_TCP: u64 = 1 << 0;
 const NET_CONNECT_TCP: u64 = 1 << 1;
+// Landlock ABI 6 "scoping": keep the process from reaching OUT of its own
+// Landlock domain. SIGNAL stops it signalling processes outside the domain
+// (its own children stay allowed), so a confined app can't kill the desktop
+// or your other apps. ABSTRACT_UNIX_SOCKET (1 << 0) is intentionally left
+// off: the session D-Bus bus is an abstract socket apps legitimately use.
+const SCOPE_SIGNAL: u64 = 1 << 1;
 
 pub const READ: u64 = READ_FILE | READ_DIR;
 pub const READ_EXEC: u64 = READ | EXECUTE;
@@ -44,6 +50,7 @@ pub const ALL: u64 = READ_WRITE | EXECUTE | MAKE_CHAR | MAKE_FIFO | MAKE_BLOCK |
 struct RulesetAttr {
     handled_access_fs: u64,
     handled_access_net: u64,
+    scoped: u64,
 }
 
 #[repr(C, packed)]
@@ -93,8 +100,17 @@ pub fn restrict(rules: &Rules) -> io::Result<i64> {
     let attr = RulesetAttr {
         handled_access_fs: fs_mask,
         handled_access_net: if abi >= 4 && !rules.any_network { NET_BIND_TCP | NET_CONNECT_TCP } else { 0 },
+        // Signal scoping applies to every confined process, network or not.
+        scoped: if abi >= 6 { SCOPE_SIGNAL } else { 0 },
     };
-    let attr_size = if abi >= 4 && !rules.any_network { std::mem::size_of::<RulesetAttr>() } else { 8 };
+    // Tell the kernel only the fields its ABI knows: fs (8), +net (16), +scoped (24).
+    let attr_size = if abi >= 6 {
+        std::mem::size_of::<RulesetAttr>()
+    } else if abi >= 4 {
+        16
+    } else {
+        8
+    };
     // SAFETY: attr is a valid landlock_ruleset_attr of attr_size bytes.
     let ruleset = unsafe { libc::syscall(SYS_LANDLOCK_CREATE_RULESET, &attr as *const RulesetAttr, attr_size, 0u32) };
     if ruleset < 0 {

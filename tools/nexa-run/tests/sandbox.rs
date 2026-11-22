@@ -22,6 +22,8 @@ try opened 'cat "$OPENED"'
 try net 'nc -w 2 127.0.0.1 $PROBE_PORT </dev/null'
 try drive_read 'cat "$NEXA_RUN_MEDIA/STICK/old.txt"'
 try drive_write 'echo hi > "$NEXA_RUN_MEDIA/STICK/new.txt"'
+try signal 'kill -0 "$VICTIM_PID"'
+try own_signal 'sleep 5 & kill -0 $!'
 "#;
 
 struct World {
@@ -54,12 +56,18 @@ fn world(name: &str, permissions: &str, denied: Option<&str>) -> World {
 }
 
 fn run(w: &World, port: u16) -> String {
+    // A sibling process (a child of this test, not of nexa-run, so outside
+    // the app's Landlock domain) for the probe to try to signal.
+    let mut victim = Command::new("sleep").arg("30").spawn().unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_nexa-run"))
         .arg("probe").arg(w.home.join("Elsewhere/opened.txt"))
         .env("HOME", &w.home).env("NEXA_RUN_REGISTRY", w.root.join("registry"))
         .env("NEXA_RUN_LIBEXEC", w.root.join("libexec")).env("NEXA_RUN_LIB", w.root.join("lib"))
         .env("PROBE_PORT", port.to_string()).env("NEXA_RUN_MEDIA", w.root.join("media"))
+        .env("VICTIM_PID", victim.id().to_string())
         .output().unwrap();
+    let _ = victim.kill();
+    let _ = victim.wait();
     String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr)
 }
 
@@ -83,6 +91,12 @@ fn an_app_with_no_permissions_gets_only_its_own_folder() {
     }
     if nexa_sys::sandbox::abi() >= 4 {
         assert!(out.contains("net:no"), "no network without the permission:\n{out}");
+    }
+    // It can always signal its own children; with ABI-6 scoping it can't
+    // signal a process outside its sandbox (so it can't kill your other apps).
+    assert!(out.contains("own_signal:yes"), "an app can still signal its own children:\n{out}");
+    if nexa_sys::sandbox::abi() >= 6 {
+        assert!(out.contains("signal:no"), "signal scoping stops it signalling outside the sandbox:\n{out}");
     }
     assert!(!w.home.join("new.txt").exists());
     assert_eq!(fs::read_to_string(w.home.join(".local/share/probe/note")).unwrap(), "hi\n");
