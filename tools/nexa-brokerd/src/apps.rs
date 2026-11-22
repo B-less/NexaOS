@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub const UNVERIFIED: &str = "unverified: ";
+pub const DOWNGRADE: &str = "downgrade: ";
 const MAX_PACKAGE: u64 = 1024 * 1024 * 1024;
 const COMMAND_DIRS: &[&str] = &["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"];
 
@@ -66,6 +67,34 @@ impl Places {
         let v: Value = serde_json::from_slice(&fs::read(self.registry_file(id)).ok()?).ok()?;
         Some(v["paths"].as_array()?.iter().filter_map(Value::as_str).map(PathBuf::from).collect())
     }
+
+    /// The version currently recorded for `id`, if it's installed.
+    fn registered_version(&self, id: &str) -> Option<String> {
+        let v: Value = serde_json::from_slice(&fs::read(self.registry_file(id)).ok()?).ok()?;
+        v["version"].as_str().map(str::to_string)
+    }
+}
+
+/// Is `a` a newer version than `b`? "1.10.2" > "1.9" (numeric parts;
+/// anything else compares as text). Kept in step with
+/// nexa_pack::repo::newer, but copied here on purpose: the broker runs as
+/// root, so it must not pull nexa-pack's crypto/zip dependency tree in just
+/// for this 12-line pure function.
+fn newer(a: &str, b: &str) -> bool {
+    let parts = |v: &str| v.split(['.', '-', '+']).map(|p| p.parse::<u64>().map_err(|_| p.to_string())).collect::<Vec<_>>();
+    let (pa, pb) = (parts(a), parts(b));
+    for i in 0..pa.len().max(pb.len()) {
+        match (pa.get(i), pb.get(i)) {
+            (Some(Ok(x)), Some(Ok(y))) if x != y => return x > y,
+            (Some(Err(x)), Some(Err(y))) if x != y => return x > y,
+            (Some(Ok(_)), Some(Err(_))) => return true,
+            (Some(Err(_)), Some(Ok(_))) => return false,
+            (Some(_), None) => return true,
+            (None, Some(_)) => return false,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Read `path` as user `uid` would be allowed to.
@@ -178,6 +207,22 @@ fn install_from(p: &Places, work: &Path, bytes: &[u8], allow_unverified: bool, w
         return Err(format!("{UNVERIFIED}{} {who}. Only install it if you trust where it came from.", one_line(&report["name"])));
     }
     let id = report["id"].as_str().filter(|i| crate::policy::valid_app_id(i)).ok_or("invalid app id")?.to_string();
+    // Anti-rollback: a signed-but-older package must not silently replace a
+    // newer one (that would undo security fixes while showing no "unverified"
+    // warning, since the old version's signature is still valid). The user can
+    // still roll back on purpose -- that goes through the same allow_unverified
+    // confirmation, with its own "downgrade" message.
+    if !allow_unverified {
+        if let Some(prev) = p.registered_version(&id) {
+            let incoming = report["version"].as_str().unwrap_or("");
+            if newer(&prev, incoming) {
+                return Err(format!(
+                    "{DOWNGRADE}{} {incoming} is older than the {prev} already installed. \
+                     Installing it would undo updates, which can include security fixes.",
+                    one_line(&report["name"])));
+            }
+        }
+    }
     let owned = p.owned(&id);
     let previous = p.registered(&id);
     if previous.is_none() {
@@ -293,6 +338,17 @@ mod tests {
         assert!(plain.contains(" %F\n") && !plain.contains("MimeType"), "{plain}");
         let bad = desktop_entry(&json!({"name": "X", "opens": ["text/plain\nExec=/bin/sh", "Text/Plain;x", 7]}), bin, "x");
         assert!(!bad.contains("MimeType") && bad.lines().filter(|l| l.starts_with("Exec=")).count() == 1, "{bad}");
+    }
+
+    #[test]
+    fn version_ordering_for_downgrade_guard() {
+        assert!(newer("2.0", "1.0") && newer("1.10.2", "1.9") && newer("1.0.1", "1.0"));
+        assert!(!newer("1.0", "2.0") && !newer("1.9", "1.10") && !newer("1.0", "1.0"));
+        // An older version really is seen as older (what install_from refuses).
+        assert!(newer("2.0", "1.0"), "2.0 installed, 1.0 incoming -> downgrade");
+        assert!(!newer("1.0", "1.0"), "same version is a reinstall, not a downgrade");
+        // Non-numeric parts fall back to text, still deterministic.
+        assert!(newer("1.0-rc2", "1.0-rc1") && !newer("1.0-rc1", "1.0-rc2"));
     }
 
     #[test]

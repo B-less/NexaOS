@@ -332,10 +332,15 @@ fn exec() -> Value {
 fn finish(r: Result<Value, String>) -> Value {
     match r {
         Ok(result) => json!({"ok": true, "result": result}),
-        Err(e) => match e.strip_prefix(apps::UNVERIFIED) {
-            Some(why) => json!({"ok": false, "error": why, "unverified": true}),
-            None => json!({"ok": false, "error": e}),
-        },
+        Err(e) => {
+            if let Some(why) = e.strip_prefix(apps::UNVERIFIED) {
+                json!({"ok": false, "error": why, "unverified": true})
+            } else if let Some(why) = e.strip_prefix(apps::DOWNGRADE) {
+                json!({"ok": false, "error": why, "downgrade": true})
+            } else {
+                json!({"ok": false, "error": e})
+            }
+        }
     }
 }
 
