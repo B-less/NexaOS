@@ -29,10 +29,22 @@ class NeedsPassword(BrokerError):
         self.what = what
 
 
+TOKEN = os.environ.get("NEXA_BROKER_TOKEN", "/var/lib/nexa-broker/token")
+
+
 def request(action, args=None, password=None, timeout=1900):
     req = {"action": action, "args": args or {}}
     if password is not None:
         req["password"] = password
+    # NexaOS's own components (unconfined) can read the token; an installed
+    # app confined by nexa-run can't, so it can't drive the broker.
+    try:
+        with open(TOKEN) as f:
+            tok = f.read().strip()
+        if tok:
+            req["token"] = tok
+    except OSError:
+        pass
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)

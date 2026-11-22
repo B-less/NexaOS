@@ -39,12 +39,71 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SOCKET: &str = "/run/nexa-broker.sock";
 const LOG: &str = "/var/log/nexa-broker.log";
+// A secret only NexaOS's own (unconfined) components can read. An app
+// confined by nexa-run can't: it isn't granted /var/lib, so Landlock
+// denies the file (the same way it denies ~/.ssh). Without the token a
+// non-root caller can't change anything, so a confined app can't drive the
+// broker even though it can open the socket (Landlock doesn't cover Unix
+// sockets). See docs/security/findings/L1-broker-reachable-from-sandbox.md.
+const TOKEN_FILE: &str = "/var/lib/nexa-broker/token";
 const MAX_REQUEST: u64 = 64 * 1024;
 const MAX_FAILURES: u32 = 3;
-const LOCKOUT: Duration = Duration::from_secs(60);
+
+/// How long a caller is locked out after completing `rounds` runs of
+/// MAX_FAILURES wrong passwords: 1 minute, then five times longer each
+/// further round, capped at 30 minutes. So sustained guessing slows fast
+/// (3 tries, then 1 min, 5 min, 25 min, 30 min, 30 min...), turning a weak
+/// password from days-to-crack into years, while a mistyped password once
+/// or twice costs nothing.
+fn lockout_secs(rounds: u32) -> u64 {
+    60u64.saturating_mul(5u64.saturating_pow(rounds.saturating_sub(1))).min(30 * 60)
+}
 
 fn socket_path() -> String {
     std::env::var("NEXA_BROKER_SOCKET").unwrap_or_else(|_| SOCKET.into())
+}
+
+fn token_path() -> String {
+    std::env::var("NEXA_BROKER_TOKEN").unwrap_or_else(|_| TOKEN_FILE.into())
+}
+
+/// The gid of the `wheel` group as this broker's /etc/group has it (so the
+/// token can be read by administrators, no one else). 10 if not found.
+fn wheel_gid(etc: &Path) -> u32 {
+    std::fs::read_to_string(etc.join("group")).ok()
+        .and_then(|t| t.lines().find_map(|l| {
+            let f: Vec<&str> = l.split(':').collect();
+            if f.first() == Some(&"wheel") { f.get(2).and_then(|g| g.parse().ok()) } else { None }
+        }))
+        .unwrap_or(10)
+}
+
+/// Make a fresh capability token for this run and write it where only root
+/// and the `wheel` group can read it (0640 root:wheel). Returns the token.
+fn ensure_token(etc: &Path) -> String {
+    let path = token_path();
+    let mut buf = [0u8; 32];
+    let mut f = std::fs::File::open("/dev/urandom").expect("open /dev/urandom");
+    f.read_exact(&mut buf).expect("read /dev/urandom");
+    let token: String = buf.iter().map(|b| format!("{b:02x}")).collect();
+    if let Some(dir) = Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if std::fs::write(&path, &token).is_ok() {
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640));
+        if let Ok(c) = std::ffi::CString::new(path.clone()) {
+            // SAFETY: a plain chown of a path we just wrote.
+            unsafe { libc::chown(c.as_ptr(), 0, wheel_gid(etc)); }
+        }
+    }
+    token
+}
+
+/// Does the request carry the right token? Compared in constant time.
+fn token_ok(req: &Value, token: &str) -> bool {
+    let given = req.get("token").and_then(Value::as_str).unwrap_or("");
+    given.len() == token.len()
+        && given.bytes().zip(token.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
 }
 
 // ---- the service ---------------------------------------------------------
@@ -52,7 +111,9 @@ fn socket_path() -> String {
 struct Broker {
     etc: PathBuf,
     log: PathBuf,
-    failures: HashMap<u32, (u32, Instant)>,
+    /// uid -> (wrong tries in the current round, rounds completed, last try).
+    failures: HashMap<u32, (u32, u32, Instant)>,
+    token: String,
 }
 
 fn now() -> u64 {
@@ -77,6 +138,14 @@ impl Broker {
             self.audit(peer.uid, &user, action, "refused: not an administrator", &out);
             return out;
         }
+        // A non-root caller must prove it's one of NexaOS's own components by
+        // presenting the capability token. A nexa-run-confined app can't read
+        // it (Landlock), so it stops here: opening the socket isn't enough.
+        if peer.uid != 0 && !token_ok(req, &self.token) {
+            let out = json!({"ok": false, "error": "this program isn't allowed to change the system — that's for NexaOS's own settings, not installed apps"});
+            self.audit(peer.uid, &user, action, "refused: no system token", &out);
+            return out;
+        }
         let parsed = match policy::parse(action, &args, Path::new("/")) {
             Ok(a) => a,
             Err(e) => {
@@ -87,10 +156,13 @@ impl Broker {
         };
         let what = parsed.describe();
         if parsed.level() == policy::Level::Password && peer.uid != 0 {
-            if let Some((n, since)) = self.failures.get(&peer.uid) {
-                if *n >= MAX_FAILURES && since.elapsed() < LOCKOUT {
-                    let wait = (LOCKOUT - since.elapsed()).as_secs() + 1;
-                    return json!({"ok": false, "error": format!("too many wrong passwords; try again in {wait} s"), "needs": "password"});
+            if let Some((_fails, rounds, since)) = self.failures.get(&peer.uid) {
+                if *rounds > 0 {
+                    let lock = Duration::from_secs(lockout_secs(*rounds));
+                    if since.elapsed() < lock {
+                        let wait = (lock - since.elapsed()).as_secs() + 1;
+                        return json!({"ok": false, "error": format!("too many wrong passwords; try again in {wait} s"), "needs": "password"});
+                    }
                 }
             }
             match auth::check_password(&user, req.get("password").and_then(Value::as_str), &self.etc) {
@@ -106,10 +178,15 @@ impl Broker {
                     if req.get("password").is_none() {
                         return json!({"ok": false, "error": "needs your password", "needs": "password", "what": what});
                     }
-                    let e = self.failures.entry(peer.uid).or_insert((0, Instant::now()));
-                    if e.1.elapsed() >= LOCKOUT { *e = (0, Instant::now()); }
+                    let e = self.failures.entry(peer.uid).or_insert((0, 0, Instant::now()));
                     e.0 += 1;
-                    e.1 = Instant::now();
+                    e.2 = Instant::now();
+                    // A completed round of wrong tries starts the next one
+                    // fresh, and makes the lockout that now applies longer.
+                    if e.0 >= MAX_FAILURES {
+                        e.0 = 0;
+                        e.1 += 1;
+                    }
                     let out = json!({"ok": false, "error": "wrong password", "needs": "password", "what": what});
                     self.audit(peer.uid, &user, action, &what, &out);
                     return out;
@@ -176,7 +253,8 @@ fn serve() -> ! {
     // Tests point these elsewhere; OpenRC starts the service without them.
     let etc = std::env::var_os("NEXA_BROKER_ETC").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/etc"));
     let log = std::env::var_os("NEXA_BROKER_LOG").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(LOG));
-    let mut b = Broker { etc, log, failures: HashMap::new() };
+    let token = ensure_token(&etc);
+    let mut b = Broker { etc, log, failures: HashMap::new(), token };
     eprintln!("nexa-brokerd: listening on {path}");
     // One request at a time: system changes never race each other.
     for stream in listener.incoming().flatten() {
@@ -269,6 +347,13 @@ fn call(action: &str, args: &str) -> Value {
     if let Ok(pw) = std::env::var("NEXA_BROKER_PASSWORD") {
         req["password"] = json!(pw);
     }
+    // NexaOS's own components can read the token; an installed app can't.
+    if let Ok(tok) = std::fs::read_to_string(token_path()) {
+        let tok = tok.trim();
+        if !tok.is_empty() {
+            req["token"] = json!(tok);
+        }
+    }
     let mut s = match UnixStream::connect(socket_path()) {
         Ok(s) => s,
         Err(e) => return json!({"ok": false, "error": format!("the system broker isn't running ({e})")}),
@@ -305,4 +390,29 @@ fn main() {
     };
     println!("{out}");
     std::process::exit(if out["ok"] == false || out.get("error").is_some() && out["ok"] != true { 1 } else { 0 });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{lockout_secs, token_ok};
+    use serde_json::json;
+
+    #[test]
+    fn lockout_grows_then_caps() {
+        assert_eq!(lockout_secs(1), 60); // first lockout: 1 minute
+        assert_eq!(lockout_secs(2), 300); // 5 minutes
+        assert_eq!(lockout_secs(3), 1500); // 25 minutes
+        assert_eq!(lockout_secs(4), 1800); // capped at 30 minutes
+        assert_eq!(lockout_secs(99), 1800); // stays capped, never overflows
+    }
+
+    #[test]
+    fn token_must_match_exactly() {
+        let t = "abc123";
+        assert!(token_ok(&json!({"token": "abc123"}), t));
+        assert!(!token_ok(&json!({"token": "abc124"}), t));
+        assert!(!token_ok(&json!({"token": "abc1230"}), t)); // length differs
+        assert!(!token_ok(&json!({}), t)); // no token
+        assert!(!token_ok(&json!({"token": ""}), t));
+    }
 }

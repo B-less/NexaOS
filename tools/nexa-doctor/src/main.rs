@@ -175,7 +175,17 @@ fn broker(action: &str, args: Value) -> Result<Value, String> {
     let path = std::env::var_os("NEXA_BROKER_SOCKET").map(PathBuf::from).unwrap_or_else(|| "/run/nexa-broker.sock".into());
     let mut s = UnixStream::connect(&path).map_err(|e| format!("the system broker isn't running: {e}"))?;
     let _ = s.set_read_timeout(Some(Duration::from_secs(40)));
-    writeln!(s, "{}", json!({"action": action, "args": args})).map_err(|e| e.to_string())?;
+    // nexa-doctor runs unconfined in the session, so it can read the broker's
+    // capability token (a confined app can't); without it the broker refuses.
+    let token_path = std::env::var("NEXA_BROKER_TOKEN").unwrap_or_else(|_| "/var/lib/nexa-broker/token".into());
+    let mut req = json!({"action": action, "args": args});
+    if let Ok(tok) = std::fs::read_to_string(&token_path) {
+        let tok = tok.trim();
+        if !tok.is_empty() {
+            req["token"] = json!(tok);
+        }
+    }
+    writeln!(s, "{req}").map_err(|e| e.to_string())?;
     let mut line = String::new();
     BufReader::new(s).read_line(&mut line).map_err(|e| e.to_string())?;
     let v: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
