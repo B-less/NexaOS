@@ -1112,6 +1112,10 @@ output * bg /usr/share/backgrounds/nexaos/wallpaper.png fill
 # size and style between the desktop and apps.
 seat * xcursor_theme Adwaita 24
 
+# Click to focus (same as the Hyprland session): the pointer leaving a
+# window doesn't take the keyboard away from it.
+focus_follows_mouse no
+
 # Laptop touchpads: tap to click, natural scrolling, ignore while typing.
 # Tap-and-drag (tap, then touch again and slide) moves windows and files;
 # drag lock keeps the drag going when the finger lifts at the touchpad's
@@ -1356,7 +1360,14 @@ animations {
 
 input {
     kb_layout = us
-    follow_mouse = 1
+    # Click to focus, like every desktop people know: the window you clicked
+    # keeps the keyboard until you click another, wherever the pointer goes.
+    # (1, focus follows the mouse, took the keyboard away from a window the
+    # moment the pointer left it; every window floats, so that happened
+    # all the time.) Scrolling still goes to the window under the pointer.
+    follow_mouse = 2
+    # and passing from one floating window to another doesn't move it either
+    float_switch_override_focus = 0
     touchpad {
         natural_scroll = true
         tap-to-click = true
