@@ -460,8 +460,13 @@ def set_password(mountpoint, password, username=LIVE_USER):
 # assistant's control tools): on an installed system they need the user's
 # password. The live USB, which has no password, permits them without one.
 PASSWORD_HELPERS = ("/usr/local/bin/nexa-software-helper", "/usr/local/bin/nexa-install-helper")
-# Wipes whole disks; only meaningful on the live USB.
-LIVE_ONLY_HELPERS = ("/usr/local/bin/nexa-setup-helper",)
+# Partition whole disks; only meaningful on the live USB. nexa-setup-helper
+# wipes the target disk during install; nexa-settings-helper's one remaining
+# action (persist_create) grows the live stick's persistence partition. Both
+# are passwordless root disk tools that an installed system can't use (they
+# self-guard on the /mnt/nexa-live boot medium), so their doas rules are
+# dropped on install rather than left as needless passwordless-root entry points.
+LIVE_ONLY_HELPERS = ("/usr/local/bin/nexa-setup-helper", "/usr/local/bin/nexa-settings-helper")
 
 
 def harden_privileges(mountpoint):
