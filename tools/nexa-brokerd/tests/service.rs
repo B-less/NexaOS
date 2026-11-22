@@ -26,7 +26,11 @@ fn start() -> Option<Service> {
         eprintln!("not root: skipping the service test");
         return None;
     }
-    let dir = std::env::temp_dir().join(format!("nexa-broker-svc-{}", std::process::id()));
+    // Unique per test: the tests run in parallel, so one shared dir would let
+    // one test's setup delete another's socket (a flaky "connection refused").
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("nexa-broker-svc-{}-{n}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("etc")).unwrap();
     fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();

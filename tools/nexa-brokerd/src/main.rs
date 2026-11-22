@@ -48,7 +48,16 @@ const LOG: &str = "/var/log/nexa-broker.log";
 const TOKEN_FILE: &str = "/var/lib/nexa-broker/token";
 const MAX_REQUEST: u64 = 64 * 1024;
 const MAX_FAILURES: u32 = 3;
-const LOCKOUT: Duration = Duration::from_secs(60);
+
+/// How long a caller is locked out after completing `rounds` runs of
+/// MAX_FAILURES wrong passwords: 1 minute, then five times longer each
+/// further round, capped at 30 minutes. So sustained guessing slows fast
+/// (3 tries, then 1 min, 5 min, 25 min, 30 min, 30 min...), turning a weak
+/// password from days-to-crack into years, while a mistyped password once
+/// or twice costs nothing.
+fn lockout_secs(rounds: u32) -> u64 {
+    60u64.saturating_mul(5u64.saturating_pow(rounds.saturating_sub(1))).min(30 * 60)
+}
 
 fn socket_path() -> String {
     std::env::var("NEXA_BROKER_SOCKET").unwrap_or_else(|_| SOCKET.into())
@@ -102,7 +111,8 @@ fn token_ok(req: &Value, token: &str) -> bool {
 struct Broker {
     etc: PathBuf,
     log: PathBuf,
-    failures: HashMap<u32, (u32, Instant)>,
+    /// uid -> (wrong tries in the current round, rounds completed, last try).
+    failures: HashMap<u32, (u32, u32, Instant)>,
     token: String,
 }
 
@@ -146,10 +156,13 @@ impl Broker {
         };
         let what = parsed.describe();
         if parsed.level() == policy::Level::Password && peer.uid != 0 {
-            if let Some((n, since)) = self.failures.get(&peer.uid) {
-                if *n >= MAX_FAILURES && since.elapsed() < LOCKOUT {
-                    let wait = (LOCKOUT - since.elapsed()).as_secs() + 1;
-                    return json!({"ok": false, "error": format!("too many wrong passwords; try again in {wait} s"), "needs": "password"});
+            if let Some((_fails, rounds, since)) = self.failures.get(&peer.uid) {
+                if *rounds > 0 {
+                    let lock = Duration::from_secs(lockout_secs(*rounds));
+                    if since.elapsed() < lock {
+                        let wait = (lock - since.elapsed()).as_secs() + 1;
+                        return json!({"ok": false, "error": format!("too many wrong passwords; try again in {wait} s"), "needs": "password"});
+                    }
                 }
             }
             match auth::check_password(&user, req.get("password").and_then(Value::as_str), &self.etc) {
@@ -165,10 +178,15 @@ impl Broker {
                     if req.get("password").is_none() {
                         return json!({"ok": false, "error": "needs your password", "needs": "password", "what": what});
                     }
-                    let e = self.failures.entry(peer.uid).or_insert((0, Instant::now()));
-                    if e.1.elapsed() >= LOCKOUT { *e = (0, Instant::now()); }
+                    let e = self.failures.entry(peer.uid).or_insert((0, 0, Instant::now()));
                     e.0 += 1;
-                    e.1 = Instant::now();
+                    e.2 = Instant::now();
+                    // A completed round of wrong tries starts the next one
+                    // fresh, and makes the lockout that now applies longer.
+                    if e.0 >= MAX_FAILURES {
+                        e.0 = 0;
+                        e.1 += 1;
+                    }
                     let out = json!({"ok": false, "error": "wrong password", "needs": "password", "what": what});
                     self.audit(peer.uid, &user, action, &what, &out);
                     return out;
@@ -372,4 +390,29 @@ fn main() {
     };
     println!("{out}");
     std::process::exit(if out["ok"] == false || out.get("error").is_some() && out["ok"] != true { 1 } else { 0 });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{lockout_secs, token_ok};
+    use serde_json::json;
+
+    #[test]
+    fn lockout_grows_then_caps() {
+        assert_eq!(lockout_secs(1), 60); // first lockout: 1 minute
+        assert_eq!(lockout_secs(2), 300); // 5 minutes
+        assert_eq!(lockout_secs(3), 1500); // 25 minutes
+        assert_eq!(lockout_secs(4), 1800); // capped at 30 minutes
+        assert_eq!(lockout_secs(99), 1800); // stays capped, never overflows
+    }
+
+    #[test]
+    fn token_must_match_exactly() {
+        let t = "abc123";
+        assert!(token_ok(&json!({"token": "abc123"}), t));
+        assert!(!token_ok(&json!({"token": "abc124"}), t));
+        assert!(!token_ok(&json!({"token": "abc1230"}), t)); // length differs
+        assert!(!token_ok(&json!({}), t)); // no token
+        assert!(!token_ok(&json!({"token": ""}), t));
+    }
 }
