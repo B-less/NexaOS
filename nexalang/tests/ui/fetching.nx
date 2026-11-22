@@ -1,0 +1,62 @@
+// A window that asks a web server (0.10): the window keeps drawing while a
+// request runs, takes no clicks until it's done, then shows the answer.
+use ui
+use network
+use json
+
+fn ask(port: str, path: str, timeout_ms: int) -> !str {
+    var req = network.request("GET", "https://127.0.0.1:{port}{path}")
+    req.timeout_ms = timeout_ms
+    let a = network.send(req)?
+    if not network.succeeded(a) {
+        return err("{a.status}: {a.body}")
+    }
+    if starts_with(a.content_type, "application/json") {
+        let j = json.parse(a.body)?
+        return ok(unwrap_or(json.as_text(unwrap_or(json.get(j, "name"), Json.Null)), "?"))
+    }
+    return ok(trim(a.body))
+}
+
+fn main() -> !void {
+    let page = ui.start("network-test", "Network")?
+    let port = ui.entry(page, "Port of the server")
+    let buttons = ui.row(page)
+    let fetch = ui.primary_button(buttons, "Fetch")
+    ui.shortcut(fetch, "Ctrl+F")
+    let slow = ui.button(buttons, "Slow")
+    ui.shortcut(slow, "Ctrl+S")
+    let missing = ui.button(buttons, "Missing")
+    ui.shortcut(missing, "Ctrl+M")
+    let answer = ui.label(page, "Nothing asked yet")
+    ui.focus(port)
+    while true {
+        match ui.wait() {
+            Clicked(id) => {
+                var path = "/json"
+                var limit = 30000
+                if id == slow {
+                    path = "/slow"
+                    limit = 5000
+                } else if id == missing {
+                    path = "/status/404"
+                }
+                ui.set_text(answer, "Asking {path}...")
+                match ask(ui.get_text(port), path, limit) {
+                    ok(v) => {
+                        ui.set_text(answer, "{path}: {v}")
+                        print("{path}: {v}")
+                    }
+                    err(e) => {
+                        ui.set_text(answer, "{path} failed")
+                        ui.show_error(e)
+                        print("{path}: error: {e}")
+                    }
+                }
+            }
+            Closed => { return ok() }
+            _ => { }
+        }
+    }
+    return ok()
+}

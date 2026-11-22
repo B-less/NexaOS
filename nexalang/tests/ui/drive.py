@@ -27,12 +27,22 @@ STEPS is a file with one step per line:
                       too (NEXALANG_UI_TREE=full, 0.8)
     # env: NAME=VALUE (anywhere) set an environment variable for the
                       program (0.8: PATH without nexac)
+    # network       (anywhere) the test runs tests/network/server.py, an
+                      HTTPS server for 127.0.0.1 (0.10); `type` replaces
+                      $NETPORT with its port (NX_NET_PORT), and the
+                      program's output shows the port as PORT
 
 The program's output is passed through (with the new $HOME shown as
 /HOME); the exit code is the program's (124 if it hasn't finished
 $NX_WINDOW_WAIT seconds, default 15, after the last step). $HOME is a new
 empty folder unless NX_KEEP_HOME is set. NEXALANG_UI_TREE is set, so
 `key ctrl+shift+F12` prints the window's visible widgets (0.7).
+NX_KEY_DELAY_SCALE multiplies the gap between keystrokes (the Valgrind run
+sets 4: under it the program reads keys far more slowly than xdotool sends
+them at 15 ms apart, so typed text and Returns would otherwise be dropped).
+NX_GONE_RETRY=N: a dialog `gone` waits for that is still there and focused
+after N seconds gets the last key again (at most 3 times; the Valgrind run
+sets 30: GTK's file chooser can swallow an Enter while it is busy).
 NX_SCREEN sets the screen's size (default 1024x768; a bigger one keeps the
 pointer, which starts in the middle, off the window: no tooltips in
 screenshots).
@@ -128,6 +138,17 @@ def main():
         elif raw.startswith("show "):
             shows.append(raw.rstrip("\n").split(" ", 1)[1])
     window_wait = float(env.get("NX_WINDOW_WAIT", "15"))
+    # Under Valgrind the program reads keystrokes far more slowly than
+    # xdotool sends them (15 ms apart), so characters and Returns get
+    # dropped: the Valgrind run sets this to space them further apart.
+    key_scale = float(env.get("NX_KEY_DELAY_SCALE", "1"))
+    # Under Valgrind GTK's file chooser can still be busy (completing the
+    # typed name) when Enter arrives, and swallow it: the name is typed,
+    # the dialog stays. With NX_GONE_RETRY=N, a dialog that `gone` waits
+    # for and that is still there, and still focused, after N seconds gets
+    # the last key pressed again, as a person would press it again.
+    gone_retry = float(env.get("NX_GONE_RETRY", "0"))
+    last_keys = []
     last_window = ""
     prog = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE)
     out = []
@@ -169,10 +190,20 @@ def main():
             elif word == "gone":
                 # wait until no window has this title any more (a dialog closed)
                 deadline = time.time() + window_wait
+                retry_at = time.time() + gone_retry if gone_retry > 0 and last_keys else None
+                retries = 0
                 while prog.poll() is None and time.time() < deadline:
                     r = x("search", "--onlyvisible", "--name", "^" + rest + "$")
                     if r.returncode != 0 or not r.stdout.split():
                         break
+                    if retry_at is not None and time.time() >= retry_at and retries < 3:
+                        focused = x("getwindowfocus").stdout.split()
+                        if focused and focused[0] in r.stdout.split():
+                            print(f"drive: {rest!r} still there after {gone_retry:g} s; pressing {' '.join(last_keys)} again",
+                                  file=sys.stderr)
+                            x("key", "--delay", str(int(40 * key_scale)), *last_keys)
+                            retries += 1
+                        retry_at = time.time() + gone_retry
                     time.sleep(0.2)
                 else:
                     if prog.poll() is None:
@@ -185,9 +216,11 @@ def main():
                 x("windowsize", "--sync", last_window, w, h)
                 time.sleep(0.3)
             elif word == "type":
-                x("type", "--delay", "15", rest)
+                # $NETPORT: the test HTTPS server's port (`# network`, 0.10)
+                x("type", "--delay", str(int(15 * key_scale)), rest.replace("$NETPORT", os.environ.get("NX_NET_PORT", "")))
             elif word == "key":
-                x("key", "--delay", "40", *rest.split())
+                last_keys = rest.split()
+                x("key", "--delay", str(int(40 * key_scale)), *last_keys)
             elif word == "wait":
                 time.sleep(float(rest))
                 continue
@@ -228,6 +261,8 @@ def main():
                 text += f"--- {rel}\n".encode() + re.sub(rb"\b\d{10}\b", b"T", body)
         if home:
             text = text.replace(home.encode(), b"/HOME")
+        if os.environ.get("NX_NET_PORT"):
+            text = re.sub(rb"\b" + os.environ["NX_NET_PORT"].encode() + rb"\b", b"PORT", text)
         sys.stdout.buffer.write(text)
         sys.stdout.flush()
         if home:

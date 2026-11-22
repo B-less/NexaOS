@@ -175,6 +175,7 @@
       <keyword>broker</keyword>
       <keyword>ui</keyword>
       <keyword>editor</keyword>
+      <keyword>network</keyword>
     </context>
 
     <context id="hex-number" style-ref="hex">

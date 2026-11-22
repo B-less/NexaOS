@@ -1,0 +1,32 @@
+/json: Ama
+column
+  field "Port of the server" = "PORT"
+  row
+    primary button "Fetch"
+    button "Slow"
+    button "Missing"
+  text "/json: Ama"
+column (off)
+  field "Port of the server" = "PORT"
+  row
+    primary button "Fetch"
+    button "Slow"
+    button "Missing"
+  text "Asking /slow..."
+/slow: too late
+column
+  field "Port of the server" = "PORT"
+  row
+    primary button "Fetch"
+    button "Slow"
+    button "Missing"
+  text "/slow: too late"
+/status/404: error: 404: nope
+column
+  field "Port of the server" = "PORT"
+  row
+    primary button "Fetch"
+    button "Slow"
+    button "Missing"
+  text "/status/404 failed"
+status error "404: nope"

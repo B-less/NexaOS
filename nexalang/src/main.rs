@@ -74,6 +74,7 @@ const STD: &[(&str, &str)] = &[
     ("broker", include_str!("std/broker.nx")),
     ("ui", include_str!("std/ui.nx")),
     ("editor", include_str!("std/editor.nx")),
+    ("network", include_str!("std/network.nx")),
 ];
 
 const MAX_LINES: usize = 999_999;
@@ -105,6 +106,8 @@ pub struct Compiled {
     pub gtk: bool,
     /// it uses `editor`: GtkSourceView 4 too (0.8)
     pub source: bool,
+    /// it uses `network`: libcurl (0.10)
+    pub net: bool,
 }
 
 /// Load the main file and everything it uses, then check and generate C.
@@ -185,7 +188,7 @@ pub fn compile_source(main_path: &Path, main_src: Option<String>, lines: bool) -
     }
     check_cycles(&mods)?;
     let checked = checker::check(&mut mods).map_err(|ds| render_all(&ds, &mods))?;
-    Ok(Compiled { c: codegen::generate(&mods, &checked, lines), gtk: codegen::uses_ui(&mods), source: codegen::uses_editor(&mods) })
+    Ok(Compiled { c: codegen::generate(&mods, &checked, lines), gtk: codegen::uses_ui(&mods), source: codegen::uses_editor(&mods), net: codegen::uses_network(&mods) })
 }
 
 /// When `path` exists only because the file system ignores capitals (on
@@ -294,12 +297,23 @@ fn gtk_flags(which: &str, source: bool) -> Option<Vec<String>> {
     }
 }
 
+/// libcurl's flags, for programs that `use network` (0.10).
+fn curl_flags(which: &str) -> Option<Vec<String>> {
+    match Command::new("pkg-config").arg(which).arg("libcurl").output() {
+        Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).split_whitespace().map(String::from).collect()),
+        _ => {
+            eprintln!("error: this program uses `network`, which needs libcurl and pkg-config (on NexaOS: apk add curl-dev pkgconf)");
+            None
+        }
+    }
+}
+
 /// Compile C to `out` with the hardened flags. Uses $CC or `cc`; starts
 /// the compiler with an argument list, never through a shell. Programs
 /// that use `ui` also get GTK's flags; every hardened flag stays. False
 /// (with a message, and nothing left behind but `out`'s folder) when it
 /// can't.
-fn build_c(prog: &Compiled, out: &Path, check_memory: bool) -> bool {
+fn build_c(prog: &Compiled, out: &Path, check_memory: bool, ship: bool) -> bool {
     if cfg!(windows) {
         // 0.9: the generated C uses POSIX (sockets, signals, process
         // groups) and GTK's Unix parts; see NEXALANG.md's decisions.
@@ -316,13 +330,19 @@ fn build_c(prog: &Compiled, out: &Path, check_memory: bool) -> bool {
             return false;
         }
     }
-    let (cflags, libs) = if prog.gtk {
+    let (mut cflags, mut libs) = if prog.gtk {
         let Some(c) = gtk_flags("--cflags", prog.source) else { return false };
         let Some(l) = gtk_flags("--libs", prog.source) else { return false };
         (c, l)
     } else {
         (Vec::new(), Vec::new())
     };
+    if prog.net {
+        let Some(c) = curl_flags("--cflags") else { return false };
+        let Some(l) = curl_flags("--libs") else { return false };
+        cflags.extend(c);
+        libs.extend(l);
+    }
     if let Err(e) = std::fs::write(&c_path, c) {
         eprintln!("error: can't write {}: {}", c_path.display(), e);
         return false;
@@ -336,6 +356,17 @@ fn build_c(prog: &Compiled, out: &Path, check_memory: bool) -> bool {
     cmd.args(&cflags);
     cmd.arg(&c_path).arg("-o").arg(out).arg("-lm");
     cmd.args(&libs);
+    // A shipped program carries no symbol table and no debug info: the names
+    // of its functions, and the C toolchain's own source paths, don't belong
+    // in something you hand out, and leaving them out makes it harder to read
+    // back. Error messages don't need them — the runtime prints the .nx file
+    // and line from its own table (nx_files[], see runtime.h). `nexac run`
+    // builds a throwaway in /tmp and keeps the symbols; so does setting
+    // NEXAC_KEEP_SYMBOLS, which the valgrind test uses to name the program's
+    // own frames.
+    if ship && !check_memory && std::env::var_os("NEXAC_KEEP_SYMBOLS").is_none() {
+        cmd.arg("-s");
+    }
     let status = cmd.status();
     let _ = std::fs::remove_file(&c_path);
     match status {
@@ -384,7 +415,7 @@ fn main() {
             } else {
                 PathBuf::from(Path::new(&args[1]).file_stem().unwrap())
             };
-            if !build_c(&c, &out, false) {
+            if !build_c(&c, &out, false, true) {
                 exit(1);
             }
         }
@@ -399,7 +430,7 @@ fn main() {
                 exit(1);
             }
             let exe = dir.join("program");
-            if !build_c(&c, &exe, check_memory) {
+            if !build_c(&c, &exe, check_memory, false) {
                 let _ = std::fs::remove_dir_all(&dir);  // nothing left in /tmp (0.8)
                 exit(1);
             }
