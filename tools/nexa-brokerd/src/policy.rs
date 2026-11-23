@@ -550,4 +550,148 @@ mod tests {
         assert!(parse("change_password", &json!({"new_password": "line\nbreak"}), &r).is_err());
         assert!(!parse("change_password", &json!({"new_password": "secret1"}), &r).unwrap().describe().contains("secret1"));
     }
+
+    /// A tiny deterministic RNG, so a failure is reproducible from the seed.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+        fn below(&mut self, n: usize) -> usize {
+            (self.next() % n as u64) as usize
+        }
+    }
+
+    /// A hostile JSON value: odd scalars, huge/odd strings, nested arrays/objects.
+    fn nasty(rng: &mut Rng, depth: u32) -> Value {
+        match rng.below(15) {
+            0 => Value::Null,
+            1 => json!(rng.next() % 2 == 0),
+            2 => json!(i64::MIN),
+            3 => json!(i64::MAX),
+            4 => json!(u64::MAX),
+            5 => json!(-1),
+            6 => json!(1e308),
+            7 => json!(0.5),
+            8 => Value::String(String::new()),
+            9 => Value::String("../".repeat(1 + rng.below(300))),
+            10 => Value::String(format!("x\u{0}y\n\r\t;|&$`{}", rng.next())),
+            11 => Value::String("💥🚀ä".repeat(1 + rng.below(200))),
+            12 => Value::String("a".repeat(1 + rng.below(5000))),
+            13 => {
+                if depth > 6 {
+                    return Value::Null;
+                }
+                Value::Array((0..rng.below(5)).map(|_| nasty(rng, depth + 1)).collect())
+            }
+            _ => {
+                if depth > 6 {
+                    return Value::Null;
+                }
+                const KEYS: &[&str] = &["name", "names", "zone", "governor", "percent", "unix", "path", "id",
+                    "data", "config", "new_password", "password", "full_name", "admin", "allow_unverified",
+                    "backend", "model", "api_key", "allow_control", "require_confirmation", "x", ""];
+                let mut m = serde_json::Map::new();
+                for _ in 0..rng.below(6) {
+                    m.insert(KEYS[rng.below(KEYS.len())].to_string(), nasty(rng, depth + 1));
+                }
+                Value::Object(m)
+            }
+        }
+    }
+
+    /// The broker runs parse(), then describe()/level()/access() on the result,
+    /// in its MAIN process (main.rs `handle`) before spawning any worker. A
+    /// panic there crashes the whole privilege service -- a DoS any caller could
+    /// trigger with one crafted request. Throw 100k mutated and random argument
+    /// shapes at that whole path and assert it only ever returns Ok/Err.
+    #[test]
+    fn fuzz_parse_never_panics() {
+        let r = root();
+        const ACTIONS: &[&str] = &["reboot", "poweroff", "suspend", "set_governor", "set_brightness",
+            "set_time", "set_timezone", "set_hostname", "bluetooth_unblock", "repair_wifi", "hardware_log",
+            "write_ai_config", "start_service", "stop_service", "restart_service", "enable_service",
+            "disable_service", "list_services", "update_index", "system_update", "install_packages",
+            "remove_packages", "install_app", "uninstall_app", "vpn_list", "vpn_import", "vpn_up", "vpn_down",
+            "vpn_remove", "list_drives", "mount_drive", "unmount_drive", "eject_drive", "change_password",
+            "add_user", "remove_user", "not_an_action", "", "set_brightness\u{0}"];
+        let seeds = [
+            json!({}),
+            json!({"governor": "powersave"}),
+            json!({"percent": 42.4}),
+            json!({"unix": 1_793_000_000}),
+            json!({"zone": "Africa/Accra"}),
+            json!({"name": "bluetooth"}),
+            json!({"names": ["vlc", "gimp"]}),
+            json!({"path": "/home/user/x.nexa", "allow_unverified": true}),
+            json!({"id": "demo"}),
+            json!({"data": {"backend": "local", "model": "m", "api_key": "k", "allow_control": true, "require_confirmation": false}}),
+            json!({"name": "home-vpn", "config": "[Interface]\n"}),
+            json!({"new_password": "longenough"}),
+            json!({"name": "ama", "full_name": "Ama", "password": "longenough", "admin": true}),
+        ];
+
+        // Silence the panic hook during the run; capture a message if one fires.
+        let caught: std::sync::Arc<std::sync::Mutex<Option<String>>> = Default::default();
+        let sink = caught.clone();
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            *sink.lock().unwrap() = Some(info.to_string());
+        }));
+
+        let mut rng = Rng(0x9E3779B97F4A7C15);
+        let mut worst: Option<(String, Value)> = None;
+        for _ in 0..100_000 {
+            let action = ACTIONS[rng.below(ACTIONS.len())].to_string();
+            // Half the time mutate a real seed; half the time a fully random object.
+            let args = if rng.below(2) == 0 {
+                let mut a = seeds[rng.below(seeds.len())].clone();
+                if let Value::Object(m) = &mut a {
+                    let keys: Vec<String> = m.keys().cloned().collect();
+                    if !keys.is_empty() {
+                        let k = keys[rng.below(keys.len())].clone();
+                        m.insert(k, nasty(&mut rng, 0));
+                    } else {
+                        m.insert("name".into(), nasty(&mut rng, 0));
+                    }
+                }
+                a
+            } else {
+                nasty(&mut rng, 0)
+            };
+            let a2 = args.clone();
+            let act = action.clone();
+            let rr = r.clone();
+            let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                if let Ok(parsed) = parse(&act, &a2, &rr) {
+                    let _ = parsed.describe();
+                    let _ = parsed.level();
+                    let _ = parsed.access();
+                }
+            }));
+            if ok.is_err() {
+                worst = Some((action, args));
+                break;
+            }
+        }
+        std::panic::set_hook(prev);
+        if let Some((action, args)) = worst {
+            panic!("policy::parse path PANICKED on action {action:?} args {args}\n  panic: {:?}", caught.lock().unwrap());
+        }
+    }
+
+    /// The raw decode layer (what a socket byte stream hits first) must reject
+    /// hostile input without panicking or overflowing the stack.
+    #[test]
+    fn decoder_rejects_hostile_bytes_without_panicking() {
+        for bad in [&b"{"[..], b"\xff\xfe", b"[1,2,3", b"\"\x00\"", b"{\"a\":", b"nul", b"1e999999"] {
+            let _: Result<Value, _> = serde_json::from_slice(bad); // must not panic
+        }
+        // Deep nesting must hit serde's recursion limit (Err), not a stack overflow.
+        let deep = "[".repeat(100_000);
+        assert!(serde_json::from_str::<Value>(&deep).is_err());
+    }
 }
