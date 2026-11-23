@@ -89,6 +89,63 @@ fn handled_fs(abi: i64) -> u64 {
     all
 }
 
+/// Landlock's network hook covers only TCP, so an app with no network at all
+/// could still send UDP (DNS tunnelling / one-way exfil). This seccomp filter
+/// refuses `socket(AF_INET|AF_INET6, SOCK_DGRAM|SOCK_RAW, …)` with EACCES,
+/// closing that for apps that have no network grant. It leaves AF_UNIX
+/// (Wayland/D-Bus/PipeWire) and TCP-socket creation alone, so it only ever
+/// stops datagram/raw INET sockets. `no_new_privs` (set in `restrict` before
+/// this runs) is required for an unprivileged seccomp filter.
+#[cfg(target_arch = "x86_64")]
+fn block_inet_datagram_sockets() -> io::Result<()> {
+    use libc::{sock_filter, sock_fprog};
+    const AUDIT_ARCH_X86_64: u32 = 0xC000_003E;
+    const NR_SOCKET: u32 = 41; // __NR_socket on x86_64
+    const SECCOMP_MODE_FILTER: libc::c_ulong = 2;
+    const RET_ALLOW: u32 = 0x7fff_0000;
+    const RET_ERRNO_EACCES: u32 = 0x0005_0000 | (libc::EACCES as u32 & 0xffff);
+    // Offsets in `struct seccomp_data` (little-endian low word of each u64 arg).
+    const OFF_NR: u32 = 0;
+    const OFF_ARCH: u32 = 4;
+    const OFF_DOMAIN: u32 = 16; // args[0]
+    const OFF_TYPE: u32 = 24; // args[1]
+    let ld = |k: u32| sock_filter { code: 0x20, jt: 0, jf: 0, k }; // BPF_LD|W|ABS
+    let jeq = |k: u32, jt: u8, jf: u8| sock_filter { code: 0x15, jt, jf, k }; // BPF_JMP|JEQ|K
+    let and = |k: u32| sock_filter { code: 0x54, jt: 0, jf: 0, k }; // BPF_ALU|AND|K
+    let ret = |k: u32| sock_filter { code: 0x06, jt: 0, jf: 0, k }; // BPF_RET|K
+    // Jump targets: instruction 11 = ALLOW, 12 = DENY (offsets are relative).
+    let prog = [
+        /* 0 */ ld(OFF_ARCH),
+        /* 1 */ jeq(AUDIT_ARCH_X86_64, 0, 9), // other arch -> ALLOW
+        /* 2 */ ld(OFF_NR),
+        /* 3 */ jeq(NR_SOCKET, 0, 7), // not socket() -> ALLOW
+        /* 4 */ ld(OFF_DOMAIN),
+        /* 5 */ jeq(libc::AF_INET as u32, 1, 0), // AF_INET -> check type (7)
+        /* 6 */ jeq(libc::AF_INET6 as u32, 0, 4), // not AF_INET6 -> ALLOW
+        /* 7 */ ld(OFF_TYPE),
+        /* 8 */ and(0xff), // strip SOCK_NONBLOCK/SOCK_CLOEXEC
+        /* 9 */ jeq(libc::SOCK_DGRAM as u32, 2, 0), // UDP -> DENY
+        /* 10 */ jeq(libc::SOCK_RAW as u32, 1, 0), // RAW -> DENY, else ALLOW
+        /* 11 */ ret(RET_ALLOW),
+        /* 12 */ ret(RET_ERRNO_EACCES),
+    ];
+    let fprog = sock_fprog { len: prog.len() as u16, filter: prog.as_ptr() as *mut sock_filter };
+    // SAFETY: no_new_privs is set; fprog points to a valid classic-BPF program.
+    let rc = unsafe {
+        libc::prctl(libc::PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &fprog as *const sock_fprog as libc::c_ulong, 0, 0)
+    };
+    if rc != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn block_inet_datagram_sockets() -> io::Result<()> {
+    // The BPF program above is x86_64-specific; NexaOS ships x86_64 only.
+    Ok(())
+}
+
 /// Apply the rules to this process and its future children. Returns the
 /// ABI used; Ok(0) means the kernel has no Landlock (logged, not fatal).
 pub fn restrict(rules: &Rules) -> io::Result<i64> {
@@ -157,6 +214,13 @@ pub fn restrict(rules: &Rules) -> io::Result<i64> {
         if unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
             return Err(io::Error::last_os_error());
         }
+        // No network at all (no `network` grant AND no allowed TCP port): also
+        // deny UDP/raw INET sockets, which Landlock can't. Services that need
+        // DNS for their HTTPS (nexa-mindd, nexa-store: connect_ports set) are
+        // excluded, so name resolution keeps working for them.
+        if !rules.any_network && rules.connect_ports.is_empty() {
+            block_inet_datagram_sockets()?;
+        }
         // SAFETY: ruleset is a valid Landlock ruleset fd.
         if unsafe { libc::syscall(SYS_LANDLOCK_RESTRICT_SELF, ruleset, 0u32) } < 0 {
             return Err(io::Error::last_os_error());
@@ -214,5 +278,54 @@ mod tests {
         unsafe { libc::waitpid(pid, &mut status, 0) };
         std::fs::remove_dir_all(&base).ok();
         assert!(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0, "child could escape the sandbox");
+    }
+
+    /// The UDP/exfil fix: a process with no network at all can't make a UDP (or
+    /// raw) INET socket, but AF_UNIX and TCP-socket creation still work; an app
+    /// with network, or a port-scoped service, keeps UDP so DNS resolves.
+    #[test]
+    fn seccomp_blocks_udp_only_when_there_is_no_network() {
+        if abi() < 1 {
+            eprintln!("no Landlock: skipped");
+            return;
+        }
+        // In a child (restrictions are irreversible): returns
+        // (udp_inet_blocked, af_unix_ok, tcp_socket_ok) seen after restrict().
+        fn after_restrict(any_network: bool, ports: Vec<u16>) -> (bool, bool, bool) {
+            // SAFETY: fork in a test; the child only makes sockets then exits.
+            let pid = unsafe { libc::fork() };
+            if pid == 0 {
+                let rules = Rules { fs: vec![("/".into(), READ_EXEC)], connect_ports: ports, any_network };
+                let _ = restrict(&rules);
+                let made = |d: i32, t: i32| {
+                    // SAFETY: a plain socket() call; closed if it opened.
+                    let fd = unsafe { libc::socket(d, t, 0) };
+                    if fd >= 0 { unsafe { libc::close(fd) }; true } else { false }
+                };
+                let blocked = |d: i32, t: i32| {
+                    // SAFETY: a plain socket() call; closed if it opened.
+                    let fd = unsafe { libc::socket(d, t, 0) };
+                    if fd >= 0 { unsafe { libc::close(fd) }; false }
+                    else { io::Error::last_os_error().raw_os_error() == Some(libc::EACCES) }
+                };
+                let code = (blocked(libc::AF_INET, libc::SOCK_DGRAM) as i32)
+                    | ((made(libc::AF_UNIX, libc::SOCK_STREAM) as i32) << 1)
+                    | ((made(libc::AF_INET, libc::SOCK_STREAM) as i32) << 2);
+                // SAFETY: leave the forked child without running harness code.
+                unsafe { libc::_exit(code) };
+            }
+            let mut st = 0;
+            // SAFETY: waiting for our own child.
+            unsafe { libc::waitpid(pid, &mut st, 0) };
+            let c = libc::WEXITSTATUS(st);
+            ((c & 1) != 0, (c & 2) != 0, (c & 4) != 0)
+        }
+
+        let (udp_blocked, unix_ok, tcp_ok) = after_restrict(false, vec![]);
+        assert!(udp_blocked, "a no-network app must not be able to open a UDP INET socket");
+        assert!(unix_ok, "AF_UNIX (Wayland/D-Bus/PipeWire) must still work");
+        assert!(tcp_ok, "creating a TCP socket stays fine (Landlock blocks the connect)");
+        assert!(!after_restrict(true, vec![]).0, "a network app keeps UDP for DNS");
+        assert!(!after_restrict(false, vec![443]).0, "a port-scoped service (mindd/store) keeps UDP for DNS");
     }
 }
