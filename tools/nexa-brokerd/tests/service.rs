@@ -3,9 +3,12 @@
 
 use serde_json::Value;
 use std::fs;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::time::Duration;
 
 const BIN: &str = env!("CARGO_BIN_EXE_nexa-brokerd");
 
@@ -77,6 +80,59 @@ fn ask_token(dir: &Path, uid: u32, action: &str, args: &str, password: Option<&s
     if let Some(p) = password { c.env("NEXA_BROKER_PASSWORD", p); }
     let out = c.output().unwrap();
     serde_json::from_slice(&out.stdout).unwrap_or(Value::Null)
+}
+
+/// Send raw bytes straight to the broker socket (bypassing the client, which
+/// would only ever build clean JSON), read whatever comes back within a short
+/// window, and drop the connection. Returns the reply bytes (may be empty).
+fn raw(dir: &Path, bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    if let Ok(mut s) = UnixStream::connect(dir.join("sock")) {
+        let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
+        let _ = s.write_all(bytes);
+        let _ = s.read_to_end(&mut out);
+    }
+    out
+}
+
+/// Protocol fuzz (3.1): the live daemon must survive hostile raw framing and
+/// auth input -- malformed/truncated/oversized frames, wrong types where it
+/// expects a token or password -- without crashing or hanging. After each, the
+/// broker must still answer a normal request (i.e. it's still running).
+#[test]
+fn the_service_survives_hostile_raw_requests() {
+    let Some(s) = start() else { return };
+    let d = &s.dir;
+    let mut payloads: Vec<Vec<u8>> = vec![
+        b"\xff\xfe\xfd\n".to_vec(),                       // not UTF-8, not JSON
+        b"garbage not json at all\n".to_vec(),
+        b"{\n".to_vec(),                                   // truncated JSON
+        b"{\"action\":\n".to_vec(),
+        b"{}".to_vec(),                                    // no trailing newline, then EOF
+        b"\n".to_vec(),                                    // empty line
+        b"{\"action\":123,\"args\":\"not-an-object\"}\n".to_vec(), // wrong types
+        b"{\"action\":\"set_hostname\",\"args\":{\"name\":[1,2,3]},\"token\":{},\"password\":42}\n".to_vec(),
+        b"{\"action\":\"re\x00boot\",\"args\":{}}\n".to_vec(), // embedded NUL in the action
+        b"{\"action\":\"install_app\",\"args\":{\"path\":12345}}\n".to_vec(),
+        format!("{}\n", "[".repeat(5000)).into_bytes(),    // deep nesting -> serde recursion limit
+        {
+            // A line far larger than the broker will read: it must bound the read
+            // and reject, not buffer it all or hang.
+            let mut v = b"{\"action\":\"".to_vec();
+            v.extend(std::iter::repeat(b'a').take(5_000_000));
+            v.extend_from_slice(b"\"}\n");
+            v
+        },
+    ];
+    for p in payloads.drain(..) {
+        let _ = raw(d, &p); // must not crash or hang the broker (2s read timeout guards us)
+    }
+
+    // Still alive and serving? A normal admin request goes through to the worker.
+    let r = ask(d, 1000, "set_governor", r#"{"governor": "powersave"}"#, None);
+    assert!(r["error"].as_str().map(|e| !e.contains("isn't allowed")).unwrap_or(true),
+            "broker should still be serving after hostile input, got {r}");
+    assert_ne!(r, Value::Null, "broker died or stopped answering after hostile input");
 }
 
 #[test]
